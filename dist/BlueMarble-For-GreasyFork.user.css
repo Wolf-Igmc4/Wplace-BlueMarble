@@ -374,12 +374,13 @@ input[type=file] {
 }
 #bm-window-filter .bm-filter-insights {
   display: block;
-  margin: 0 0.18rem 0.5rem;
+  margin: 0 0.18rem;
 }
 #bm-window-filter .bm-filter-stat-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(8.7rem, 1.28fr);
   gap: 0.24rem;
+  margin-bottom: 8px;
 }
 #bm-window-filter .bm-filter-stat-card,
 #bm-window-filter .bm-filter-sort-panel {
@@ -623,7 +624,7 @@ input[type=file] {
 }
 #bm-window-filter:not(.bm-windowed) .bm-filter-color .bm-filter-color-pxl-cnt {
   font-family: var(--bm-font-display);
-  font-size: 1rem;
+  font-size: 0.86rem;
   font-weight: 700;
   line-height: 1.15;
   min-height: 1.15em;
@@ -753,7 +754,7 @@ input[type=file] {
   max-width: 100%;
   margin: 0.08rem 0 0;
   color: currentColor;
-  font-size: 1.02rem;
+  font-size: 0.86rem;
   letter-spacing: 0;
   line-height: 1.12;
   overflow-wrap: anywhere;
