@@ -791,7 +791,7 @@ export default class WindowFilter extends Overlay {
             }).buildElement()
             .addDiv({'class': 'bm-filter-color-progress'})
               .addSpan({'class': 'bm-filter-color-pxl-cnt', 'textContent': `${colorCorrectLocalized} / ${colorTotalLocalized}`}).buildElement()
-              .addSmall({'class': 'bm-filter-color-pxl-desc', 'innerHTML': `${colorPercent} done<br>${((typeof colorIncorrect == 'number') && !isNaN(colorIncorrect)) ? colorIncorrect : '???'} off`}).buildElement()
+              .addSmall({'class': 'bm-filter-color-pxl-desc', 'textContent': `${colorPercent} done - ${((typeof colorIncorrect == 'number') && !isNaN(colorIncorrect)) ? colorIncorrect : '???'} off`}).buildElement()
             .buildElement()
           .buildElement()
         .buildElement();
@@ -1163,7 +1163,7 @@ export default class WindowFilter extends Overlay {
 
       // Updates the pixel description if it exists
       const pixelDesc = document.querySelector(`#${this.windowID} .bm-filter-color[data-id="${colorID}"] .bm-filter-color-pxl-desc`);
-      if (pixelDesc) {pixelDesc.innerHTML = `${colorPercent} done<br>${((typeof colorIncorrect == 'number') && !isNaN(colorIncorrect)) ? colorIncorrect : '???'} off`;}
+      if (pixelDesc) {pixelDesc.textContent = `${colorPercent} done - ${((typeof colorIncorrect == 'number') && !isNaN(colorIncorrect)) ? colorIncorrect : '???'} off`;}
 
       // Updates the locate button if it exists. This only renders in fullscreen mode.
       const locateButton = document.querySelector(`#${this.windowID} .bm-filter-color[data-id="${colorID}"] .bm-filter-color-locate`);

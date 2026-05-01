@@ -353,8 +353,8 @@ input[type=file] {
   vertical-align: -0.16em;
 }
 #bm-window-filter:not(.bm-windowed) {
-  width: min(60rem, calc(100vw - 0.55rem));
-  max-width: min(60rem, calc(100vw - 0.55rem)) !important;
+  width: min(75vw, calc(100vw - 0.55rem));
+  max-width: min(75vw, calc(100vw - 0.55rem)) !important;
 }
 #bm-window-filter .bm-filter-header {
   padding-top: 0.08rem;
@@ -369,6 +369,7 @@ input[type=file] {
   flex: 1 1 10rem;
 }
 #bm-window-filter .bm-filter-scrollable {
+  margin-top: 0;
   padding-top: 0.42rem;
   padding-right: 0.08rem;
 }
@@ -461,7 +462,7 @@ input[type=file] {
 }
 #bm-filter-flex {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.38rem;
 }
 #bm-window-filter .bm-filter-color {

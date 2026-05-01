@@ -2798,7 +2798,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         }
         const pixelDesc = document.querySelector(`#${this.windowID} .bm-filter-color[data-id="${colorID}"] .bm-filter-color-pxl-desc`);
         if (pixelDesc) {
-          pixelDesc.innerHTML = `${colorPercent} done<br>${typeof colorIncorrect == "number" && !isNaN(colorIncorrect) ? colorIncorrect : "???"} off`;
+          pixelDesc.textContent = `${colorPercent} done - ${typeof colorIncorrect == "number" && !isNaN(colorIncorrect) ? colorIncorrect : "???"} off`;
         }
         const locateButton = document.querySelector(`#${this.windowID} .bm-filter-color[data-id="${colorID}"] .bm-filter-color-locate`);
         if (locateButton) {
@@ -3205,7 +3205,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
             __privateMethod(this, _WindowFilter_instances, goToRandomPendingPixel_fn).call(this, color.id, color.name);
           };
           button.disabled = !Number(colorTotal);
-        }).buildElement().addDiv({ "class": "bm-filter-color-progress" }).addSpan({ "class": "bm-filter-color-pxl-cnt", "textContent": `${colorCorrectLocalized} / ${colorTotalLocalized}` }).buildElement().addSmall({ "class": "bm-filter-color-pxl-desc", "innerHTML": `${colorPercent} done<br>${typeof colorIncorrect == "number" && !isNaN(colorIncorrect) ? colorIncorrect : "???"} off` }).buildElement().buildElement().buildElement().buildElement();
+        }).buildElement().addDiv({ "class": "bm-filter-color-progress" }).addSpan({ "class": "bm-filter-color-pxl-cnt", "textContent": `${colorCorrectLocalized} / ${colorTotalLocalized}` }).buildElement().addSmall({ "class": "bm-filter-color-pxl-desc", "textContent": `${colorPercent} done - ${typeof colorIncorrect == "number" && !isNaN(colorIncorrect) ? colorIncorrect : "???"} off` }).buildElement().buildElement().buildElement().buildElement();
       }
     }
     colorList.buildOverlay(parentElement);
