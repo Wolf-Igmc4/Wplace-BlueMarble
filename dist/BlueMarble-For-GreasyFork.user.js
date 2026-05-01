@@ -1,17 +1,17 @@
 // ==UserScript==
-// @name            Blue Marble
-// @name:en         Blue Marble
-// @namespace       https://github.com/SwingTheVine/
-// @version         0.92.0
+// @name            Blue Marble X
+// @name:en         Blue Marble X
+// @namespace       https://github.com/Wolf-Igmc4/
+// @version         0.92.8
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
 // @license         MPL-2.0
-// @supportURL      https://discord.gg/tpeBPy46hf
-// @homepageURL     https://bluemarble.lol/
-// @icon            https://raw.githubusercontent.com/SwingTheVine/Wplace-BlueMarble/78477321232b29c09e3794c360068d7d23a0172c/dist/assets/Favicon.png
-// @updateURL       https://raw.githubusercontent.com/SwingTheVine/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.js
-// @downloadURL     https://raw.githubusercontent.com/SwingTheVine/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.js
+// @supportURL      https://github.com/Wolf-Igmc4/Wplace-BlueMarble/issues
+// @homepageURL     https://github.com/Wolf-Igmc4/Wplace-BlueMarble
+// @icon            https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/assets/Favicon.png
+// @updateURL       https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.js
+// @downloadURL     https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.js
 // @match           https://wplace.live/*
 // @grant           GM_getResourceText
 // @grant           GM_addStyle
@@ -21,7 +21,8 @@
 // @grant           GM_xmlhttpRequest
 // @grant           GM.download
 // @connect         telemetry.thebluecorner.net
-// @resource        CSS-BM-File https://raw.githubusercontent.com/SwingTheVine/Wplace-BlueMarble/78477321232b29c09e3794c360068d7d23a0172c/dist/BlueMarble-For-GreasyFork.user.css
+// @connect         raw.githubusercontent.com
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -144,6 +145,132 @@
   }
   function serverTPtoDisplayTP(tile, pixel) {
     return [parseInt(tile[0]) % 4 * 1e3 + parseInt(pixel[0]), parseInt(tile[1]) % 4 * 1e3 + parseInt(pixel[1])];
+  }
+  function tilePixelToLatLng(tileX, tileY, pixelX, pixelY, tileSize = 1e3, zoom = 11) {
+    const earthHalfCircumference = 2 * Math.PI * 6378137 / 2;
+    const resolution = 2 * earthHalfCircumference / (tileSize * Math.pow(2, zoom));
+    const globalPixelX = tileX * tileSize + pixelX + 0.5;
+    const globalPixelY = tileY * tileSize + pixelY + 0.5;
+    const metersX = globalPixelX * resolution - earthHalfCircumference;
+    const metersY = earthHalfCircumference - globalPixelY * resolution;
+    const lng = metersX / earthHalfCircumference * 180;
+    const latMercator = metersY / earthHalfCircumference * 180;
+    const lat = 180 / Math.PI * (2 * Math.atan(Math.exp(latMercator * Math.PI / 180)) - Math.PI / 2);
+    return { lat, lng };
+  }
+  async function navigateWplaceToLatLng(lat, lng, zoom = 17.5) {
+    installWplaceNavigatorBridge();
+    const url = new URL(window.location.href);
+    url.searchParams.set("lat", lat.toString());
+    url.searchParams.set("lng", lng.toString());
+    url.searchParams.set("zoom", zoom.toString());
+    const requestID = crypto.randomUUID();
+    const moved = await new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        window.removeEventListener("message", onMessage);
+        resolve(false);
+      }, 4e3);
+      const onMessage = (event) => {
+        const data = event.data;
+        if (!data || data["source"] != "blue-marble" || data["endpoint"] != "navigate-result" || data["requestID"] != requestID) {
+          return;
+        }
+        clearTimeout(timeout);
+        window.removeEventListener("message", onMessage);
+        resolve(!!data["ok"]);
+      };
+      window.addEventListener("message", onMessage);
+      window.postMessage({
+        "source": "blue-marble",
+        "endpoint": "navigate",
+        "requestID": requestID,
+        "lat": lat,
+        "lng": lng,
+        "zoom": zoom
+      }, "*");
+    });
+    if (moved) {
+      history.pushState(history.state, "", url.toString());
+    }
+    return moved;
+  }
+  function installWplaceNavigatorBridge() {
+    if (document.documentElement?.dataset?.bmNavigatorBridge) {
+      return;
+    }
+    document.documentElement.dataset.bmNavigatorBridge = "true";
+    const script = document.createElement("script");
+    script.textContent = `(() => {
+    if (window.__blueMarbleWplaceNavigator) {return;}
+
+    const state = {
+      map: null,
+      searchPromise: null
+    };
+
+    async function findMap() {
+      if (state.map && typeof state.map.flyTo == 'function') {return state.map;}
+
+      const links = Array.from(document.querySelectorAll('link[rel="modulepreload"][href*="/_app/immutable/chunks/"]'));
+
+      for (const link of links) {
+        const url = new URL(link.href, location.href).href;
+
+        try {
+          const response = await fetch(url, { credentials: 'same-origin' });
+          if (!response.ok) {continue;}
+
+          const source = await response.text();
+          if (!source.includes('get map(){return') || !source.includes('set map(')) {continue;}
+
+          const module = await import(url);
+          for (const value of Object.values(module)) {
+            if (value && typeof value == 'object' && value.map && typeof value.map.flyTo == 'function') {
+              state.map = value.map;
+              return state.map;
+            }
+          }
+        } catch (error) {}
+      }
+
+      return null;
+    }
+
+    window.addEventListener('message', async (event) => {
+      const data = event.data;
+      if (!data || data.source != 'blue-marble' || data.endpoint != 'navigate') {return;}
+
+      let ok = false;
+
+      try {
+        const map = await (state.searchPromise ||= findMap());
+        state.searchPromise = null;
+
+        if (map && typeof map.flyTo == 'function') {
+          map.flyTo({
+            center: [data.lng, data.lat],
+            zoom: data.zoom,
+            duration: 1200,
+            essential: true
+          });
+          ok = true;
+        }
+      } catch (error) {
+        state.searchPromise = null;
+      }
+
+      window.postMessage({
+        source: 'blue-marble',
+        endpoint: 'navigate-result',
+        requestID: data.requestID,
+        ok: ok
+      }, '*');
+    });
+
+    window.__blueMarbleWplaceNavigator = true;
+  })();`;
+    document.documentElement?.appendChild(script);
+    script.remove();
   }
   function consoleLog(...args) {
     ((consoleLog2) => consoleLog2(...args))(console.log);
@@ -318,6 +445,8 @@
   ];
 
   // src/Overlay.js
+  var minimizeIconExpanded = '<svg class="bm-button-icon bm-button-icon-minimize" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 9.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var minimizeIconCollapsed = '<svg class="bm-button-icon bm-button-icon-minimize" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.5 7l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var _Overlay_instances, createElement_fn, applyAttribute_fn;
   var Overlay = class {
     /** Constructor for the Overlay class.
@@ -1321,23 +1450,64 @@
       button.style.textDecoration = "none";
       const window2 = button.closest(".bm-window");
       const dragbar = button.closest(".bm-dragbar");
-      const header = window2.querySelector("h1");
-      const windowContent = window2.querySelector(".bm-window-content");
-      window2.parentElement.append(window2);
-      if (button.dataset["buttonStatus"] == "expanded") {
-        windowContent.style.height = windowContent.scrollHeight + "px";
-        window2.style.width = window2.scrollWidth + "px";
-        windowContent.style.height = "0";
-        windowContent.addEventListener("transitionend", function handler() {
-          windowContent.style.display = "none";
+      const header = window2?.querySelector("h1");
+      const windowContent = window2?.querySelector(".bm-window-content");
+      if (!window2 || !dragbar || !windowContent) {
+        button.disabled = false;
+        button.style.textDecoration = "";
+        return;
+      }
+      const finishMinimizeTransition = (callback) => {
+        let isFinished = false;
+        let fallbackTimer;
+        const finish = () => {
+          if (isFinished) {
+            return;
+          }
+          isFinished = true;
+          clearTimeout(fallbackTimer);
+          windowContent.removeEventListener("transitionend", handler);
+          callback();
           button.disabled = false;
           button.style.textDecoration = "";
-          windowContent.removeEventListener("transitionend", handler);
+        };
+        const handler = (event) => {
+          if (event.target != windowContent || event.propertyName != "height") {
+            return;
+          }
+          finish();
+        };
+        windowContent.addEventListener("transitionend", handler);
+        fallbackTimer = setTimeout(finish, 360);
+      };
+      const getCollapsedHeight = () => {
+        const windowStyle = getComputedStyle(window2);
+        const toPixels = (value) => parseFloat(value) || 0;
+        const extraHeight = windowStyle.boxSizing == "border-box" ? toPixels(windowStyle.paddingTop) + toPixels(windowStyle.paddingBottom) + toPixels(windowStyle.borderTopWidth) + toPixels(windowStyle.borderBottomWidth) : 0;
+        return Math.ceil(dragbar.getBoundingClientRect().height + extraHeight + 2);
+      };
+      window2.parentElement.append(window2);
+      if (button.dataset["buttonStatus"] == "expanded") {
+        window2.dataset["widthBeforeMinimize"] = window2.style.width;
+        window2.dataset["heightBeforeMinimize"] = window2.style.height;
+        window2.dataset["minHeightBeforeMinimize"] = window2.style.minHeight;
+        windowContent.style.height = windowContent.scrollHeight + "px";
+        void windowContent.offsetHeight;
+        if (!window2.style.width) {
+          window2.style.width = window2.scrollWidth + "px";
+        }
+        finishMinimizeTransition(() => {
+          windowContent.style.display = "none";
         });
-        const dragbarHeader1 = header.cloneNode(true);
+        windowContent.style.height = "0";
+        if (window2.style.height || window2.classList.contains("bm-windowed")) {
+          window2.style.minHeight = "0px";
+          window2.style.height = getCollapsedHeight() + "px";
+        }
+        const dragbarHeader1 = header?.cloneNode(true) ?? document.createElement("h1");
         const dragbarHeader1Text = dragbarHeader1.textContent;
         button.nextElementSibling.appendChild(dragbarHeader1);
-        button.textContent = "\u25B6";
+        button.innerHTML = minimizeIconCollapsed;
         button.dataset["buttonStatus"] = "collapsed";
         button.ariaLabel = `Unminimize window "${dragbarHeader1Text}"`;
       } else {
@@ -1346,15 +1516,18 @@
         dragbarHeader1.remove();
         windowContent.style.display = "";
         windowContent.style.height = "0";
-        window2.style.width = "";
-        windowContent.style.height = windowContent.scrollHeight + "px";
-        windowContent.addEventListener("transitionend", function handler() {
+        window2.style.width = window2.dataset["widthBeforeMinimize"] ?? "";
+        window2.style.minHeight = window2.dataset["minHeightBeforeMinimize"] ?? "";
+        window2.style.height = window2.dataset["heightBeforeMinimize"] ?? "";
+        void windowContent.offsetHeight;
+        finishMinimizeTransition(() => {
           windowContent.style.height = "";
-          button.disabled = false;
-          button.style.textDecoration = "";
-          windowContent.removeEventListener("transitionend", handler);
+          delete window2.dataset["widthBeforeMinimize"];
+          delete window2.dataset["heightBeforeMinimize"];
+          delete window2.dataset["minHeightBeforeMinimize"];
         });
-        button.textContent = "\u25BC";
+        windowContent.style.height = windowContent.scrollHeight + "px";
+        button.innerHTML = minimizeIconExpanded;
         button.dataset["buttonStatus"] = "expanded";
         button.ariaLabel = `Minimize window "${dragbarHeader1Text}"`;
       }
@@ -1366,9 +1539,11 @@
      * @param {string} iMoveThingsSelector - The drag handle element
      * @since 0.8.2
     */
-    handleDrag(moveMeSelector, iMoveThingsSelector) {
+    handleDrag(moveMeSelector, iMoveThingsSelector, options = {}) {
       const moveMe = document.querySelector(moveMeSelector);
       const iMoveThings = document.querySelector(iMoveThingsSelector);
+      const onEnd = options?.onEnd ?? (() => {
+      });
       if (!moveMe || !iMoveThings) {
         this.handleDisplayError(`Can not drag! ${!moveMe ? "moveMe" : ""} ${!moveMe && !iMoveThings ? "and " : ""}${!iMoveThings ? "iMoveThings " : ""}was not found!`);
         return;
@@ -1438,6 +1613,12 @@
         document.removeEventListener("mouseup", endDrag);
         document.removeEventListener("touchend", endDrag);
         document.removeEventListener("touchcancel", endDrag);
+        onEnd({
+          element: moveMe,
+          x: currentX,
+          y: currentY
+        });
+        initialRect = null;
       };
       const onMouseMove = (event) => {
         if (isDragging && initialRect) {
@@ -1465,6 +1646,124 @@
         }
         startDrag(touch.clientX, touch.clientY);
         event.preventDefault();
+      }, { passive: false });
+    }
+    /** Handles resizing of an overlay window from a resize handle.
+     * @param {string} resizeMeSelector - The element to resize
+     * @param {string} iResizeThingsSelector - The resize handle element
+     * @param {{onEnd?: function({element: HTMLElement, width: number, height: number}): void, minWidth?: number, minHeight?: number, maxWidth?: number, maxHeight?: number}} [options={}]
+     * @since 0.92.0
+     */
+    handleResize(resizeMeSelector, iResizeThingsSelector, options = {}) {
+      const resizeMe = document.querySelector(resizeMeSelector);
+      const iResizeThings = document.querySelector(iResizeThingsSelector);
+      const onEnd = options?.onEnd ?? (() => {
+      });
+      if (!resizeMe || !iResizeThings) {
+        this.handleDisplayError(`Can not resize! ${!resizeMe ? "resizeMe" : ""} ${!resizeMe && !iResizeThings ? "and " : ""}${!iResizeThings ? "iResizeThings " : ""}was not found!`);
+        return;
+      }
+      let isResizing = false;
+      let startX = 0;
+      let startY = 0;
+      let startWidth = 0;
+      let startHeight = 0;
+      let currentWidth = 0;
+      let currentHeight = 0;
+      let targetWidth = 0;
+      let targetHeight = 0;
+      let animationFrame = null;
+      const getMaximumWidth = () => Number.isFinite(options?.maxWidth) ? options.maxWidth : window.innerWidth - 16;
+      const getMaximumHeight = () => Number.isFinite(options?.maxHeight) ? options.maxHeight : window.innerHeight - 16;
+      const minimumWidth = Number.isFinite(options?.minWidth) ? options.minWidth : 200;
+      const minimumHeight = Number.isFinite(options?.minHeight) ? options.minHeight : 160;
+      const clamp = (value, minimum, maximum) => Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
+      const updateSize = () => {
+        if (isResizing) {
+          const deltaWidth = Math.abs(currentWidth - targetWidth);
+          const deltaHeight = Math.abs(currentHeight - targetHeight);
+          if (deltaWidth > 0.5 || deltaHeight > 0.5) {
+            currentWidth = targetWidth;
+            currentHeight = targetHeight;
+            resizeMe.style.width = `${currentWidth}px`;
+            resizeMe.style.height = `${currentHeight}px`;
+          }
+          animationFrame = requestAnimationFrame(updateSize);
+        }
+      };
+      const startResize = (clientX, clientY) => {
+        isResizing = true;
+        startX = clientX;
+        startY = clientY;
+        startWidth = resizeMe.offsetWidth;
+        startHeight = resizeMe.offsetHeight;
+        currentWidth = startWidth;
+        currentHeight = startHeight;
+        targetWidth = startWidth;
+        targetHeight = startHeight;
+        document.body.style.userSelect = "none";
+        iResizeThings.classList.add("bm-resizing");
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("touchmove", onTouchMove, { passive: false });
+        document.addEventListener("mouseup", endResize);
+        document.addEventListener("touchend", endResize);
+        document.addEventListener("touchcancel", endResize);
+        if (animationFrame) {
+          cancelAnimationFrame(animationFrame);
+        }
+        updateSize();
+      };
+      const endResize = () => {
+        isResizing = false;
+        if (animationFrame) {
+          cancelAnimationFrame(animationFrame);
+          animationFrame = null;
+        }
+        document.body.style.userSelect = "";
+        iResizeThings.classList.remove("bm-resizing");
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("touchmove", onTouchMove);
+        document.removeEventListener("mouseup", endResize);
+        document.removeEventListener("touchend", endResize);
+        document.removeEventListener("touchcancel", endResize);
+        onEnd({
+          element: resizeMe,
+          width: currentWidth,
+          height: currentHeight
+        });
+      };
+      const onMouseMove = (event) => {
+        if (!isResizing) {
+          return;
+        }
+        targetWidth = clamp(startWidth + (event.clientX - startX), minimumWidth, getMaximumWidth());
+        targetHeight = clamp(startHeight + (event.clientY - startY), minimumHeight, getMaximumHeight());
+      };
+      const onTouchMove = (event) => {
+        if (!isResizing) {
+          return;
+        }
+        const touch = event?.touches?.[0];
+        if (!touch) {
+          return;
+        }
+        targetWidth = clamp(startWidth + (touch.clientX - startX), minimumWidth, getMaximumWidth());
+        targetHeight = clamp(startHeight + (touch.clientY - startY), minimumHeight, getMaximumHeight());
+        event.preventDefault();
+      };
+      iResizeThings.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        startResize(event.clientX, event.clientY);
+      });
+      iResizeThings.addEventListener("touchstart", (event) => {
+        const touch = event?.touches?.[0];
+        if (!touch) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        startResize(touch.clientX, touch.clientY);
       }, { passive: false });
     }
     /** Handles status display.
@@ -1645,6 +1944,16 @@
         this.lastUpdateTime = Date.now();
         console.log(userSettingsCurrent);
       }
+    }
+    /** Saves user settings immediately, bypassing the periodic throttle.
+     * @since 0.92.1
+     */
+    async saveUserStorageNow() {
+      const userSettingsCurrent = JSON.stringify(this.userSettings);
+      await GM.setValue(this.userSettingsSaveLocation, userSettingsCurrent);
+      this.userSettingsOld = structuredClone(this.userSettings);
+      this.lastUpdateTime = Date.now();
+      console.log(userSettingsCurrent);
     }
     /** Toggles a boolean flag to the state that was passed in.
      * If no state was passed in, the flag will flip to the opposite state.
@@ -2219,7 +2528,26 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
   };
 
   // src/WindowFilter.js
-  var _WindowFilter_instances, buildColorList_fn, sortColorList_fn, selectColorList_fn, calculatePixelStatistics_fn;
+  var closeIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
+  var fullscreenIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.5 4.5H4.5v4M15.5 4.5h4v4M19.5 15.5v4h-4M8.5 19.5h-4v-4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.8 4.8l5.2 5.2M19.2 4.8L14 10M19.2 19.2L14 14M4.8 19.2L10 14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>';
+  var windowedIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.8 4.8l5.2 5.2M19.2 4.8L14 10M19.2 19.2L14 14M4.8 19.2L10 14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M10 7.5V10H7.5M16.5 10H14V7.5M14 16.5V14h2.5M7.5 14H10v2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  function localizeCompactDate(date) {
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    const year = String(date.getFullYear()).slice(-2);
+    const minute = String(date.getMinutes()).padStart(2, "0");
+    const uses12HourClock = new Intl.DateTimeFormat(void 0, { hour: "numeric" }).resolvedOptions().hour12;
+    let hour = date.getHours();
+    let period = "";
+    if (uses12HourClock) {
+      period = hour >= 12 ? " PM" : " AM";
+      hour = hour % 12 || 12;
+    } else {
+      hour = String(hour).padStart(2, "0");
+    }
+    return `${day}/${month}/${year} ${hour}:${minute}${period}`;
+  }
+  var _WindowFilter_instances, getWindowState_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, buildColorList_fn, sortColorList_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
   var WindowFilter = class extends Overlay {
     /** Constructor for the color filter window
      * @param {*} executor - The executing class
@@ -2233,9 +2561,22 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       this.windowID = "bm-window-filter";
       this.colorListID = "bm-filter-flex";
       this.windowParent = document.body;
+      this.settingsManager = executor.settingsManager ?? null;
+      this.windowModeFlag = "ftr-oWin";
+      this.windowStateKey = "windowFilter";
+      this.windowResizeObserver = null;
+      this.windowViewportResizeHandler = null;
+      this.windowSaveTimeout = null;
+      this.colorRefreshInterval = null;
+      this.colorRefreshIntervalMS = 1e4;
+      this.windowMinWidth = 320;
+      this.windowMinHeight = 220;
+      this.windowMaxWidth = 1e3;
+      this.windowMaxHeight = 1400;
       this.templateManager = executor.apiManager?.templateManager;
-      this.eyeOpen = '<svg viewBox="0 .5 6 3"><path d="M0,2Q3-1 6,2Q3,5 0,2H2A1,1 0 1 0 3,1Q3,2 2,2"/></svg>';
-      this.eyeClosed = '<svg viewBox="0 1 12 6"><mask id="a"><path d="M0,0H12V8L0,2" fill="#fff"/></mask><path d="M0,4Q6-2 12,4Q6,10 0,4H4A2,2 0 1 0 6,2Q6,4 4,4ZM1,2L10,6.5L9.5,7L.5,2.5" mask="url(#a)"/></svg>';
+      this.eyeOpen = '<svg class="bm-filter-eye-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.8 12s3.1-5 8.2-5 8.2 5 8.2 5-3.1 5-8.2 5-8.2-5-8.2-5Z"/><circle cx="12" cy="12" r="2.5"/></svg>';
+      this.eyeClosed = '<svg class="bm-filter-eye-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.6 9.8C6.1 8.3 8.6 7 12 7c5.1 0 8.2 5 8.2 5a15.2 15.2 0 0 1-2.2 2.7"/><path d="M14.1 16.7a8.3 8.3 0 0 1-2.1.3c-5.1 0-8.2-5-8.2-5a14.9 14.9 0 0 1 1.8-2.3"/><path d="M5 5l14 14"/><path d="M10.4 10.7a2.5 2.5 0 0 0 2.9 2.9"/></svg>';
+      this.locationIcon = '<svg class="bm-filter-locate-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.75"/></svg>';
       const { palette, LUT: _ } = this.templateManager.paletteBM;
       this.palette = palette;
       this.tilesLoadedTotal = 0;
@@ -2246,9 +2587,22 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       this.allPixelsTotal = 0;
       this.timeRemaining = 0;
       this.timeRemainingLocalized = "";
-      this.sortPrimary = "id";
-      this.sortSecondary = "ascending";
+      this.sortPrimary = "total";
+      this.sortSecondary = "descending";
       this.showUnused = false;
+      this.showCompleted = true;
+      this.showFree = true;
+      this.showPremium = true;
+    }
+    /** Builds the preferred filter window mode for the user.
+     * @since 0.92.0
+     */
+    buildPreferredWindow() {
+      if (__privateMethod(this, _WindowFilter_instances, prefersWindowedMode_fn).call(this)) {
+        this.buildWindowed();
+        return;
+      }
+      this.buildWindow();
     }
     /** Spawns a Color Filter window.
      * If another color filter window already exists, we DON'T spawn another!
@@ -2257,61 +2611,46 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
      */
     buildWindow() {
       if (document.querySelector(`#${this.windowID}`)) {
-        document.querySelector(`#${this.windowID}`).remove();
+        __privateMethod(this, _WindowFilter_instances, closeWindow_fn).call(this);
         return;
       }
       this.window = this.addDiv({ "id": this.windowID, "class": "bm-window" }, (instance, div) => {
-      }).addDragbar().addButton({ "class": "bm-button-circle", "textContent": "\u25BC", "aria-label": 'Minimize window "Color Filter"', "data-button-status": "expanded" }, (instance, button) => {
+      }).addDragbar().addButton({ "class": "bm-button-circle", "innerHTML": minimizeIconExpanded, "aria-label": 'Minimize window "Color Filter"', "data-button-status": "expanded" }, (instance, button) => {
         button.onclick = () => instance.handleMinimization(button);
         button.ontouchend = () => {
           button.click();
         };
-      }).buildElement().addDiv().buildElement().addDiv({ "class": "bm-flex-center" }).addButton({ "class": "bm-button-circle", "textContent": "\u{1F5D7}", "aria-label": 'Switch to windowed mode for "Color Filter"' }, (instance, button) => {
+      }).buildElement().addDiv().buildElement().addDiv({ "class": "bm-flex-center" }).addButton({ "class": "bm-button-circle", "innerHTML": windowedIcon, "aria-label": 'Switch to windowed mode for "Color Filter"' }, (instance, button) => {
         button.onclick = () => {
-          document.querySelector(`#${this.windowID}`)?.remove();
+          __privateMethod(this, _WindowFilter_instances, setWindowModePreference_fn).call(this, true);
+          __privateMethod(this, _WindowFilter_instances, closeWindow_fn).call(this);
           this.buildWindowed();
         };
         button.ontouchend = () => {
           button.click();
         };
-      }).buildElement().addButton({ "class": "bm-button-circle", "textContent": "\u2716", "aria-label": 'Close window "Color Filter"' }, (instance, button) => {
-        button.onclick = () => {
-          document.querySelector(`#${this.windowID}`)?.remove();
-        };
+      }).buildElement().addButton({ "class": "bm-button-circle", "innerHTML": closeIcon, "aria-label": 'Close window "Color Filter"' }, (instance, button) => {
+        button.onclick = () => __privateMethod(this, _WindowFilter_instances, closeWindow_fn).call(this);
         button.ontouchend = () => {
           button.click();
         };
-      }).buildElement().buildElement().buildElement().addDiv({ "class": "bm-window-content" }).addDiv({ "class": "bm-container bm-center-vertically" }).addHeader(1, { "textContent": "Color Filter" }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container bm-flex-between bm-center-vertically", "style": "gap: 1.5ch;" }).addButton({ "textContent": "Hide All Colors" }, (instance, button) => {
+      }).buildElement().buildElement().buildElement().addDiv({ "class": "bm-window-content" }).addDiv({ "class": "bm-container bm-center-vertically bm-filter-header" }).addHeader(1, { "textContent": "Color Filter" }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container bm-flex-between bm-center-vertically bm-filter-toolbar", "style": "gap: 1.5ch;" }).addButton({ "class": "bm-button-secondary", "textContent": "Hide All Colors" }, (instance, button) => {
         button.onclick = () => __privateMethod(this, _WindowFilter_instances, selectColorList_fn).call(this, false);
-      }).buildElement().addButton({ "textContent": "Refresh Data" }, (instance, button) => {
-        button.onclick = () => {
-          button.disabled = true;
-          this.updateColorList();
-          button.disabled = false;
-        };
-      }).buildElement().addButton({ "textContent": "Show All Colors" }, (instance, button) => {
+      }).buildElement().addButton({ "class": "bm-button-secondary", "textContent": "Show All Colors" }, (instance, button) => {
         button.onclick = () => __privateMethod(this, _WindowFilter_instances, selectColorList_fn).call(this, true);
-      }).buildElement().buildElement().addDiv({ "class": "bm-container bm-scrollable" }).addDiv({ "class": "bm-container", "style": "margin-left: 2.5ch; margin-right: 2.5ch;" }).addDiv({ "class": "bm-container" }).addSpan({ "id": "bm-filter-tile-load", "innerHTML": "<b>Tiles Loaded:</b> 0 / ???" }).buildElement().addBr().buildElement().addSpan({ "id": "bm-filter-tot-correct", "innerHTML": "<b>Correct Pixels:</b> ???" }).buildElement().addBr().buildElement().addSpan({ "id": "bm-filter-tot-total", "innerHTML": "<b>Total Pixels:</b> ???" }).buildElement().addBr().buildElement().addSpan({ "id": "bm-filter-tot-remaining", "innerHTML": "<b>Complete:</b> ??? (???)" }).buildElement().addBr().buildElement().addSpan({ "id": "bm-filter-tot-completed", "innerHTML": "??? ???" }).buildElement().buildElement().addDiv({ "class": "bm-container" }).addP({ "innerHTML": `Press the \u{1F5D7} button to make this window smaller. Colors with the icon ${this.eyeOpen.replace("<svg", '<svg aria-label="Eye Open"')} will be shown on the canvas. Colors with the icon ${this.eyeClosed.replace("<svg", '<svg aria-label="Eye Closed"')} will not be shown on the canvas. The "Hide All Colors" and "Show All Colors" buttons only apply to colors that display in the list below. The amount of correct pixels is dependent on how many tiles of the template you have loaded since you last opened Wplace.live. If all tiles have been loaded, then the "correct pixel" count is accurate.` }).buildElement().buildElement().addHr().buildElement().addForm({ "class": "bm-container" }).addFieldset().addLegend({ "textContent": "Sort Options:", "style": "font-weight: 700;" }).buildElement().addDiv({ "class": "bm-container" }).addSelect({ "id": "bm-filter-sort-primary", "name": "sortPrimary", "textContent": "I want to view " }).addOption({ "value": "id", "textContent": "color IDs" }).buildElement().addOption({ "value": "name", "textContent": "color names" }).buildElement().addOption({ "value": "premium", "textContent": "premium colors" }).buildElement().addOption({ "value": "percent", "textContent": "percentage" }).buildElement().addOption({ "value": "correct", "textContent": "correct pixels" }).buildElement().addOption({ "value": "incorrect", "textContent": "incorrect pixels" }).buildElement().addOption({ "value": "total", "textContent": "total pixels" }).buildElement().buildElement().addSelect({ "id": "bm-filter-sort-secondary", "name": "sortSecondary", "textContent": " in " }).addOption({ "value": "ascending", "textContent": "ascending" }).buildElement().addOption({ "value": "descending", "textContent": "descending" }).buildElement().buildElement().addSpan({ "textContent": " order." }).buildElement().buildElement().addDiv({ "class": "bm-container" }).addCheckbox({ "id": "bm-filter-show-unused", "name": "showUnused", "textContent": "Show unused colors" }).buildElement().buildElement().buildElement().addDiv({ "class": "bm-container" }).addButton({ "textContent": "Sort Colors", "type": "submit" }, (instance, button) => {
-        button.onclick = (event) => {
-          event.preventDefault();
-          const formData = new FormData(document.querySelector(`#${this.windowID} form`));
-          const formValues = {};
-          for (const [input, value] of formData) {
-            formValues[input] = value;
-          }
-          console.log(`Primary: ${formValues["sortPrimary"]}; Secondary: ${formValues["sortSecondary"]}; Unused: ${formValues["showUnused"] == "on"}`);
-          __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, formValues["sortPrimary"], formValues["sortSecondary"], formValues["showUnused"] == "on");
-        };
-      }).buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().buildOverlay(this.windowParent);
+      }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container bm-scrollable bm-filter-scrollable" }).addDiv({ "class": "bm-container bm-filter-insights" }).addDiv({ "class": "bm-filter-stat-grid" }).addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Chunks" }).buildElement().addSpan({ "id": "bm-filter-tile-load", "class": "bm-filter-stat-value", "textContent": "0 / ???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Total" }).buildElement().addSpan({ "id": "bm-filter-tot-total", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Correct" }).buildElement().addSpan({ "id": "bm-filter-tot-correct", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Remaining" }).buildElement().addSpan({ "id": "bm-filter-tot-remaining", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card bm-filter-stat-card-wide" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Finished At" }).buildElement().addSpan({ "id": "bm-filter-tot-completed", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().buildElement().addHr().buildElement().addForm({ "class": "bm-container bm-filter-sort-panel" }).addFieldset().addLegend({ "textContent": "Sort Options:", "style": "font-weight: 700;" }).buildElement().addDiv({ "class": "bm-container bm-filter-sort-row" }).addSelect({ "id": "bm-filter-sort-primary", "name": "sortPrimary", "textContent": "I want to view " }).addOption({ "value": "id", "textContent": "color IDs" }).buildElement().addOption({ "value": "name", "textContent": "color names" }).buildElement().addOption({ "value": "premium", "textContent": "premium colors" }).buildElement().addOption({ "value": "percent", "textContent": "percentage" }).buildElement().addOption({ "value": "correct", "textContent": "correct pixels" }).buildElement().addOption({ "value": "incorrect", "textContent": "incorrect pixels" }).buildElement().addOption({ "value": "total", "textContent": "total pixels" }).buildElement().buildElement().addSelect({ "id": "bm-filter-sort-secondary", "name": "sortSecondary", "textContent": " in " }).addOption({ "value": "ascending", "textContent": "ascending" }).buildElement().addOption({ "value": "descending", "textContent": "descending" }).buildElement().buildElement().addSpan({ "textContent": " order." }).buildElement().buildElement().addDiv({ "class": "bm-container bm-filter-show-row" }).addSpan({ "class": "bm-filter-show-label", "textContent": "Show:" }).buildElement().addCheckbox({ "id": "bm-filter-show-unused", "name": "showUnused", "textContent": "Unused" }).buildElement().addCheckbox({ "id": "bm-filter-show-completed", "name": "showCompleted", "textContent": "Completed" }).buildElement().addCheckbox({ "id": "bm-filter-show-free", "name": "showFree", "textContent": "Free" }).buildElement().addCheckbox({ "id": "bm-filter-show-premium", "name": "showPremium", "textContent": "Premium" }).buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().buildOverlay(this.windowParent);
       this.handleDrag(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-dragbar`);
       const scrollableContainer = document.querySelector(`#${this.windowID} .bm-container.bm-scrollable`);
       __privateMethod(this, _WindowFilter_instances, buildColorList_fn).call(this, scrollableContainer);
-      __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused);
-      this.updateInnerHTML("#bm-filter-tile-load", `<b>Tiles Loaded:</b> ${localizeNumber(this.tilesLoadedTotal)} / ${localizeNumber(this.tilesTotal)}`);
-      this.updateInnerHTML("#bm-filter-tot-correct", `<b>Correct Pixels:</b> ${localizeNumber(this.allPixelsCorrectTotal)}`);
-      this.updateInnerHTML("#bm-filter-tot-total", `<b>Total Pixels:</b> ${localizeNumber(this.allPixelsTotal)}`);
-      this.updateInnerHTML("#bm-filter-tot-remaining", `<b>Remaining:</b> ${localizeNumber((this.allPixelsTotal || 0) - (this.allPixelsCorrectTotal || 0))} (${localizePercent(((this.allPixelsTotal || 0) - (this.allPixelsCorrectTotal || 0)) / (this.allPixelsTotal || 1))})`);
-      this.updateInnerHTML("#bm-filter-tot-completed", `<b>Completed at:</b> <time datetime="${this.timeRemaining.toISOString().replace(/\.\d{3}Z$/, "Z")}">${this.timeRemainingLocalized}</time>`);
+      __privateMethod(this, _WindowFilter_instances, syncSortFormControls_fn).call(this);
+      __privateMethod(this, _WindowFilter_instances, bindSortFormControls_fn).call(this);
+      __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium);
+      this.updateInnerHTML("#bm-filter-tile-load", `${localizeNumber(this.tilesLoadedTotal)} / ${localizeNumber(this.tilesTotal)}`);
+      this.updateInnerHTML("#bm-filter-tot-total", localizeNumber(this.allPixelsTotal));
+      this.updateInnerHTML("#bm-filter-tot-correct", `${localizeNumber(this.allPixelsCorrectTotal)} (${localizePercent(this.allPixelsCorrectTotal / (this.allPixelsTotal || 1))})`);
+      this.updateInnerHTML("#bm-filter-tot-remaining", `${localizeNumber((this.allPixelsTotal || 0) - (this.allPixelsCorrectTotal || 0))} (${localizePercent(((this.allPixelsTotal || 0) - (this.allPixelsCorrectTotal || 0)) / (this.allPixelsTotal || 1))})`);
+      this.updateInnerHTML("#bm-filter-tot-completed", `<time datetime="${this.timeRemaining.toISOString().replace(/\.\d{3}Z$/, "Z")}">${this.timeRemainingLocalized}</time>`);
+      __privateMethod(this, _WindowFilter_instances, startAutoRefresh_fn).call(this);
     }
     /** Spawns a windowed Color Filter window.
      * If another color filter window already exists, we DON'T spawn another!
@@ -2320,10 +2659,14 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
      */
     buildWindowed() {
       if (document.querySelector(`#${this.windowID}`)) {
-        document.querySelector(`#${this.windowID}`).remove();
+        __privateMethod(this, _WindowFilter_instances, closeWindow_fn).call(this);
         return;
       }
-      this.window = this.addDiv({ "id": this.windowID, "class": "bm-window bm-windowed" }).addDragbar().addButton({ "class": "bm-button-circle", "textContent": "\u25BC", "aria-label": 'Minimize window "Color Filter"', "data-button-status": "expanded" }, (instance, button) => {
+      this.window = this.addDiv({
+        "id": this.windowID,
+        "class": "bm-window bm-windowed",
+        "style": `width: min(360px, calc(100vw - 16px)); height: min(70vh, 32rem); min-width: min(${this.windowMinWidth}px, calc(100vw - 16px)); min-height: ${this.windowMinHeight}px; max-width: min(${this.windowMaxWidth}px, calc(100vw - 16px)); max-height: min(${this.windowMaxHeight}px, calc(100vh - 16px));`
+      }).addDragbar().addButton({ "class": "bm-button-circle", "innerHTML": minimizeIconExpanded, "aria-label": 'Minimize window "Color Filter"', "data-button-status": "expanded" }, (instance, button) => {
         button.onclick = () => {
           const windowedColorTotals = document.querySelector("#bm-filter-windowed-color-totals");
           if (windowedColorTotals) {
@@ -2334,36 +2677,38 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         button.ontouchend = () => {
           button.click();
         };
-      }).buildElement().addDiv().addSpan({ "id": "bm-filter-windowed-color-totals", "class": "bm-dragbar-text", "style": "font-weight: 700;" }).buildElement().buildElement().addDiv({ "class": "bm-flex-center" }).addButton({ "class": "bm-button-circle", "textContent": "\u{1F5D6}", "aria-label": 'Switch to fullscreen mode for "Color Filter"' }, (instance, button) => {
+      }).buildElement().addDiv().addSpan({ "id": "bm-filter-windowed-color-totals", "class": "bm-dragbar-text", "style": "font-weight: 700;" }).buildElement().buildElement().addDiv({ "class": "bm-flex-center" }).addButton({ "class": "bm-button-circle", "innerHTML": fullscreenIcon, "aria-label": 'Switch to fullscreen mode for "Color Filter"' }, (instance, button) => {
         button.onclick = () => {
-          document.querySelector(`#${this.windowID}`)?.remove();
+          __privateMethod(this, _WindowFilter_instances, setWindowModePreference_fn).call(this, false);
+          __privateMethod(this, _WindowFilter_instances, closeWindow_fn).call(this);
           this.buildWindow();
         };
         button.ontouchend = () => {
           button.click();
         };
-      }).buildElement().addButton({ "class": "bm-button-circle", "textContent": "\u2716", "aria-label": 'Close window "Color Filter"' }, (instance, button) => {
-        button.onclick = () => {
-          document.querySelector(`#${this.windowID}`)?.remove();
-        };
+      }).buildElement().addButton({ "class": "bm-button-circle", "innerHTML": closeIcon, "aria-label": 'Close window "Color Filter"' }, (instance, button) => {
+        button.onclick = () => __privateMethod(this, _WindowFilter_instances, closeWindow_fn).call(this);
         button.ontouchend = () => {
           button.click();
         };
-      }).buildElement().buildElement().buildElement().addDiv({ "class": "bm-window-content" }).addDiv({ "class": "bm-container bm-center-vertically" }).addHeader(1, { "textContent": "Color Filter" }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container bm-flex-between bm-center-vertically", "style": "gap: 1.5ch;" }).addButton({ "textContent": "None" }, (instance, button) => {
+      }).buildElement().buildElement().buildElement().addDiv({ "class": "bm-window-content" }).addDiv({ "class": "bm-container bm-center-vertically bm-filter-header" }).addHeader(1, { "textContent": "Color Filter" }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container bm-flex-between bm-center-vertically bm-filter-toolbar", "style": "gap: 1.5ch;" }).addButton({ "class": "bm-button-secondary", "textContent": "Hide All" }, (instance, button) => {
         button.onclick = () => __privateMethod(this, _WindowFilter_instances, selectColorList_fn).call(this, false);
-      }).buildElement().addButton({ "textContent": "Refresh" }, (instance, button) => {
-        button.onclick = () => {
-          button.disabled = true;
-          this.updateColorList();
-          button.disabled = false;
-        };
-      }).buildElement().addButton({ "textContent": "All" }, (instance, button) => {
+      }).buildElement().addButton({ "class": "bm-button-secondary", "textContent": "Show All" }, (instance, button) => {
         button.onclick = () => __privateMethod(this, _WindowFilter_instances, selectColorList_fn).call(this, true);
-      }).buildElement().buildElement().addDiv({ "class": "bm-container bm-scrollable" }).buildElement().buildElement().buildElement().buildOverlay(this.windowParent);
-      this.handleDrag(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-dragbar`);
+      }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container bm-scrollable bm-filter-scrollable" }).buildElement().buildElement().addDiv({
+        "class": "bm-resize-corner",
+        "title": "Resize Color Filter window",
+        "aria-label": "Resize Color Filter window",
+        "role": "presentation",
+        "textContent": "\u25E2",
+        "style": "position: absolute; right: 0; bottom: 0; width: 28px; height: 28px; display: flex; align-items: flex-end; justify-content: flex-end; padding-right: 4px; padding-bottom: 4px; box-sizing: border-box; z-index: 5; cursor: nwse-resize; pointer-events: auto; touch-action: none; user-select: none; font-size: 8px; line-height: 1; color: rgba(255,255,255,0.95); background: transparent; border: none; box-shadow: none;"
+      }).buildElement().buildElement().buildOverlay(this.windowParent);
+      __privateMethod(this, _WindowFilter_instances, initializeWindowedPersistence_fn).call(this);
       const scrollableContainer = document.querySelector(`#${this.windowID} .bm-container.bm-scrollable`);
       __privateMethod(this, _WindowFilter_instances, buildColorList_fn).call(this, scrollableContainer);
-      __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused);
+      __privateMethod(this, _WindowFilter_instances, syncSortFormControls_fn).call(this);
+      __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium);
+      __privateMethod(this, _WindowFilter_instances, startAutoRefresh_fn).call(this);
     }
     /** The information about a specific color on the palette.
      * @typedef {Object} ColorData
@@ -2373,6 +2718,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
      * @property {string} colorCorrectLocalized
      * @property {string} colorPercent
      * @property {number} colorIncorrect
+     * @property {boolean} colorCompleted
      */
     /** Updates the information inside the colors in the color list.
      * If the color list does not exist yet, it returns the color information instead.
@@ -2399,13 +2745,15 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
           colorPercent = isNaN(colorCorrect / colorTotal) ? "???" : localizePercent(colorCorrect / colorTotal);
         }
         const colorIncorrect = parseInt(colorTotal) - parseInt(colorCorrect);
+        const colorCompleted = colorTotal > 0 && typeof colorCorrect == "number" && colorIncorrect <= 0;
         colorStatistics[color.id] = {
           colorTotal,
           colorTotalLocalized,
           colorCorrect,
           colorCorrectLocalized,
           colorPercent,
-          colorIncorrect
+          colorIncorrect,
+          colorCompleted
         };
       }
       const windowedColorTotals = document.querySelector("#bm-filter-windowed-color-totals");
@@ -2414,6 +2762,11 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         const allTotal = this.allPixelsTotal.toString().length > 7 ? this.allPixelsTotal.toString().slice(0, 2) + "\u2026" + this.allPixelsTotal.toString().slice(-3) : this.allPixelsTotal.toString();
         this.updateInnerHTML("#bm-filter-windowed-color-totals", `${allCorrect}/${allTotal}`, true);
       }
+      this.updateInnerHTML("#bm-filter-tile-load", `${localizeNumber(this.tilesLoadedTotal)} / ${localizeNumber(this.tilesTotal)}`);
+      this.updateInnerHTML("#bm-filter-tot-total", localizeNumber(this.allPixelsTotal));
+      this.updateInnerHTML("#bm-filter-tot-correct", `${localizeNumber(this.allPixelsCorrectTotal)} (${localizePercent(this.allPixelsCorrectTotal / (this.allPixelsTotal || 1))})`);
+      this.updateInnerHTML("#bm-filter-tot-remaining", `${localizeNumber((this.allPixelsTotal || 0) - (this.allPixelsCorrectTotal || 0))} (${localizePercent(((this.allPixelsTotal || 0) - (this.allPixelsCorrectTotal || 0)) / (this.allPixelsTotal || 1))})`);
+      this.updateInnerHTML("#bm-filter-tot-completed", `<time datetime="${this.timeRemaining.toISOString().replace(/\.\d{3}Z$/, "Z")}">${this.timeRemainingLocalized}</time>`);
       if (!colorList) {
         return colorStatistics;
       }
@@ -2426,25 +2779,331 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
           colorPercent,
           colorTotal,
           colorTotalLocalized,
-          colorIncorrect
+          colorIncorrect,
+          colorCompleted
         } = colorStatistics[colorID];
         color.dataset["correct"] = !Number.isNaN(parseInt(colorCorrect)) ? colorCorrect : "0";
         color.dataset["total"] = colorTotal;
         color.dataset["percent"] = colorPercent.slice(-1) == "%" ? colorPercent.slice(0, -1) : "0";
         color.dataset["incorrect"] = colorIncorrect || 0;
+        color.dataset["completed"] = +colorCompleted;
         const pixelCount = document.querySelector(`#${this.windowID} .bm-filter-color[data-id="${colorID}"] .bm-filter-color-pxl-cnt`);
         if (pixelCount) {
-          pixelCount.textContent = `${colorCorrectLocalized} / ${colorTotalLocalized}`;
+          const isWindowedPixelCount = !!pixelCount.closest(`#${this.windowID}.bm-windowed`);
+          if (isWindowedPixelCount) {
+            pixelCount.textContent = `${colorCorrectLocalized} / ${colorTotalLocalized}`;
+          } else {
+            pixelCount.textContent = `${colorCorrectLocalized} / ${colorTotalLocalized}`;
+          }
         }
         const pixelDesc = document.querySelector(`#${this.windowID} .bm-filter-color[data-id="${colorID}"] .bm-filter-color-pxl-desc`);
         if (pixelDesc) {
-          pixelDesc.textContent = `${typeof colorIncorrect == "number" && !isNaN(colorIncorrect) ? colorIncorrect : "???"} incorrect pixel${colorIncorrect == 1 ? "" : "s"}. Completed: ${colorPercent}`;
+          pixelDesc.innerHTML = `${colorPercent} done<br>${typeof colorIncorrect == "number" && !isNaN(colorIncorrect) ? colorIncorrect : "???"} off`;
+        }
+        const locateButton = document.querySelector(`#${this.windowID} .bm-filter-color[data-id="${colorID}"] .bm-filter-color-locate`);
+        if (locateButton) {
+          locateButton.disabled = !Number(colorTotal);
         }
       }
-      __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused);
+      __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium);
     }
   };
   _WindowFilter_instances = new WeakSet();
+  /** Retrieves the persisted window state object.
+   * @returns {Object | null}
+   * @since 0.92.0
+   */
+  getWindowState_fn = function() {
+    var _a, _b;
+    if (!this.settingsManager) {
+      return null;
+    }
+    (_a = this.settingsManager.userSettings)[_b = this.windowStateKey] ?? (_a[_b] = {});
+    return this.settingsManager.userSettings[this.windowStateKey];
+  };
+  /** Returns whether the filter should open in windowed mode.
+   * Defaults to the original fullscreen view unless the user chose windowed mode.
+   * @returns {boolean}
+   * @since 0.92.1
+   */
+  prefersWindowedMode_fn = function() {
+    const windowState = __privateMethod(this, _WindowFilter_instances, getWindowState_fn).call(this);
+    if (windowState?.mode == "windowed") {
+      return true;
+    }
+    if (windowState?.mode == "fullscreen") {
+      return false;
+    }
+    return !!this.settingsManager?.userSettings?.flags?.includes(this.windowModeFlag);
+  };
+  /** Updates the preferred window mode setting.
+   * @param {boolean} shouldBeWindowed
+   * @since 0.92.0
+   */
+  setWindowModePreference_fn = function(shouldBeWindowed) {
+    const windowState = __privateMethod(this, _WindowFilter_instances, getWindowState_fn).call(this);
+    if (windowState) {
+      windowState.mode = shouldBeWindowed ? "windowed" : "fullscreen";
+    }
+    if (!this.settingsManager) {
+      return;
+    }
+    this.settingsManager.toggleFlag(this.windowModeFlag, shouldBeWindowed);
+    void this.settingsManager.saveUserStorageNow();
+  };
+  /** Updates the visible sort controls to reflect the active sort state.
+   * @since 0.92.1
+   */
+  syncSortFormControls_fn = function() {
+    const sortPrimaryInput = document.querySelector(`#${this.windowID} #bm-filter-sort-primary`);
+    const sortSecondaryInput = document.querySelector(`#${this.windowID} #bm-filter-sort-secondary`);
+    const showUnusedInput = document.querySelector(`#${this.windowID} #bm-filter-show-unused`);
+    const showCompletedInput = document.querySelector(`#${this.windowID} #bm-filter-show-completed`);
+    const showFreeInput = document.querySelector(`#${this.windowID} #bm-filter-show-free`);
+    const showPremiumInput = document.querySelector(`#${this.windowID} #bm-filter-show-premium`);
+    if (sortPrimaryInput instanceof HTMLSelectElement) {
+      sortPrimaryInput.value = this.sortPrimary;
+    }
+    if (sortSecondaryInput instanceof HTMLSelectElement) {
+      sortSecondaryInput.value = this.sortSecondary;
+    }
+    if (showUnusedInput instanceof HTMLInputElement) {
+      showUnusedInput.checked = this.showUnused;
+    }
+    if (showCompletedInput instanceof HTMLInputElement) {
+      showCompletedInput.checked = this.showCompleted;
+    }
+    if (showFreeInput instanceof HTMLInputElement) {
+      showFreeInput.checked = this.showFree;
+    }
+    if (showPremiumInput instanceof HTMLInputElement) {
+      showPremiumInput.checked = this.showPremium;
+    }
+  };
+  /** Reads the sort form and applies the selected color list filters immediately.
+   * @since 0.92.7
+   */
+  applySortFormControls_fn = function() {
+    const form = document.querySelector(`#${this.windowID} form`);
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+    const formData = new FormData(form);
+    const formValues = {};
+    for (const [input, value] of formData) {
+      formValues[input] = value;
+    }
+    __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, formValues["sortPrimary"], formValues["sortSecondary"], formValues["showUnused"] == "on", formValues["showCompleted"] == "on", formValues["showFree"] == "on", formValues["showPremium"] == "on");
+  };
+  /** Makes the sort form reactive, so the list updates as soon as a control changes.
+   * @since 0.92.7
+   */
+  bindSortFormControls_fn = function() {
+    const form = document.querySelector(`#${this.windowID} form`);
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+    form.onchange = () => __privateMethod(this, _WindowFilter_instances, applySortFormControls_fn).call(this);
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      __privateMethod(this, _WindowFilter_instances, applySortFormControls_fn).call(this);
+    };
+  };
+  /** Immediately closes the filter window and cleans up persistence observers.
+   * @since 0.92.0
+   */
+  closeWindow_fn = function() {
+    const windowElement = document.querySelector(`#${this.windowID}`);
+    if (windowElement?.classList.contains("bm-windowed")) {
+      __privateMethod(this, _WindowFilter_instances, saveWindowState_fn).call(this, windowElement);
+    }
+    __privateMethod(this, _WindowFilter_instances, stopAutoRefresh_fn).call(this);
+    __privateMethod(this, _WindowFilter_instances, cleanupWindowPersistence_fn).call(this);
+    windowElement?.remove();
+  };
+  /** Starts the automatic Color Filter statistics refresh loop.
+   * @since 0.92.1
+   */
+  startAutoRefresh_fn = function() {
+    __privateMethod(this, _WindowFilter_instances, stopAutoRefresh_fn).call(this);
+    this.colorRefreshInterval = setInterval(() => {
+      if (!document.querySelector(`#${this.windowID}`)) {
+        __privateMethod(this, _WindowFilter_instances, stopAutoRefresh_fn).call(this);
+        return;
+      }
+      this.updateColorList();
+    }, this.colorRefreshIntervalMS);
+  };
+  /** Stops the automatic Color Filter statistics refresh loop.
+   * @since 0.92.1
+   */
+  stopAutoRefresh_fn = function() {
+    if (!this.colorRefreshInterval) {
+      return;
+    }
+    clearInterval(this.colorRefreshInterval);
+    this.colorRefreshInterval = null;
+  };
+  /** Disconnects live observers used for window persistence.
+   * @since 0.92.0
+   */
+  cleanupWindowPersistence_fn = function() {
+    if (this.windowResizeObserver) {
+      this.windowResizeObserver.disconnect();
+      this.windowResizeObserver = null;
+    }
+    if (this.windowViewportResizeHandler) {
+      window.removeEventListener("resize", this.windowViewportResizeHandler);
+      this.windowViewportResizeHandler = null;
+    }
+    if (this.windowSaveTimeout) {
+      clearTimeout(this.windowSaveTimeout);
+      this.windowSaveTimeout = null;
+    }
+  };
+  /** Returns a clamped dimension value for the window.
+   * @param {number} size - The size in pixels
+   * @param {number} minimum - Minimum allowed size
+   * @param {number} maximum - Maximum allowed size
+   * @returns {number}
+   * @since 0.92.0
+   */
+  clampWindowDimension_fn = function(size, minimum, maximum) {
+    const resolvedMaximum = Math.max(1, maximum);
+    const resolvedMinimum = Math.min(minimum, resolvedMaximum);
+    return Math.min(Math.max(Math.round(Number(size) || resolvedMinimum), resolvedMinimum), resolvedMaximum);
+  };
+  /** Returns a viewport-safe position for the window.
+   * @param {HTMLElement} windowElement
+   * @param {number} x
+   * @param {number} y
+   * @returns {{x: number, y: number}}
+   * @since 0.92.0
+   */
+  clampWindowPosition_fn = function(windowElement, x, y) {
+    const margin = 8;
+    const maxX = Math.max(margin, window.innerWidth - windowElement.offsetWidth - margin);
+    const maxY = Math.max(margin, window.innerHeight - windowElement.offsetHeight - margin);
+    return {
+      x: Math.min(Math.max(Math.round(Number(x) || margin), margin), maxX),
+      y: Math.min(Math.max(Math.round(Number(y) || margin), margin), maxY)
+    };
+  };
+  /** Applies the persisted size and position to the windowed filter.
+   * @param {HTMLElement} windowElement
+   * @since 0.92.0
+   */
+  restoreWindowState_fn = function(windowElement) {
+    const windowState = __privateMethod(this, _WindowFilter_instances, getWindowState_fn).call(this);
+    if (!windowState || !windowElement) {
+      return;
+    }
+    const width = Number(windowState.width);
+    const height = Number(windowState.height);
+    const hasWidth = Number.isFinite(width);
+    const hasHeight = Number.isFinite(height);
+    if (hasWidth) {
+      windowState.width = __privateMethod(this, _WindowFilter_instances, clampWindowDimension_fn).call(this, width, this.windowMinWidth, Math.min(this.windowMaxWidth, window.innerWidth - 16));
+      windowElement.style.width = `${windowState.width}px`;
+    }
+    if (hasHeight) {
+      windowState.height = __privateMethod(this, _WindowFilter_instances, clampWindowDimension_fn).call(this, height, this.windowMinHeight, Math.min(this.windowMaxHeight, window.innerHeight - 16));
+      windowElement.style.height = `${windowState.height}px`;
+    }
+    requestAnimationFrame(() => {
+      if (!windowElement.isConnected) {
+        return;
+      }
+      const x = Number(windowState.x);
+      const y = Number(windowState.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        return;
+      }
+      const clampedPosition = __privateMethod(this, _WindowFilter_instances, clampWindowPosition_fn).call(this, windowElement, x, y);
+      windowElement.style.left = "0px";
+      windowElement.style.top = "0px";
+      windowElement.style.right = "";
+      windowElement.style.transform = `translate(${clampedPosition.x}px, ${clampedPosition.y}px)`;
+      if (clampedPosition.x != x || clampedPosition.y != y) {
+        windowState.x = clampedPosition.x;
+        windowState.y = clampedPosition.y;
+        void this.settingsManager?.saveUserStorageNow();
+      }
+    });
+  };
+  /** Saves the current size and position of the windowed filter.
+   * @param {HTMLElement} windowElement
+   * @since 0.92.0
+   */
+  saveWindowState_fn = function(windowElement) {
+    const windowState = __privateMethod(this, _WindowFilter_instances, getWindowState_fn).call(this);
+    if (!windowState || !windowElement?.isConnected || !windowElement.classList.contains("bm-windowed")) {
+      return;
+    }
+    if (windowElement.querySelector('.bm-dragbar button[data-button-status="collapsed"]')) {
+      return;
+    }
+    const rect = windowElement.getBoundingClientRect();
+    const width = __privateMethod(this, _WindowFilter_instances, clampWindowDimension_fn).call(this, rect.width, this.windowMinWidth, Math.min(this.windowMaxWidth, window.innerWidth - 16));
+    const height = __privateMethod(this, _WindowFilter_instances, clampWindowDimension_fn).call(this, rect.height, this.windowMinHeight, Math.min(this.windowMaxHeight, window.innerHeight - 16));
+    if (Math.round(rect.width) != width) {
+      windowElement.style.width = `${width}px`;
+    }
+    if (Math.round(rect.height) != height) {
+      windowElement.style.height = `${height}px`;
+    }
+    const clampedPosition = __privateMethod(this, _WindowFilter_instances, clampWindowPosition_fn).call(this, windowElement, rect.left, rect.top);
+    windowElement.style.left = "0px";
+    windowElement.style.top = "0px";
+    windowElement.style.right = "";
+    windowElement.style.transform = `translate(${clampedPosition.x}px, ${clampedPosition.y}px)`;
+    windowState.x = clampedPosition.x;
+    windowState.y = clampedPosition.y;
+    windowState.width = width;
+    windowState.height = height;
+    void this.settingsManager?.saveUserStorageNow();
+  };
+  /** Debounces persisting the current window size and position.
+   * @param {HTMLElement} windowElement
+   * @param {number} [delay=150]
+   * @since 0.92.0
+   */
+  scheduleWindowStateSave_fn = function(windowElement, delay = 150) {
+    if (this.windowSaveTimeout) {
+      clearTimeout(this.windowSaveTimeout);
+    }
+    this.windowSaveTimeout = setTimeout(() => {
+      this.windowSaveTimeout = null;
+      __privateMethod(this, _WindowFilter_instances, saveWindowState_fn).call(this, windowElement);
+    }, delay);
+  };
+  /** Enables persistence and resize handling for the windowed filter.
+   * @since 0.92.0
+   */
+  initializeWindowedPersistence_fn = function() {
+    const windowElement = document.querySelector(`#${this.windowID}.bm-window`);
+    if (!windowElement) {
+      return;
+    }
+    __privateMethod(this, _WindowFilter_instances, cleanupWindowPersistence_fn).call(this);
+    __privateMethod(this, _WindowFilter_instances, restoreWindowState_fn).call(this, windowElement);
+    this.handleDrag(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-dragbar`, {
+      onEnd: ({ element }) => __privateMethod(this, _WindowFilter_instances, saveWindowState_fn).call(this, element)
+    });
+    this.handleResize(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-resize-corner`, {
+      minWidth: Math.min(this.windowMinWidth, window.innerWidth - 16),
+      minHeight: this.windowMinHeight,
+      maxWidth: Math.min(this.windowMaxWidth, window.innerWidth - 16),
+      maxHeight: Math.min(this.windowMaxHeight, window.innerHeight - 16),
+      onEnd: ({ element }) => __privateMethod(this, _WindowFilter_instances, saveWindowState_fn).call(this, element)
+    });
+    if (typeof ResizeObserver == "function") {
+      this.windowResizeObserver = new ResizeObserver(() => __privateMethod(this, _WindowFilter_instances, scheduleWindowStateSave_fn).call(this, windowElement));
+      this.windowResizeObserver.observe(windowElement);
+    }
+    this.windowViewportResizeHandler = () => __privateMethod(this, _WindowFilter_instances, scheduleWindowStateSave_fn).call(this, windowElement, 0);
+    window.addEventListener("resize", this.windowViewportResizeHandler);
+  };
   /** Creates the color list container.
    * @param {HTMLElement} parentElement - Parent element to add the color list to as a child
    * @since 0.88.222
@@ -2463,13 +3122,17 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         textColorForPaletteColorBackground = "transparent";
       }
       const bgEffectForButtons = textColorForPaletteColorBackground == "white" ? "bm-button-hover-white" : "bm-button-hover-black";
+      const colorRGB = color.rgb?.map((channel) => Number(channel) || 0).join(",");
+      const colorCardText = color.id == -2 || color.id == -1 || color.id == 0 ? "white" : textColorForPaletteColorBackground;
+      const colorCardStyle = `--bm-filter-card-bg: rgb(${colorRGB}); --bm-filter-card-fg: ${colorCardText};`;
       const {
         colorCorrect,
         colorCorrectLocalized,
         colorPercent,
         colorTotal,
         colorTotalLocalized,
-        colorIncorrect
+        colorIncorrect,
+        colorCompleted
       } = colorStatistics[color.id];
       const isColorHidden = !!(this.templateManager.shouldFilterColor.get(color.id) || false);
       if (isWindowedMode) {
@@ -2480,96 +3143,98 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
           "data-id": color.id,
           "data-name": color.name,
           "data-premium": +color.premium,
+          "data-state": isColorHidden ? "hidden" : "shown",
           "data-correct": !Number.isNaN(parseInt(colorCorrect)) ? colorCorrect : "0",
           "data-total": colorTotal,
           "data-percent": colorPercent.slice(-1) == "%" ? colorPercent.slice(0, -1) : "0",
-          "data-incorrect": colorIncorrect || 0
-        }).addDiv({ "class": "bm-filter-container-rgb", "style": `background-color: rgb(${color.rgb?.map((channel) => Number(channel) || 0).join(",")});${color.premium ? styleBackgroundStar : ""}` }).addButton(
+          "data-incorrect": colorIncorrect || 0,
+          "data-completed": +colorCompleted
+        }, (instance, div) => __privateMethod(this, _WindowFilter_instances, initializeColorBlockToggle_fn).call(this, div, color)).addDiv({ "class": "bm-filter-container-rgb", "style": `background-color: rgb(${color.rgb?.map((channel) => Number(channel) || 0).join(",")});${color.premium ? styleBackgroundStar : ""}` }).addButton(
           {
-            "class": "bm-button-trans " + bgEffectForButtons,
+            "class": "bm-button-trans bm-filter-color-visibility " + bgEffectForButtons,
             "data-state": isColorHidden ? "hidden" : "shown",
             "aria-label": isColorHidden ? `Show the color ${color.name || ""} on templates.` : `Hide the color ${color.name || ""} on templates.`,
-            "innerHTML": isColorHidden ? this.eyeClosed.replace("<svg", `<svg fill="${textColorForPaletteColorBackground}"`) : this.eyeOpen.replace("<svg", `<svg fill="${textColorForPaletteColorBackground}"`)
+            "innerHTML": isColorHidden ? this.eyeClosed : this.eyeOpen,
+            "style": `color: ${textColorForPaletteColorBackground};`
           },
           (instance, button) => {
-            button.onclick = () => {
-              button.style.textDecoration = "none";
-              button.disabled = true;
-              if (button.dataset["state"] == "shown") {
-                button.innerHTML = this.eyeClosed.replace("<svg", `<svg fill="${textColorForPaletteColorBackground}"`);
-                button.dataset["state"] = "hidden";
-                button.ariaLabel = `Show the color ${color.name || ""} on templates.`;
-                this.templateManager.shouldFilterColor.set(color.id, true);
-              } else {
-                button.innerHTML = this.eyeOpen.replace("<svg", `<svg fill="${textColorForPaletteColorBackground}"`);
-                button.dataset["state"] = "shown";
-                button.ariaLabel = `Hide the color ${color.name || ""} on templates.`;
-                this.templateManager.shouldFilterColor.delete(color.id);
-              }
-              button.disabled = false;
-              button.style.textDecoration = "";
+            button.onclick = (event) => {
+              event.stopPropagation();
+              __privateMethod(this, _WindowFilter_instances, toggleColorVisibility_fn).call(this, button, color);
             };
             if (!color.id) {
               button.disabled = true;
             }
+            __privateMethod(this, _WindowFilter_instances, syncColorToggleLabel_fn).call(this, button, color);
           }
         ).buildElement().addSmall({ "textContent": `#${color.id.toString().padStart(2, 0)}`, "style": `color: ${color.id == -1 || color.id == 0 ? "white" : textColorForPaletteColorBackground}` }).buildElement().addHeader(2, { "textContent": color.name, "style": `color: ${color.id == -1 || color.id == 0 ? "white" : textColorForPaletteColorBackground}` }).buildElement().addSmall({ "class": "bm-filter-color-pxl-cnt", "textContent": `${colorCorrectLocalized} / ${colorTotalLocalized}`, "style": `color: ${color.id == -1 || color.id == 0 ? "white" : textColorForPaletteColorBackground}; flex: 1 1 auto; text-align: right;` }).buildElement().buildElement().buildElement();
       } else {
         colorList.addDiv({
           "class": "bm-container bm-filter-color bm-flex-between",
+          "style": colorCardStyle,
           "data-id": color.id,
           "data-name": color.name,
           "data-premium": +color.premium,
+          "data-state": isColorHidden ? "hidden" : "shown",
           "data-correct": !Number.isNaN(parseInt(colorCorrect)) ? colorCorrect : "0",
           "data-total": colorTotal,
           "data-percent": colorPercent.slice(-1) == "%" ? colorPercent.slice(0, -1) : "0",
-          "data-incorrect": colorIncorrect || 0
-        }).addDiv({ "class": "bm-flex-center", "style": "flex-direction: column;" }).addDiv({ "class": "bm-filter-container-rgb", "style": `background-color: rgb(${color.rgb?.map((channel) => Number(channel) || 0).join(",")});` }).addButton(
+          "data-incorrect": colorIncorrect || 0,
+          "data-completed": +colorCompleted
+        }, (instance, div) => __privateMethod(this, _WindowFilter_instances, initializeColorBlockToggle_fn).call(this, div, color)).addDiv({ "class": "bm-filter-premium-star", "aria-hidden": "true" }).buildElement().addDiv({ "class": "bm-filter-color-main" }).addDiv({ "class": "bm-filter-container-rgb" }).addButton(
           {
-            "class": "bm-button-trans " + bgEffectForButtons,
+            "class": "bm-button-trans bm-filter-color-visibility " + bgEffectForButtons,
             "data-state": isColorHidden ? "hidden" : "shown",
             "aria-label": isColorHidden ? `Show the color ${color.name || ""} on templates.` : `Hide the color ${color.name || ""} on templates.`,
-            "innerHTML": isColorHidden ? this.eyeClosed.replace("<svg", `<svg fill="${textColorForPaletteColorBackground}"`) : this.eyeOpen.replace("<svg", `<svg fill="${textColorForPaletteColorBackground}"`)
+            "innerHTML": isColorHidden ? this.eyeClosed : this.eyeOpen,
+            "style": `color: ${colorCardText};`
           },
           (instance, button) => {
-            button.onclick = () => {
-              button.style.textDecoration = "none";
-              button.disabled = true;
-              if (button.dataset["state"] == "shown") {
-                button.innerHTML = this.eyeClosed.replace("<svg", `<svg fill="${textColorForPaletteColorBackground}"`);
-                button.dataset["state"] = "hidden";
-                button.ariaLabel = `Show the color ${color.name || ""} on templates.`;
-                this.templateManager.shouldFilterColor.set(color.id, true);
-              } else {
-                button.innerHTML = this.eyeOpen.replace("<svg", `<svg fill="${textColorForPaletteColorBackground}"`);
-                button.dataset["state"] = "shown";
-                button.ariaLabel = `Hide the color ${color.name || ""} on templates.`;
-                this.templateManager.shouldFilterColor.delete(color.id);
-              }
-              button.disabled = false;
-              button.style.textDecoration = "";
+            button.onclick = (event) => {
+              event.stopPropagation();
+              __privateMethod(this, _WindowFilter_instances, toggleColorVisibility_fn).call(this, button, color);
             };
             if (!color.id) {
               button.disabled = true;
             }
+            __privateMethod(this, _WindowFilter_instances, syncColorToggleLabel_fn).call(this, button, color);
           }
-        ).buildElement().buildElement().addSmall({ "textContent": color.id == -2 ? "???????" : colorValueHex }).buildElement().buildElement().addDiv({ "class": "bm-flex-between" }).addHeader(2, { "textContent": (color.premium ? "\u2605 " : "") + color.name }).buildElement().addDiv({ "class": "bm-flex-between", "style": "gap: 1.5ch;" }).addSmall({ "textContent": `#${color.id.toString().padStart(2, 0)}` }).buildElement().addSmall({ "class": "bm-filter-color-pxl-cnt", "textContent": `${colorCorrectLocalized} / ${colorTotalLocalized}` }).buildElement().buildElement().addP({ "class": "bm-filter-color-pxl-desc", "textContent": `${typeof colorIncorrect == "number" && !isNaN(colorIncorrect) ? colorIncorrect : "???"} incorrect pixel${colorIncorrect == 1 ? "" : "s"}. Completed: ${colorPercent}` }).buildElement().buildElement().buildElement();
+        ).buildElement().buildElement().addDiv({ "class": "bm-filter-color-title" }).addSmall({ "textContent": `#${color.id.toString().padStart(2, 0)} / ${color.id == -2 ? "mixed" : colorValueHex}` }).buildElement().addHeader(2, { "textContent": color.name }).buildElement().buildElement().buildElement().addDiv({ "class": "bm-filter-color-meta" }).addButton({ "class": "bm-button-circle bm-filter-locate bm-filter-color-locate", "title": `Go to a remaining ${color.name || "color"} pixel`, "aria-label": `Go to a remaining ${color.name || "color"} pixel`, "innerHTML": this.locationIcon }, (instance, button) => {
+          button.onclick = (event) => {
+            event.stopPropagation();
+            __privateMethod(this, _WindowFilter_instances, goToRandomPendingPixel_fn).call(this, color.id, color.name);
+          };
+          button.disabled = !Number(colorTotal);
+        }).buildElement().addDiv({ "class": "bm-filter-color-progress" }).addSpan({ "class": "bm-filter-color-pxl-cnt", "textContent": `${colorCorrectLocalized} / ${colorTotalLocalized}` }).buildElement().addSmall({ "class": "bm-filter-color-pxl-desc", "innerHTML": `${colorPercent} done<br>${typeof colorIncorrect == "number" && !isNaN(colorIncorrect) ? colorIncorrect : "???"} off` }).buildElement().buildElement().buildElement().buildElement();
       }
     }
     colorList.buildOverlay(parentElement);
   };
-  /** Sorts the color list & hides unused colors
+  /** Sorts the color list & hides colors excluded by the current filters.
    * @param {string} sortPrimary - The name of the dataset attribute to sort by.
    * @param {string} sortSecondary - Secondary sort. It can be either 'ascending' or 'descending'.
    * @param {boolean} showUnused - Should unused colors be displayed in the list to the user?
+   * @param {boolean} showCompleted - Should completed colors be displayed in the list to the user?
+   * @param {boolean} showFree - Should free colors be displayed in the list to the user?
+   * @param {boolean} showPremium - Should premium colors be displayed in the list to the user?
    * @since 0.88.222
    */
-  sortColorList_fn = function(sortPrimary, sortSecondary, showUnused) {
+  sortColorList_fn = function(sortPrimary, sortSecondary, showUnused, showCompleted = this.showCompleted, showFree = this.showFree, showPremium = this.showPremium) {
     this.sortPrimary = sortPrimary;
     this.sortSecondary = sortSecondary;
     this.showUnused = showUnused;
+    this.showCompleted = showCompleted;
+    this.showFree = showFree;
+    this.showPremium = showPremium;
     const colorList = document.querySelector(`#${this.colorListID}`);
     const colors = Array.from(colorList.children);
+    for (const color of colors) {
+      const isUnused = !Number(color.getAttribute("data-total"));
+      const isCompleted = color.getAttribute("data-completed") == "1";
+      const isPremium = color.getAttribute("data-premium") == "1";
+      const shouldHideColor = !showUnused && isUnused || !showCompleted && isCompleted || !showFree && !isPremium || !showPremium && isPremium;
+      color.classList.toggle("bm-color-hide", shouldHideColor);
+    }
     colors.sort((index, nextIndex) => {
       const indexValue = index.getAttribute("data-" + sortPrimary);
       const nextIndexValue = nextIndex.getAttribute("data-" + sortPrimary);
@@ -2577,11 +3242,6 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       const nextIndexValueNumber = parseFloat(nextIndexValue);
       const indexValueNumberIsNumber = !isNaN(indexValueNumber);
       const nextIndexValueNumberIsNumber = !isNaN(nextIndexValueNumber);
-      if (showUnused) {
-        index.classList.remove("bm-color-hide");
-      } else if (!Number(index.getAttribute("data-total"))) {
-        index.classList.add("bm-color-hide");
-      }
       if (indexValueNumberIsNumber && nextIndexValueNumberIsNumber) {
         return sortSecondary === "ascending" ? indexValueNumber - nextIndexValueNumber : nextIndexValueNumber - indexValueNumber;
       } else {
@@ -2605,7 +3265,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       if (color.classList?.contains("bm-color-hide")) {
         continue;
       }
-      const button = color.querySelector(".bm-filter-container-rgb button");
+      const button = color.querySelector(".bm-filter-color-visibility");
       if (button.dataset["state"] == "hidden" && !userWantsUnselect) {
         continue;
       }
@@ -2615,10 +3275,124 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       button.click();
     }
   };
+  /** Updates the color toggle labels on the icon and the clickable color block.
+   * @param {HTMLButtonElement} button - The color visibility button
+   * @param {Object} color - Palette color metadata
+   * @since 0.95.0
+   */
+  syncColorToggleLabel_fn = function(button, color) {
+    const ariaLabel = button.dataset["state"] == "hidden" ? `Show the color ${color.name || ""} on templates.` : `Hide the color ${color.name || ""} on templates.`;
+    button.ariaLabel = ariaLabel;
+    const colorElement = button.closest(".bm-filter-color");
+    colorElement?.setAttribute("aria-label", ariaLabel);
+    colorElement?.setAttribute("data-state", button.dataset["state"]);
+  };
+  /** Toggles a color from the clickable color block or its icon.
+   * @param {HTMLButtonElement} button - The color visibility button
+   * @param {Object} color - Palette color metadata
+   * @since 0.95.0
+   */
+  toggleColorVisibility_fn = function(button, color) {
+    if (!button || button.disabled || !color.id) {
+      return;
+    }
+    button.style.textDecoration = "none";
+    button.disabled = true;
+    if (button.dataset["state"] == "shown") {
+      button.innerHTML = this.eyeClosed;
+      button.dataset["state"] = "hidden";
+      this.templateManager.setColorFiltered(color.id, true);
+      __privateMethod(this, _WindowFilter_instances, animateColorToggleIcon_fn).call(this, button, "hide");
+    } else {
+      button.dataset["state"] = "shown";
+      this.templateManager.setColorFiltered(color.id, false);
+      __privateMethod(this, _WindowFilter_instances, animateColorToggleIcon_fn).call(this, button, "show");
+    }
+    __privateMethod(this, _WindowFilter_instances, syncColorToggleLabel_fn).call(this, button, color);
+    button.disabled = false;
+    button.style.textDecoration = "";
+  };
+  /** Animates the eye slash only for direct visibility toggles.
+   * @param {HTMLButtonElement} button - The color visibility button
+   * @param {'hide' | 'show'} direction - Which slash animation to play
+   * @since 0.95.0
+   */
+  animateColorToggleIcon_fn = function(button, direction) {
+    if (!button) {
+      return;
+    }
+    const animateClass = direction == "hide" ? "bm-filter-eye-animate-hide" : "bm-filter-eye-animate-show";
+    button.classList.remove("bm-filter-eye-animate-hide", "bm-filter-eye-animate-show");
+    void button.offsetWidth;
+    button.classList.add(animateClass);
+    let timeoutID = null;
+    const finishAnimation = () => {
+      window.clearTimeout(timeoutID);
+      button.classList.remove(animateClass);
+      if (direction == "show" && button.dataset["state"] == "shown") {
+        button.innerHTML = this.eyeOpen;
+      }
+    };
+    button.addEventListener("animationend", finishAnimation, { once: true });
+    timeoutID = window.setTimeout(finishAnimation, 280);
+  };
+  /** Makes a color block toggleable by pointer or keyboard.
+   * @param {HTMLElement} colorElement - The color block element
+   * @param {Object} color - Palette color metadata
+   * @since 0.95.0
+   */
+  initializeColorBlockToggle_fn = function(colorElement, color) {
+    if (!colorElement || !color.id) {
+      return;
+    }
+    colorElement.classList.add("bm-filter-color-toggle");
+    colorElement.tabIndex = 0;
+    colorElement.setAttribute("role", "button");
+    colorElement.onclick = (event) => {
+      if (event.target instanceof Element && event.target.closest("button, a, input, select, textarea")) {
+        return;
+      }
+      const button = colorElement.querySelector(".bm-filter-color-visibility");
+      __privateMethod(this, _WindowFilter_instances, toggleColorVisibility_fn).call(this, button, color);
+    };
+    colorElement.onkeydown = (event) => {
+      if (event.key != "Enter" && event.key != " ") {
+        return;
+      }
+      event.preventDefault();
+      colorElement.click();
+    };
+  };
+  goToRandomPendingPixel_fn = async function(colorID = void 0, colorName = void 0) {
+    const pixel = this.templateManager.getRandomPendingPixel(colorID);
+    if (!pixel) {
+      const suffix2 = colorName ? ` for ${colorName}` : "";
+      this.handleDisplayError(`No remaining pixels${suffix2} found in loaded tiles. Move around the template or refresh loaded tiles first.`);
+      return;
+    }
+    const coords2 = [pixel.tileX, pixel.tileY, pixel.pixelX, pixel.pixelY];
+    this.updateInnerHTML("bm-input-tx", coords2[0] ?? "");
+    this.updateInnerHTML("bm-input-ty", coords2[1] ?? "");
+    this.updateInnerHTML("bm-input-px", coords2[2] ?? "");
+    this.updateInnerHTML("bm-input-py", coords2[3] ?? "");
+    const { lat, lng } = tilePixelToLatLng(...coords2, this.templateManager.tileSize, 11);
+    const url = new URL(window.location.href);
+    url.searchParams.set("lat", lat.toString());
+    url.searchParams.set("lng", lng.toString());
+    url.searchParams.set("zoom", "17.5");
+    const suffix = colorName ? ` (${colorName})` : "";
+    this.handleDisplayStatus(`Going to remaining pixel ${coords2.join(", ")}${suffix}...`);
+    const movedWithoutReload = await navigateWplaceToLatLng(lat, lng, 17.5);
+    if (!movedWithoutReload) {
+      window.location.assign(url.toString());
+    }
+  };
   /** Calculates all pixel statistics used in the color filter.
    * @since 0.90.34
    */
   calculatePixelStatistics_fn = function() {
+    this.tilesLoadedTotal = 0;
+    this.tilesTotal = 0;
     this.allPixelsTotal = 0;
     this.allPixelsCorrectTotal = 0;
     this.allPixelsCorrect = /* @__PURE__ */ new Map();
@@ -2650,7 +3424,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       confettiManager.createConfetti(document.querySelector(`#${this.windowID}`));
     }
     this.timeRemaining = new Date((this.allPixelsTotal - this.allPixelsCorrectTotal) * 30 * 1e3 + Date.now());
-    this.timeRemainingLocalized = localizeDate(this.timeRemaining);
+    this.timeRemainingLocalized = localizeCompactDate(this.timeRemaining);
   };
 
   // src/WindowWizard.js
@@ -2819,7 +3593,8 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
   var WindowWizard = _WindowWizard;
 
   // src/WindowMain.js
-  var _WindowMain_instances, buildWindowFilter_fn, coordinateInputPaste_fn;
+  var upstreamUpdateIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var _WindowMain_instances, checkUpstreamUpdate_fn, compareVersions_fn, buildWindowFilter_fn, coordinateInputPaste_fn, coordinateInputFileName_fn;
   var WindowMain = class extends Overlay {
     /** Constructor for the main Blue Marble window
      * @param {string} name - The name of the userscript
@@ -2833,6 +3608,8 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       this.window = null;
       this.windowID = "bm-window-main";
       this.windowParent = document.body;
+      this.upstreamPackageURL = "https://raw.githubusercontent.com/SwingTheVine/Wplace-BlueMarble/main/package.json";
+      this.upstreamRepositoryURL = "https://github.com/SwingTheVine/Wplace-BlueMarble";
     }
     /** Creates the main Blue Marble window.
      * Parent/child relationships in the DOM structure below are indicated by indentation.
@@ -2849,7 +3626,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         button.ontouchend = () => {
           button.click();
         };
-      }).buildElement().addDiv().buildElement().buildElement().addDiv({ "class": "bm-window-content" }).addDiv({ "class": "bm-container" }).addImg({ "class": "bm-favicon", "src": "https://raw.githubusercontent.com/SwingTheVine/Wplace-BlueMarble/main/dist/assets/Favicon.png" }, (instance, img) => {
+      }).buildElement().addDiv().buildElement().buildElement().addDiv({ "class": "bm-window-content" }).addDiv({ "class": "bm-container" }).addImg({ "class": "bm-favicon", "src": "https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/assets/Favicon.png" }, (instance, img) => {
         const date = /* @__PURE__ */ new Date();
         const dayOfTheYear = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 1)) / (1e3 * 60 * 60 * 24)) + 1;
         if (dayOfTheYear == 204) {
@@ -2885,7 +3662,9 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         input.addEventListener("paste", (event) => __privateMethod(this, _WindowMain_instances, coordinateInputPaste_fn).call(this, instance, input, event));
       }).buildElement().addInput({ "type": "number", "id": "bm-input-py", "class": "bm-input-coords", "placeholder": "Px Y", "min": 0, "max": 2047, "step": 1, "required": true }, (instance, input) => {
         input.addEventListener("paste", (event) => __privateMethod(this, _WindowMain_instances, coordinateInputPaste_fn).call(this, instance, input, event));
-      }).buildElement().buildElement().addDiv({ "class": "bm-container" }).addInputFile({ "class": "bm-input-file", "textContent": "Upload Template", "accept": "image/png, image/jpeg, image/webp, image/bmp, image/gif" }).buildElement().buildElement().addDiv({ "class": "bm-container bm-flex-between" }).addButton({ "textContent": "Disable", "data-button-status": "shown" }, (instance, button) => {
+      }).buildElement().buildElement().addDiv({ "class": "bm-container" }).addInputFile({ "class": "bm-input-file", "textContent": "Upload Template", "accept": "image/png, image/jpeg, image/webp, image/bmp, image/gif" }, (instance, container, input) => {
+        input.addEventListener("change", () => __privateMethod(this, _WindowMain_instances, coordinateInputFileName_fn).call(this, instance, input));
+      }).buildElement().buildElement().addDiv({ "class": "bm-container bm-flex-between" }).addButton({ "textContent": "Disable", "data-button-status": "shown" }, (instance, button) => {
         button.onclick = () => {
           button.disabled = true;
           if (button.dataset["buttonStatus"] == "shown") {
@@ -2956,6 +3735,10 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
         button.onclick = () => {
           window.open("https://bluemarble.lol/", "_blank", "noopener noreferrer");
         };
+      }).buildElement().addButton({ "id": "bm-button-upstream-update", "class": "bm-button-circle bm-button-upstream-update", "innerHTML": upstreamUpdateIcon, "title": "Original Blue Marble update available", "aria-label": "Original Blue Marble update available", "style": "display: none;" }, (instance, button) => {
+        button.onclick = () => {
+          window.open(this.upstreamRepositoryURL, "_blank", "noopener noreferrer");
+        };
       }).buildElement().addButton({ "class": "bm-button-circle", "title": "Donate to SwingTheVine", "innerHTML": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="#fff" style="width:80%; margin:auto;"><path d="M249.8 75c89.8 0 113 1.1 146.3 4.4 78.1 7.8 123.6 56 123.6 125.2l0 8.9c0 64.3-47.1 116.9-110.8 122.4-5 16.6-12.8 33.2-23.3 49.9-24.4 37.7-73.1 85.3-162.9 85.3l-17.7 0c-73.1 0-129.7-31.6-163.5-89.2-29.9-50.4-33.8-106.4-33.8-181.2 0-73.7 44.4-113.6 96.4-120.2 39.3-5 88.1-5.5 145.7-5.5zm0 41.6c-60.4 0-103.6 .5-136.3 5.5-46 6.7-64.3 32.7-64.3 79.2l.2 25.7c1.2 57.3 7.1 97.1 27.5 134.5 26.6 49.3 74.8 68.2 129.7 68.2l17.2 0c72 0 107-34.9 126.3-65.4 9.4-15.5 17.7-32.7 22.2-54.3l3.3-13.8 19.9 0c44.3 0 82.6-36 82.6-82l0-8.3c0-51.5-32.2-78.7-88.1-85.3-31.6-2.8-50.4-3.9-140.2-3.9zM267 169.2c38.2 0 64.8 31.6 64.8 67 0 32.7-18.3 61-42.1 83.1-15 15-39.3 30.5-55.9 40.5-4.4 2.8-10 4.4-16.7 4.4-5.5 0-10.5-1.7-15.5-4.4-16.6-10-41-25.5-56.5-40.5-21.8-20.8-39.2-46.9-41.3-77l-.2-6.1c0-35.5 25.5-67 64.3-67 22.7 0 38.8 11.6 49.3 27.7 11.6-16.1 27.2-27.7 49.9-27.7zm122.5-3.9c28.3 0 43.8 16.6 43.8 43.2s-15.5 42.7-43.8 42.7c-8.9 0-13.8-5-13.8-11.7l0-62.6c0-6.7 5-11.6 13.8-11.6z"/></svg>' }, (instance, button) => {
         button.onclick = () => {
           window.open("https://ko-fi.com/swingthevine", "_blank", "noopener noreferrer");
@@ -2967,9 +3750,62 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
         };
       }).buildElement().buildElement().addSmall({ "textContent": "Made by SwingTheVine", "style": "margin-top: auto;" }).buildElement().buildElement().buildElement().buildElement().buildElement().buildOverlay(this.windowParent);
       this.handleDrag(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-dragbar`);
+      __privateMethod(this, _WindowMain_instances, checkUpstreamUpdate_fn).call(this);
     }
   };
   _WindowMain_instances = new WeakSet();
+  /** Checks the original Blue Marble repository and shows an update button when it is newer than this fork.
+   * @since 0.92.4
+   */
+  checkUpstreamUpdate_fn = function() {
+    const updateButton = document.getElementById("bm-button-upstream-update");
+    if (!updateButton || typeof GM_xmlhttpRequest != "function") {
+      return;
+    }
+    GM_xmlhttpRequest({
+      method: "GET",
+      url: `${this.upstreamPackageURL}?t=${Date.now()}`,
+      onload: (response) => {
+        if (response.status < 200 || response.status >= 300) {
+          return;
+        }
+        let upstreamVersion = "";
+        try {
+          upstreamVersion = JSON.parse(response.responseText)?.version ?? "";
+        } catch {
+          return;
+        }
+        if (!upstreamVersion || __privateMethod(this, _WindowMain_instances, compareVersions_fn).call(this, upstreamVersion, this.version) <= 0) {
+          return;
+        }
+        updateButton.style.display = "";
+        updateButton.title = `Original Blue Marble ${upstreamVersion} is available. Your fork is ${this.version}.`;
+        updateButton.ariaLabel = updateButton.title;
+      },
+      onerror: () => {
+      },
+      ontimeout: () => {
+      }
+    });
+  };
+  /** Compares two dotted versions.
+   * @param {string} left - First version
+   * @param {string} right - Second version
+   * @returns {number} Positive when left is newer, negative when right is newer, zero when equal
+   * @since 0.92.4
+   */
+  compareVersions_fn = function(left, right) {
+    const leftParts = String(left).split(/[.-]/).map((part) => Number.parseInt(part, 10) || 0);
+    const rightParts = String(right).split(/[.-]/).map((part) => Number.parseInt(part, 10) || 0);
+    const length = Math.max(leftParts.length, rightParts.length);
+    for (let index = 0; index < length; index++) {
+      const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+      if (difference) {
+        return difference;
+      }
+    }
+    return 0;
+  };
   /** Displays a new color filter window.
    * This is a helper function that creates a new class instance.
    * This might cause a memory leak. I pray that this is not the case...
@@ -2977,7 +3813,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
    */
   buildWindowFilter_fn = function() {
     const windowFilter = new WindowFilter(this);
-    windowFilter.buildWindow();
+    windowFilter.buildPreferredWindow();
   };
   coordinateInputPaste_fn = async function(instance, input, event) {
     event.preventDefault();
@@ -2997,6 +3833,25 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       instance.updateInnerHTML("bm-input-px", coords2?.[2] || "");
       instance.updateInnerHTML("bm-input-py", coords2?.[3] || "");
     }
+  };
+  /** Handles coordinates embedded at the start of uploaded template filenames.
+   * Expected format: tileX-tileY-pixelX-pixelY-name.png
+   * @param {Overlay} instance - The Overlay class instance
+   * @param {HTMLInputElement} input - The file input element
+   * @since 0.92.1
+   */
+  coordinateInputFileName_fn = function(instance, input) {
+    const fileName = input.files?.[0]?.name || "";
+    const match = fileName.match(/^(\d+)[-_ ,]+(\d+)[-_ ,]+(\d+)[-_ ,]+(\d+)(?:\D|$)/);
+    if (!match) {
+      return;
+    }
+    const coords2 = match.slice(1, 5).map(Number);
+    instance.updateInnerHTML("bm-input-tx", coords2[0]);
+    instance.updateInnerHTML("bm-input-ty", coords2[1]);
+    instance.updateInnerHTML("bm-input-px", coords2[2]);
+    instance.updateInnerHTML("bm-input-py", coords2[3]);
+    instance.handleDisplayStatus(`Loaded coordinates from filename: ${coords2.join(", ")}`);
   };
 
   // src/templateManager.js
@@ -3041,6 +3896,18 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
      */
     setSettingsManager(settingsManager2) {
       this.settingsManager = settingsManager2;
+    }
+    /** Sets whether a palette color should be hidden from rendered template overlays.
+     * @param {number} colorID - Blue Marble palette color ID
+     * @param {boolean} shouldBeFiltered - Whether the color should be hidden
+     * @since 0.92.1
+     */
+    setColorFiltered(colorID, shouldBeFiltered) {
+      if (shouldBeFiltered) {
+        this.shouldFilterColor.set(colorID, true);
+        return;
+      }
+      this.shouldFilterColor.delete(colorID);
     }
     /** Creates the JSON object to store templates in
      * @returns {{ whoami: string, scriptVersion: string, schemaVersion: string, templates: Object }} The JSON object
@@ -3321,7 +4188,7 @@ Version: ${this.version}`);
         console.log(`Template:`);
         console.log(template);
         const templateHasErased = !!template.instance.pixelCount?.colors?.get(-1);
-        let templateBeforeFilter32 = template.chunked32.slice();
+        let templateBeforeFilter32 = template.chunked32?.slice();
         const coordXtoDrawAt = Number(template.pixelCoords[0]) * this.drawMult;
         const coordYtoDrawAt = Number(template.pixelCoords[1]) * this.drawMult;
         if (this.shouldFilterColor.size == 0 && !templateHasErased) {
@@ -3334,7 +4201,8 @@ Version: ${this.version}`);
         const timer = Date.now();
         const {
           correctPixels: pixelsCorrect,
-          filteredTemplate: templateAfterFilter
+          filteredTemplate: templateAfterFilter,
+          pendingPixels: pixelsPending
         } = __privateMethod(this, _TemplateManager_instances, calculateCorrectPixelsOnTile_And_FilterTile_fn).call(this, {
           tile: tileBeforeTemplates32,
           template: templateBeforeFilter32,
@@ -3360,8 +4228,58 @@ There are ${pixelsCorrectTotal} correct pixels.`);
           template.instance.pixelCount["correct"] = {};
         }
         template.instance.pixelCount["correct"][tileCoords] = pixelsCorrect;
+        if (typeof template.instance.pixelCount["pending"] == "undefined") {
+          template.instance.pixelCount["pending"] = {};
+        }
+        const [pendingTileX, pendingTileY] = tileCoords.split(",").map(Number);
+        template.instance.pixelCount["pending"][tileCoords] = Array.from(pixelsPending.values()).map((pixel) => ({
+          tileX: pendingTileX,
+          tileY: pendingTileY,
+          pixelX: pixel.pixelX,
+          pixelY: pixel.pixelY,
+          colorID: pixel.colorID,
+          count: pixel.count,
+          samples: pixel.samples
+        }));
       }
       return await canvas.convertToBlob({ type: "image/png" });
+    }
+    /** Returns a random pending pixel from currently loaded template tiles.
+     * @param {number | undefined} colorID - If set, only pending pixels for this color are considered.
+     * @returns {{tileX: number, tileY: number, pixelX: number, pixelY: number, colorID: number} | null} A pending pixel, or null if none are known
+     * @since 0.92.1
+     */
+    getRandomPendingPixel(colorID = void 0) {
+      let selectedPixel = null;
+      let pendingPixelTotal = 0;
+      for (const template of this.templatesArray) {
+        const pendingObject = template.pixelCount?.pending ?? {};
+        for (const pixels of Object.values(pendingObject)) {
+          for (const pixel of pixels) {
+            if (typeof colorID == "undefined" && this.shouldFilterColor.get(pixel.colorID)) {
+              continue;
+            }
+            if (typeof colorID != "undefined" && pixel.colorID != colorID) {
+              continue;
+            }
+            const pendingPixelsInSample = Number(pixel.count) || 1;
+            pendingPixelTotal += pendingPixelsInSample;
+            if (Math.random() * pendingPixelTotal < pendingPixelsInSample) {
+              selectedPixel = pixel;
+            }
+          }
+        }
+      }
+      if (!selectedPixel) {
+        return null;
+      }
+      const samples = Array.isArray(selectedPixel.samples) && selectedPixel.samples.length ? selectedPixel.samples : [selectedPixel];
+      const sample = samples[Math.floor(Math.random() * samples.length)];
+      return {
+        ...selectedPixel,
+        pixelX: sample.pixelX,
+        pixelY: sample.pixelY
+      };
     }
     /** Imports the JSON object, and appends it to any JSON object already loaded
      * @param {string} json - The JSON string to parse
@@ -3503,7 +4421,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
    * @param {Array<Number, Number, Number, Number>} params.templateInfo - Information about template location and size
    * @param {Array<number[]>} params.highlightPattern - The highlight pattern selected by the user
    * @param {boolean} params.highlightDisabled - Should highlighting be disabled?
-   * @returns {{correctPixels: Map<number, number>, filteredTemplate: Uint32Array}} A Map containing the color IDs (keys) and how many correct pixels there are for that color (values)
+   * @returns {{correctPixels: Map<number, number>, filteredTemplate: Uint32Array, pendingPixels: Map<number, {pixelX: number, pixelY: number, colorID: number, count: number, samples: Array<{pixelX: number, pixelY: number}>}>}} A Map containing correct pixel totals and compact pending pixel samples
    */
   calculateCorrectPixelsOnTile_And_FilterTile_fn = function({
     tile: tile32,
@@ -3525,6 +4443,32 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
     const shouldTransparentTilePixelsBeHighlighted = !this.settingsManager?.userSettings?.flags?.includes("hl-noTrans");
     const { palette: _, LUT: lookupTable } = this.paletteBM;
     const _colorpalette = /* @__PURE__ */ new Map();
+    const pendingPixels = /* @__PURE__ */ new Map();
+    const maxPendingSamplesPerColor = 32;
+    const trackPendingPixel = (colorID, tileColumn, tileRow) => {
+      const pendingSample = {
+        pixelX: tileColumn / pixelSize | 0,
+        pixelY: tileRow / pixelSize | 0
+      };
+      const colorPendingPixels = pendingPixels.get(colorID);
+      if (!colorPendingPixels) {
+        pendingPixels.set(colorID, {
+          pixelX: pendingSample.pixelX,
+          pixelY: pendingSample.pixelY,
+          colorID,
+          count: 1,
+          samples: [pendingSample]
+        });
+        return;
+      }
+      const sampleIndex = colorPendingPixels.count % maxPendingSamplesPerColor;
+      colorPendingPixels.count += 1;
+      if (colorPendingPixels.samples.length < maxPendingSamplesPerColor) {
+        colorPendingPixels.samples.push(pendingSample);
+      } else {
+        colorPendingPixels.samples[sampleIndex] = pendingSample;
+      }
+    };
     for (let templateRow = 1; templateRow < templateHeight; templateRow += pixelSize) {
       for (let templateColumn = 1; templateColumn < templateWidth; templateColumn += pixelSize) {
         const tileRow = templateCoordY + templateRow + tilePixelOffsetY;
@@ -3573,10 +4517,18 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           _colorpalette.set(bestTemplateColorID, colorIDcount2 ? colorIDcount2 + 1 : 1);
           continue;
         }
+        if (bestTemplateColorID == -1) {
+          trackPendingPixel(bestTemplateColorID, tileColumn, tileRow);
+          continue;
+        }
         if (templatePixelAlpha <= tolerance || tilePixelAlpha <= tolerance) {
+          if (templatePixelAlpha > tolerance) {
+            trackPendingPixel(bestTemplateColorID, tileColumn, tileRow);
+          }
           continue;
         }
         if (bestTileColorID != bestTemplateColorID) {
+          trackPendingPixel(bestTemplateColorID, tileColumn, tileRow);
           continue;
         }
         const colorIDcount = _colorpalette.get(bestTemplateColorID);
@@ -3585,7 +4537,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
     }
     console.log(`List of template pixels that match the tile:`);
     console.log(_colorpalette);
-    return { correctPixels: _colorpalette, filteredTemplate: template32 };
+    return { correctPixels: _colorpalette, filteredTemplate: template32, pendingPixels };
   };
 
   // src/apiManager.js
@@ -3951,6 +4903,10 @@ Time Since Blink: ${String(Math.floor(elapsed / 6e4)).padStart(2, "0")}:${String
   }
   var stylesheetLink;
   var userSettings = JSON.parse(GM_getValue("bmUserSettings", "{}"));
+  if (!userSettings.uuid) {
+    userSettings.uuid = crypto.randomUUID();
+    GM.setValue("bmUserSettings", JSON.stringify(userSettings));
+  }
   var observers = new Observers();
   var windowMain = new WindowMain(name, version);
   var templateManager = new TemplateManager(name, version);
@@ -3964,14 +4920,6 @@ Time Since Blink: ${String(Math.floor(elapsed / 6e4)).padStart(2, "0")}:${String
   console.log(storageTemplates);
   templateManager.importJSON(storageTemplates);
   console.log(userSettings);
-  console.log(Object.keys(userSettings).length);
-  if (Object.keys(userSettings).length == 0) {
-    const uuid = crypto.randomUUID();
-    console.log(uuid);
-    GM.setValue("bmUserSettings", JSON.stringify({
-      "uuid": uuid
-    }));
-  }
   setInterval(() => apiManager.sendHeartbeat(version), 1e3 * 60 * 30);
   var currentTelemetryVersion = 1;
   var previousTelemetryVersion = userSettings?.telemetry;
