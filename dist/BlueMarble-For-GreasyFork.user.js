@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.8
+// @version         0.92.9
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -22,7 +22,7 @@
 // @grant           GM.download
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.9
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -3714,8 +3714,15 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
           instance?.apiManager?.templateManager.createTemplate(input.files[0], input.files[0]?.name.replace(/\.[^/.]+$/, ""), [Number(coordTlX.value), Number(coordTlY.value), Number(coordPxX.value), Number(coordPxY.value)]);
           instance.handleDisplayStatus(`Drew to canvas!`);
         };
-      }).buildElement().addButton({ "textContent": "Filter" }, (instance, button) => {
-        button.onclick = () => __privateMethod(this, _WindowMain_instances, buildWindowFilter_fn).call(this);
+      }).buildElement().addButton({ "id": "bm-button-filter", "textContent": "Filter", "style": "display: none;" }, (instance, button) => {
+        button.onclick = () => {
+          if (!instance.apiManager?.templateManager?.hasTemplates()) {
+            instance.handleDisplayError("Upload or load a template before opening Color Filter.");
+            instance.refreshTemplateControls();
+            return;
+          }
+          __privateMethod(this, _WindowMain_instances, buildWindowFilter_fn).call(this);
+        };
       }).buildElement().buildElement().addDiv({ "class": "bm-container" }).addTextarea({ "id": this.outputStatusId, "placeholder": `Status: Sleeping...
 Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().addDiv({ "class": "bm-container bm-flex-between", "style": "margin-bottom: 0; flex-direction: column;" }).addDiv({ "class": "bm-flex-between" }).addButton({ "class": "bm-button-circle", "innerHTML": "\u2699\uFE0F", "title": "Settings" }, (instance, button) => {
         button.onclick = () => {
@@ -3750,7 +3757,20 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
         };
       }).buildElement().buildElement().addSmall({ "textContent": "Made by SwingTheVine", "style": "margin-top: auto;" }).buildElement().buildElement().buildElement().buildElement().buildElement().buildOverlay(this.windowParent);
       this.handleDrag(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-dragbar`);
+      this.refreshTemplateControls();
       __privateMethod(this, _WindowMain_instances, checkUpstreamUpdate_fn).call(this);
+    }
+    /** Updates controls that require a loaded template.
+     * @since 0.92.9
+     */
+    refreshTemplateControls() {
+      const filterButton = document.getElementById("bm-button-filter");
+      if (!filterButton) {
+        return;
+      }
+      const hasTemplates = !!this.apiManager?.templateManager?.hasTemplates?.();
+      filterButton.style.display = hasTemplates ? "" : "none";
+      filterButton.disabled = !hasTemplates;
     }
   };
   _WindowMain_instances = new WeakSet();
@@ -3909,6 +3929,13 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       }
       this.shouldFilterColor.delete(colorID);
     }
+    /** Checks whether any template is currently loaded.
+     * @returns {boolean} Whether there are templates available for template-only tools
+     * @since 0.92.9
+     */
+    hasTemplates() {
+      return this.templatesArray.length > 0;
+    }
     /** Creates the JSON object to store templates in
      * @returns {{ whoami: string, scriptVersion: string, schemaVersion: string, templates: Object }} The JSON object
      * @since 0.65.4
@@ -3965,6 +3992,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       this.templatesArray = [];
       this.templatesArray.push(template);
       this.windowMain.handleDisplayStatus(`Template created at ${coords2.join(", ")}!`);
+      this.windowMain.refreshTemplateControls();
       console.log(Object.keys(this.templatesJSON.templates).length);
       console.log(this.templatesJSON);
       console.log(this.templatesArray);
@@ -4322,7 +4350,7 @@ There are ${pixelsCorrectTotal} correct pixels.`);
     this.templatesArray.push(template);
   };
   storeTemplates_fn = async function() {
-    GM.setValue("bmTemplates", JSON.stringify(this.templatesJSON));
+    await GM.setValue("bmTemplates", JSON.stringify(this.templatesJSON));
   };
   parseBlueMarble_fn = async function(json) {
     console.log(`Parsing BlueMarble...`);
@@ -4343,6 +4371,7 @@ There are ${pixelsCorrectTotal} correct pixels.`);
         drawMult: this.drawMult,
         templatesArray: this.templatesArray
       });
+      this.windowMain?.refreshTemplateControls?.();
     } else if (schemaVersionArray[0] < schemaVersionBleedingEdge[0]) {
       const windowWizard = new WindowWizard(this.name, this.version, this.schemaVersion, this);
       windowWizard.buildWindow();
@@ -4362,7 +4391,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           console.log(`Template Key: ${templateKey}`);
           if (templates.hasOwnProperty(template)) {
             const templateKeyArray = templateKey.split(" ");
-            const sortID = Number(templateKeyArray?.[0]);
+            const sortID = Number.parseInt(templateKeyArray?.[0], 10);
             const authorID = templateKeyArray?.[1] || "0";
             const displayName = templateValue.name || `Template ${sortID || ""}`;
             const pixelCount = {
@@ -4390,7 +4419,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
             }
             const template2 = new Template({
               displayName,
-              sortID: sortID || this.templatesArray?.length || 0,
+              sortID: Number.isFinite(sortID) ? sortID : templatesArray.length,
               authorID: authorID || ""
               //coords: coords,
             });
@@ -4398,7 +4427,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
             template2.chunked = templateTiles;
             template2.chunked32 = templateTiles32;
             templatesArray.push(template2);
-            console.log(this.templatesArray);
+            console.log(templatesArray);
             console.log(`^^^ This ^^^`);
           }
         }

@@ -159,7 +159,7 @@
 
   <h3>Npm Run</h3>
   <p>
-    Running <code>npm run build</code> will compile Blue Marble. The compiled files can be found in the <code>dist/</code> directory. Running <code>npm run patch</code> will increment the patch version, and compile Blue Marble.
+    Running <code>npm run build</code> will compile Blue Marble. The compiled files can be found in the <code>dist/</code> directory. Running <code>npm run patch</code> will increment the patch version, compile Blue Marble, and update the userscript CSS resource URL with a version query so userscript managers fetch the latest stylesheet instead of a stale cached copy.
   </p>
 
   <h3>Charts</h3>

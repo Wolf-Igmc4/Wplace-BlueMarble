@@ -159,8 +159,16 @@ export default class WindowMain extends Overlay {
                 instance.handleDisplayStatus(`Drew to canvas!`);
               }
             }).buildElement()
-            .addButton({'textContent': 'Filter'}, (instance, button) => {
-              button.onclick = () => this.#buildWindowFilter();
+            .addButton({'id': 'bm-button-filter', 'textContent': 'Filter', 'style': 'display: none;'}, (instance, button) => {
+              button.onclick = () => {
+                if (!instance.apiManager?.templateManager?.hasTemplates()) {
+                  instance.handleDisplayError('Upload or load a template before opening Color Filter.');
+                  instance.refreshTemplateControls();
+                  return;
+                }
+
+                this.#buildWindowFilter();
+              };
             }).buildElement()
           .buildElement()
           .addDiv({'class': 'bm-container'})
@@ -216,7 +224,20 @@ export default class WindowMain extends Overlay {
 
     // Creates dragging capability on the drag bar for dragging the window
     this.handleDrag(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-dragbar`);
+    this.refreshTemplateControls();
     this.#checkUpstreamUpdate();
+  }
+
+  /** Updates controls that require a loaded template.
+   * @since 0.92.9
+   */
+  refreshTemplateControls() {
+    const filterButton = document.getElementById('bm-button-filter');
+    if (!filterButton) {return;}
+
+    const hasTemplates = !!this.apiManager?.templateManager?.hasTemplates?.();
+    filterButton.style.display = hasTemplates ? '' : 'none';
+    filterButton.disabled = !hasTemplates;
   }
 
   /** Checks the original Blue Marble repository and shows an update button when it is newer than this fork.

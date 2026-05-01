@@ -51,7 +51,7 @@
 <a href="https://discord.gg/tpeBPy46hf" target="_blank" rel="noopener noreferrer"><img alt="Contact Me" src="https://img.shields.io/badge/Contact_Me-gray?style=flat&logo=Discord&logoColor=white&logoSize=auto&labelColor=cornflowerblue"></a>
 <a href="https://bluemarble.lol/" target="_blank" rel="noopener noreferrer"><img alt="Blue Marble Website" src="https://img.shields.io/badge/Blue_Marble_Website-crqch-blue?style=flat&logo=globe&logoColor=white"></a>
 <a href="" target="_blank" rel="noopener noreferrer"><img alt="WakaTime" src="https://img.shields.io/badge/Coding_Time-212hrs_17mins-blue?style=flat&logo=wakatime&logoColor=black&logoSize=auto&labelColor=white"></a>
-<a href="" target="_blank" rel="noopener noreferrer"><img alt="Total Patches" src="https://img.shields.io/badge/Total_Patches-1231-black?style=flat"></a>
+<a href="" target="_blank" rel="noopener noreferrer"><img alt="Total Patches" src="https://img.shields.io/badge/Total_Patches-1232-black?style=flat"></a>
 <a href="" target="_blank" rel="noopener noreferrer"><img alt="Total Lines of Code" src="https://img.shields.io/badge/Lines_Of_Code-7540-blue?style=flat"></a>
 <a href="" target="_blank" rel="noopener noreferrer"><img alt="Total Comments" src="https://img.shields.io/badge/Lines_Of_Comments-5918-blue?style=flat"></a>
 <a href="" target="_blank" rel="noopener noreferrer"><img alt="Compression" src="https://img.shields.io/badge/Compression-72.57%25-blue"></a>
@@ -123,6 +123,7 @@
     <li>Allowing you to use the eyedropper on the template image, provided the colors are correct</li>
     <li>Minimizing or maximizing the menu to switch between compact and full views</li>
     <li>Filtering overlay colors with a refreshed Color Filter UI, live progress stats, reactive free/premium/completed color filters, responsive small-screen sizing, and persistent resizable window mode</li>
+    <li>Showing the Color Filter button only after a template is loaded</li>
     <li>Jumping from each color in the full Color Filter view to a bounded random sample pool of remaining pixels for that color from the loaded template tiles, using smooth map navigation when Wplace exposes its map instance</li>
     <li>Showing a small green update arrow in the fork UI only when the original Blue Marble repository has a newer version than this script</li>
     <li>...and more!</li>

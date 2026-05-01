@@ -146,6 +146,14 @@ export default class TemplateManager {
     this.shouldFilterColor.delete(colorID);
   }
 
+  /** Checks whether any template is currently loaded.
+   * @returns {boolean} Whether there are templates available for template-only tools
+   * @since 0.92.9
+   */
+  hasTemplates() {
+    return this.templatesArray.length > 0;
+  }
+
   /** Creates the JSON object to store templates in
    * @returns {{ whoami: string, scriptVersion: string, schemaVersion: string, templates: Object }} The JSON object
    * @since 0.65.4
@@ -210,6 +218,7 @@ export default class TemplateManager {
     this.templatesArray.push(template); // Pushes the Template object instance to the Template Array
 
     this.windowMain.handleDisplayStatus(`Template created at ${coords.join(', ')}!`);
+    this.windowMain.refreshTemplateControls();
 
     console.log(Object.keys(this.templatesJSON.templates).length);
     console.log(this.templatesJSON);
@@ -251,7 +260,7 @@ export default class TemplateManager {
    * @since 0.72.7
    */
   async #storeTemplates() {
-    GM.setValue('bmTemplates', JSON.stringify(this.templatesJSON));
+    await GM.setValue('bmTemplates', JSON.stringify(this.templatesJSON));
   }
 
   /** Deletes a template from the JSON object.
@@ -771,6 +780,7 @@ export default class TemplateManager {
         drawMult: this.drawMult,
         templatesArray: this.templatesArray
       });
+      this.windowMain?.refreshTemplateControls?.();
 
     } else if (schemaVersionArray[0] < schemaVersionBleedingEdge[0]) {
       // Else if the MAJOR verison is out-of-date
@@ -811,7 +821,7 @@ export default class TemplateManager {
           if (templates.hasOwnProperty(template)) {
   
             const templateKeyArray = templateKey.split(' '); // E.g., "0 $Z" -> ["0", "$Z"]
-            const sortID = Number(templateKeyArray?.[0]); // Sort ID of the template
+            const sortID = Number.parseInt(templateKeyArray?.[0], 10); // Sort ID of the template
             const authorID = templateKeyArray?.[1] || '0'; // User ID of the person who exported the template
             const displayName = templateValue.name || `Template ${sortID || ''}`; // Display name of the template
             //const coords = templateValue?.coords?.split(',').map(Number); // "1,2,3,4" -> [1, 2, 3, 4]
@@ -849,7 +859,7 @@ export default class TemplateManager {
             // Creates a new Template class instance
             const template = new Template({
               displayName: displayName,
-              sortID: sortID || this.templatesArray?.length || 0,
+              sortID: Number.isFinite(sortID) ? sortID : templatesArray.length,
               authorID: authorID || '',
               //coords: coords,
             });
@@ -858,7 +868,7 @@ export default class TemplateManager {
             template.chunked32 = templateTiles32;
             
             templatesArray.push(template);
-            console.log(this.templatesArray);
+            console.log(templatesArray);
             console.log(`^^^ This ^^^`);
           }
         }
