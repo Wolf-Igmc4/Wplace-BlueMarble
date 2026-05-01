@@ -1,3 +1,6 @@
+export const minimizeIconExpanded = '<svg class="bm-button-icon bm-button-icon-minimize" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 9.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+export const minimizeIconCollapsed = '<svg class="bm-button-icon bm-button-icon-minimize" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.5 7l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
 /** The overlay builder for the Blue Marble script.
  * @description This class handles the overlay UI for the Blue Marble script.
  * @class Overlay
@@ -1217,8 +1220,50 @@ export default class Overlay {
 
     const window = button.closest('.bm-window'); // Get the window
     const dragbar = button.closest('.bm-dragbar'); // Get the dragbar
-    const header = window.querySelector('h1'); // Get the header
-    const windowContent = window.querySelector('.bm-window-content'); // Get the window content container
+    const header = window?.querySelector('h1'); // Get the header
+    const windowContent = window?.querySelector('.bm-window-content'); // Get the window content container
+
+    if (!window || !dragbar || !windowContent) {
+      button.disabled = false;
+      button.style.textDecoration = '';
+      return;
+    }
+
+    const finishMinimizeTransition = (callback) => {
+      let isFinished = false;
+      let fallbackTimer;
+
+      const finish = () => {
+        if (isFinished) {return;}
+        isFinished = true;
+        clearTimeout(fallbackTimer);
+        windowContent.removeEventListener('transitionend', handler);
+        callback();
+        button.disabled = false;
+        button.style.textDecoration = '';
+      };
+
+      const handler = event => {
+        if (event.target != windowContent || event.propertyName != 'height') {return;}
+        finish();
+      };
+
+      windowContent.addEventListener('transitionend', handler);
+      fallbackTimer = setTimeout(finish, 360);
+    };
+
+    const getCollapsedHeight = () => {
+      const windowStyle = getComputedStyle(window);
+      const toPixels = value => parseFloat(value) || 0;
+      const extraHeight = windowStyle.boxSizing == 'border-box'
+        ? toPixels(windowStyle.paddingTop) +
+          toPixels(windowStyle.paddingBottom) +
+          toPixels(windowStyle.borderTopWidth) +
+          toPixels(windowStyle.borderBottomWidth)
+        : 0;
+
+      return Math.ceil(dragbar.getBoundingClientRect().height + extraHeight + 2);
+    };
 
     window.parentElement.append(window); // Moves the window to the top
 
@@ -1227,22 +1272,29 @@ export default class Overlay {
       // ...we want to close it
       
       // Logic for the transition animation to collapse the window
+      window.dataset['widthBeforeMinimize'] = window.style.width;
+      window.dataset['heightBeforeMinimize'] = window.style.height;
+      window.dataset['minHeightBeforeMinimize'] = window.style.minHeight;
       windowContent.style.height = windowContent.scrollHeight + 'px';
-      window.style.width = window.scrollWidth + 'px'; // So the width of the window does not change due to the lack of content
-      windowContent.style.height = '0'; // Set the height to 0px
-      windowContent.addEventListener('transitionend', function handler() { // Add an event listener to cleanup once the minimize transition is complete
+      void windowContent.offsetHeight; // Force layout so the height transition always has a real start value
+      if (!window.style.width) {
+        window.style.width = window.scrollWidth + 'px'; // So the width of the window does not change due to the lack of content
+      }
+      finishMinimizeTransition(() => {
         windowContent.style.display = 'none'; // Changes "display" to "none" for screen readers
-        button.disabled = false; // Enables the button
-        button.style.textDecoration = ''; // Resets the text decoration to default
-        windowContent.removeEventListener('transitionend', handler); // Removes the event listener
       });
+      windowContent.style.height = '0'; // Set the height to 0px
+      if (window.style.height || window.classList.contains('bm-windowed')) {
+        window.style.minHeight = '0px';
+        window.style.height = getCollapsedHeight() + 'px';
+      }
       
       // Makes a clone of the h1 element inside the window, and adds it to the dragbar
-      const dragbarHeader1 = header.cloneNode(true);
+      const dragbarHeader1 = header?.cloneNode(true) ?? document.createElement('h1');
       const dragbarHeader1Text = dragbarHeader1.textContent;
       button.nextElementSibling.appendChild(dragbarHeader1);
       
-      button.textContent = '▶'; // Swap button icon
+      button.innerHTML = minimizeIconCollapsed; // Swap button icon
       button.dataset['buttonStatus'] = 'collapsed'; // Swap button status tracker
       button.ariaLabel = `Unminimize window "${dragbarHeader1Text}"`; // Screen reader label
     } else {
@@ -1256,16 +1308,19 @@ export default class Overlay {
       // Logic for the transition animation to expand the window
       windowContent.style.display = ''; // Resets display to default
       windowContent.style.height = '0'; // Sets the height to 0
-      window.style.width = ''; // Resets the window width to default
-      windowContent.style.height = windowContent.scrollHeight + 'px'; // Change the height back to normal
-      windowContent.addEventListener('transitionend', function handler() { // Add an event listener to cleanup once the minimize transition is complete
+      window.style.width = window.dataset['widthBeforeMinimize'] ?? ''; // Restores width to the pre-minimized value
+      window.style.minHeight = window.dataset['minHeightBeforeMinimize'] ?? ''; // Restores resizable windows
+      window.style.height = window.dataset['heightBeforeMinimize'] ?? ''; // Restores height to the pre-minimized value
+      void windowContent.offsetHeight; // Force layout before expanding from 0px
+      finishMinimizeTransition(() => {
         windowContent.style.height = ''; // Changes the height back to default
-        button.disabled = false; // Enables the button
-        button.style.textDecoration = ''; // Resets the text decoration to default
-        windowContent.removeEventListener('transitionend', handler); // Removes the event listener
+        delete window.dataset['widthBeforeMinimize'];
+        delete window.dataset['heightBeforeMinimize'];
+        delete window.dataset['minHeightBeforeMinimize'];
       });
+      windowContent.style.height = windowContent.scrollHeight + 'px'; // Change the height back to normal
 
-      button.textContent = '▼'; // Swap button icon
+      button.innerHTML = minimizeIconExpanded; // Swap button icon
       button.dataset['buttonStatus'] = 'expanded'; // Swap button status tracker
       button.ariaLabel = `Minimize window "${dragbarHeader1Text}"`; // Screen reader label
     }
@@ -1278,11 +1333,12 @@ export default class Overlay {
    * @param {string} iMoveThingsSelector - The drag handle element
    * @since 0.8.2
   */
-  handleDrag(moveMeSelector, iMoveThingsSelector) {
+  handleDrag(moveMeSelector, iMoveThingsSelector, options = {}) {
 
     // Retrieves the elements
     const moveMe = document.querySelector(moveMeSelector);
     const iMoveThings = document.querySelector(iMoveThingsSelector);
+    const onEnd = options?.onEnd ?? (() => {});
     
     // What to do when one of the two elements are not found
     if (!moveMe || !iMoveThings) {
@@ -1375,6 +1431,14 @@ export default class Overlay {
       document.removeEventListener('mouseup', endDrag);
       document.removeEventListener('touchend', endDrag);
       document.removeEventListener('touchcancel', endDrag);
+
+      onEnd({
+        element: moveMe,
+        x: currentX,
+        y: currentY
+      });
+
+      initialRect = null;
     };
 
     // Mouse move
@@ -1408,6 +1472,135 @@ export default class Overlay {
       if (!touch) {return;}
       startDrag(touch.clientX, touch.clientY);
       event.preventDefault();
+    }, { passive: false });
+  }
+
+  /** Handles resizing of an overlay window from a resize handle.
+   * @param {string} resizeMeSelector - The element to resize
+   * @param {string} iResizeThingsSelector - The resize handle element
+   * @param {{onEnd?: function({element: HTMLElement, width: number, height: number}): void, minWidth?: number, minHeight?: number, maxWidth?: number, maxHeight?: number}} [options={}]
+   * @since 0.92.0
+   */
+  handleResize(resizeMeSelector, iResizeThingsSelector, options = {}) {
+
+    const resizeMe = document.querySelector(resizeMeSelector);
+    const iResizeThings = document.querySelector(iResizeThingsSelector);
+    const onEnd = options?.onEnd ?? (() => {});
+
+    if (!resizeMe || !iResizeThings) {
+      this.handleDisplayError(`Can not resize! ${!resizeMe ? 'resizeMe' : ''} ${!resizeMe && !iResizeThings ? 'and ' : ''}${!iResizeThings ? 'iResizeThings ' : ''}was not found!`);
+      return;
+    }
+
+    let isResizing = false;
+    let startX = 0;
+    let startY = 0;
+    let startWidth = 0;
+    let startHeight = 0;
+    let currentWidth = 0;
+    let currentHeight = 0;
+    let targetWidth = 0;
+    let targetHeight = 0;
+    let animationFrame = null;
+
+    const getMaximumWidth = () => Number.isFinite(options?.maxWidth) ? options.maxWidth : window.innerWidth - 16;
+    const getMaximumHeight = () => Number.isFinite(options?.maxHeight) ? options.maxHeight : window.innerHeight - 16;
+    const minimumWidth = Number.isFinite(options?.minWidth) ? options.minWidth : 200;
+    const minimumHeight = Number.isFinite(options?.minHeight) ? options.minHeight : 160;
+
+    const clamp = (value, minimum, maximum) => Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
+
+    const updateSize = () => {
+      if (isResizing) {
+        const deltaWidth = Math.abs(currentWidth - targetWidth);
+        const deltaHeight = Math.abs(currentHeight - targetHeight);
+
+        if (deltaWidth > 0.5 || deltaHeight > 0.5) {
+          currentWidth = targetWidth;
+          currentHeight = targetHeight;
+          resizeMe.style.width = `${currentWidth}px`;
+          resizeMe.style.height = `${currentHeight}px`;
+        }
+
+        animationFrame = requestAnimationFrame(updateSize);
+      }
+    };
+
+    const startResize = (clientX, clientY) => {
+      isResizing = true;
+      startX = clientX;
+      startY = clientY;
+      startWidth = resizeMe.offsetWidth;
+      startHeight = resizeMe.offsetHeight;
+      currentWidth = startWidth;
+      currentHeight = startHeight;
+      targetWidth = startWidth;
+      targetHeight = startHeight;
+
+      document.body.style.userSelect = 'none';
+      iResizeThings.classList.add('bm-resizing');
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('touchmove', onTouchMove, { passive: false });
+      document.addEventListener('mouseup', endResize);
+      document.addEventListener('touchend', endResize);
+      document.addEventListener('touchcancel', endResize);
+
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+      }
+      updateSize();
+    };
+
+    const endResize = () => {
+      isResizing = false;
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+        animationFrame = null;
+      }
+      document.body.style.userSelect = '';
+      iResizeThings.classList.remove('bm-resizing');
+
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('touchmove', onTouchMove);
+      document.removeEventListener('mouseup', endResize);
+      document.removeEventListener('touchend', endResize);
+      document.removeEventListener('touchcancel', endResize);
+
+      onEnd({
+        element: resizeMe,
+        width: currentWidth,
+        height: currentHeight
+      });
+    };
+
+    const onMouseMove = event => {
+      if (!isResizing) {return;}
+      targetWidth = clamp(startWidth + (event.clientX - startX), minimumWidth, getMaximumWidth());
+      targetHeight = clamp(startHeight + (event.clientY - startY), minimumHeight, getMaximumHeight());
+    };
+
+    const onTouchMove = event => {
+      if (!isResizing) {return;}
+      const touch = event?.touches?.[0];
+      if (!touch) {return;}
+      targetWidth = clamp(startWidth + (touch.clientX - startX), minimumWidth, getMaximumWidth());
+      targetHeight = clamp(startHeight + (touch.clientY - startY), minimumHeight, getMaximumHeight());
+      event.preventDefault();
+    };
+
+    iResizeThings.addEventListener('mousedown', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      startResize(event.clientX, event.clientY);
+    });
+
+    iResizeThings.addEventListener('touchstart', event => {
+      const touch = event?.touches?.[0];
+      if (!touch) {return;}
+      event.preventDefault();
+      event.stopPropagation();
+      startResize(touch.clientX, touch.clientY);
     }, { passive: false });
   }
 

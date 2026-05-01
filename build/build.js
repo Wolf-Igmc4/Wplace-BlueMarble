@@ -151,7 +151,7 @@ fs.writeFileSync(
 console.log(`${consoleStyle.BLUE}Building 2 of 3...${consoleStyle.RESET}`);
 
 const standaloneName = 'BlueMarble-Standalone'; // Standalone flavor name of flie
-const standaloneBMUpdateURL = `https://raw.githubusercontent.com/SwingTheVine/Wplace-BlueMarble/main/dist/${standaloneName}.user.js`;
+const standaloneBMUpdateURL = `https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/${standaloneName}.user.js`;
 
 // Fetches the completed, main Blue Marble userscript files
 const mainBMjs = fs.readFileSync('dist/BlueMarble.user.js', 'utf8');
@@ -192,7 +192,7 @@ fs.writeFileSync(`dist/${standaloneName}.user.js`, standaloneBMjs, 'utf-8');
 console.log(`${consoleStyle.BLUE}Building 3 of 3...${consoleStyle.RESET}`);
 
 const greasyForkName = 'BlueMarble-For-GreasyFork'; // GreasyFork flavor name of file
-const greasyForkUpdateURL = `https://raw.githubusercontent.com/SwingTheVine/Wplace-BlueMarble/main/dist/${greasyForkName}.user.js`;
+const greasyForkUpdateURL = `https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/${greasyForkName}.user.js`;
 
 let greasyForkBMjs = metaContent + resultEsbuildJS.text; // Gets the unobfuscated code and adds the metadata banner
 

@@ -188,6 +188,10 @@ if (!!(robotoMonoInjectionPoint.indexOf('@font-face') + 1)) {
 }
 
 const userSettings = JSON.parse(GM_getValue('bmUserSettings', '{}')); // Loads the user settings
+if (!userSettings.uuid) {
+  userSettings.uuid = crypto.randomUUID(); // Generates a random UUID
+  GM.setValue('bmUserSettings', JSON.stringify(userSettings));
+}
 
 // CONSTRUCTORS
 const observers = new Observers(); // Constructs a new Observers object
@@ -208,16 +212,6 @@ templateManager.importJSON(storageTemplates); // Loads the templates
 
 
 console.log(userSettings);
-console.log(Object.keys(userSettings).length);
-
-// If the user does not have a UUID yet, make a new one.
-if (Object.keys(userSettings).length == 0) {
-  const uuid = crypto.randomUUID(); // Generates a random UUID
-  console.log(uuid);
-  GM.setValue('bmUserSettings', JSON.stringify({
-    'uuid': uuid
-  }));
-}
 
 setInterval(() => apiManager.sendHeartbeat(version), 1000 * 60 * 30); // Sends a heartbeat every 30 minutes
 

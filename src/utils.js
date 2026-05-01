@@ -139,6 +139,159 @@ export function serverTPtoDisplayTP(tile, pixel) {
   return [((parseInt(tile[0]) % 4) * 1000) + parseInt(pixel[0]), ((parseInt(tile[1]) % 4) * 1000) + parseInt(pixel[1])];
 }
 
+/** Converts Wplace tile/pixel coordinates to latitude/longitude.
+ * @param {number} tileX - Wplace tile X coordinate
+ * @param {number} tileY - Wplace tile Y coordinate
+ * @param {number} pixelX - Pixel X inside the tile
+ * @param {number} pixelY - Pixel Y inside the tile
+ * @param {number} [tileSize=1000] - Tile size in pixels
+ * @param {number} [zoom=11] - Pixel-art tile zoom used by Wplace
+ * @returns {{lat: number, lng: number}} Latitude/longitude pair centered on the pixel
+ * @since 0.92.1
+ */
+export function tilePixelToLatLng(tileX, tileY, pixelX, pixelY, tileSize = 1000, zoom = 11) {
+  const earthHalfCircumference = 2 * Math.PI * 6378137 / 2;
+  const resolution = (2 * earthHalfCircumference) / (tileSize * Math.pow(2, zoom));
+  const globalPixelX = (tileX * tileSize) + pixelX + 0.5;
+  const globalPixelY = (tileY * tileSize) + pixelY + 0.5;
+  const metersX = (globalPixelX * resolution) - earthHalfCircumference;
+  const metersY = earthHalfCircumference - (globalPixelY * resolution);
+  const lng = (metersX / earthHalfCircumference) * 180;
+  const latMercator = (metersY / earthHalfCircumference) * 180;
+  const lat = (180 / Math.PI) * (2 * Math.atan(Math.exp(latMercator * Math.PI / 180)) - (Math.PI / 2));
+  return { lat, lng };
+}
+
+/** Smoothly moves the Wplace map to latitude/longitude when the current page exposes MapLibre.
+ * Falls back to `false` if Wplace internals can not be reached.
+ * @param {number} lat - Latitude
+ * @param {number} lng - Longitude
+ * @param {number} [zoom=17.5] - Target Wplace zoom
+ * @returns {Promise<boolean>} Whether the map moved without reloading
+ * @since 0.92.1
+ */
+export async function navigateWplaceToLatLng(lat, lng, zoom = 17.5) {
+  installWplaceNavigatorBridge();
+
+  const url = new URL(window.location.href);
+  url.searchParams.set('lat', lat.toString());
+  url.searchParams.set('lng', lng.toString());
+  url.searchParams.set('zoom', zoom.toString());
+
+  const requestID = crypto.randomUUID();
+  const moved = await new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', onMessage);
+      resolve(false);
+    }, 4000);
+
+    const onMessage = (event) => {
+      const data = event.data;
+      if (!data || data['source'] != 'blue-marble' || data['endpoint'] != 'navigate-result' || data['requestID'] != requestID) {return;}
+      clearTimeout(timeout);
+      window.removeEventListener('message', onMessage);
+      resolve(!!data['ok']);
+    };
+
+    window.addEventListener('message', onMessage);
+    window.postMessage({
+      'source': 'blue-marble',
+      'endpoint': 'navigate',
+      'requestID': requestID,
+      'lat': lat,
+      'lng': lng,
+      'zoom': zoom
+    }, '*');
+  });
+
+  if (moved) {
+    history.pushState(history.state, '', url.toString());
+  }
+
+  return moved;
+}
+
+/** Installs a page-context bridge that can access Wplace's internal Svelte modules.
+ * @since 0.92.1
+ */
+function installWplaceNavigatorBridge() {
+  if (document.documentElement?.dataset?.bmNavigatorBridge) {return;}
+  document.documentElement.dataset.bmNavigatorBridge = 'true';
+
+  const script = document.createElement('script');
+  script.textContent = `(() => {
+    if (window.__blueMarbleWplaceNavigator) {return;}
+
+    const state = {
+      map: null,
+      searchPromise: null
+    };
+
+    async function findMap() {
+      if (state.map && typeof state.map.flyTo == 'function') {return state.map;}
+
+      const links = Array.from(document.querySelectorAll('link[rel="modulepreload"][href*="/_app/immutable/chunks/"]'));
+
+      for (const link of links) {
+        const url = new URL(link.href, location.href).href;
+
+        try {
+          const response = await fetch(url, { credentials: 'same-origin' });
+          if (!response.ok) {continue;}
+
+          const source = await response.text();
+          if (!source.includes('get map(){return') || !source.includes('set map(')) {continue;}
+
+          const module = await import(url);
+          for (const value of Object.values(module)) {
+            if (value && typeof value == 'object' && value.map && typeof value.map.flyTo == 'function') {
+              state.map = value.map;
+              return state.map;
+            }
+          }
+        } catch (error) {}
+      }
+
+      return null;
+    }
+
+    window.addEventListener('message', async (event) => {
+      const data = event.data;
+      if (!data || data.source != 'blue-marble' || data.endpoint != 'navigate') {return;}
+
+      let ok = false;
+
+      try {
+        const map = await (state.searchPromise ||= findMap());
+        state.searchPromise = null;
+
+        if (map && typeof map.flyTo == 'function') {
+          map.flyTo({
+            center: [data.lng, data.lat],
+            zoom: data.zoom,
+            duration: 1200,
+            essential: true
+          });
+          ok = true;
+        }
+      } catch (error) {
+        state.searchPromise = null;
+      }
+
+      window.postMessage({
+        source: 'blue-marble',
+        endpoint: 'navigate-result',
+        requestID: data.requestID,
+        ok: ok
+      }, '*');
+    });
+
+    window.__blueMarbleWplaceNavigator = true;
+  })();`;
+  document.documentElement?.appendChild(script);
+  script.remove();
+}
+
 /** Negative-Safe Modulo. You can pass negative numbers into this.
  * @param {number} a - The first number
  * @param {number} b - The second number

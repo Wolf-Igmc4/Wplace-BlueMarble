@@ -132,6 +132,20 @@ export default class TemplateManager {
     this.settingsManager = settingsManager;
   }
 
+  /** Sets whether a palette color should be hidden from rendered template overlays.
+   * @param {number} colorID - Blue Marble palette color ID
+   * @param {boolean} shouldBeFiltered - Whether the color should be hidden
+   * @since 0.92.1
+   */
+  setColorFiltered(colorID, shouldBeFiltered) {
+    if (shouldBeFiltered) {
+      this.shouldFilterColor.set(colorID, true);
+      return;
+    }
+
+    this.shouldFilterColor.delete(colorID);
+  }
+
   /** Creates the JSON object to store templates in
    * @returns {{ whoami: string, scriptVersion: string, schemaVersion: string, templates: Object }} The JSON object
    * @since 0.65.4
@@ -581,7 +595,7 @@ export default class TemplateManager {
       const templateHasErased = !!template.instance.pixelCount?.colors?.get(-1); // Does this template have Erased (#deface) pixels?
 
       // Obtains the template (for only this tile) as a Uint32Array
-      let templateBeforeFilter32 = template.chunked32.slice();
+      let templateBeforeFilter32 = template.chunked32?.slice();
       // Remove the `.slice()` and colors, once disabled, can never be re-enabled
 
       const coordXtoDrawAt = Number(template.pixelCoords[0]) * this.drawMult;
@@ -602,7 +616,8 @@ export default class TemplateManager {
       const timer = Date.now();
       const {
         correctPixels: pixelsCorrect,
-        filteredTemplate: templateAfterFilter
+        filteredTemplate: templateAfterFilter,
+        pendingPixels: pixelsPending
       } = this.#calculateCorrectPixelsOnTile_And_FilterTile({
         tile: tileBeforeTemplates32,
         template: templateBeforeFilter32,
@@ -640,9 +655,70 @@ export default class TemplateManager {
 
       // Adds the correct pixel Map to the template instance
       template.instance.pixelCount['correct'][tileCoords] = pixelsCorrect;
+
+      // If "pending" does not exist as a key of the object "pixelCount", we create it
+      if (typeof template.instance.pixelCount['pending'] == 'undefined') {
+        template.instance.pixelCount['pending'] = {};
+      }
+
+      const [pendingTileX, pendingTileY] = tileCoords.split(',').map(Number);
+
+      // Adds compact pending pixel samples to the template instance.
+      // Each entry represents many pending pixels of the same color in this tile.
+      template.instance.pixelCount['pending'][tileCoords] = Array.from(pixelsPending.values()).map(pixel => ({
+        tileX: pendingTileX,
+        tileY: pendingTileY,
+        pixelX: pixel.pixelX,
+        pixelY: pixel.pixelY,
+        colorID: pixel.colorID,
+        count: pixel.count,
+        samples: pixel.samples
+      }));
     }
 
     return await canvas.convertToBlob({ type: 'image/png' });
+  }
+
+  /** Returns a random pending pixel from currently loaded template tiles.
+   * @param {number | undefined} colorID - If set, only pending pixels for this color are considered.
+   * @returns {{tileX: number, tileY: number, pixelX: number, pixelY: number, colorID: number} | null} A pending pixel, or null if none are known
+   * @since 0.92.1
+   */
+  getRandomPendingPixel(colorID = undefined) {
+
+    let selectedPixel = null;
+    let pendingPixelTotal = 0;
+
+    for (const template of this.templatesArray) {
+      const pendingObject = template.pixelCount?.pending ?? {};
+
+      for (const pixels of Object.values(pendingObject)) {
+        for (const pixel of pixels) {
+          if ((typeof colorID == 'undefined') && this.shouldFilterColor.get(pixel.colorID)) {continue;}
+          if ((typeof colorID != 'undefined') && (pixel.colorID != colorID)) {continue;}
+
+          const pendingPixelsInSample = Number(pixel.count) || 1;
+          pendingPixelTotal += pendingPixelsInSample;
+
+          if (Math.random() * pendingPixelTotal < pendingPixelsInSample) {
+            selectedPixel = pixel;
+          }
+        }
+      }
+    }
+
+    if (!selectedPixel) {return null;}
+
+    const samples = Array.isArray(selectedPixel.samples) && selectedPixel.samples.length
+      ? selectedPixel.samples
+      : [selectedPixel];
+    const sample = samples[Math.floor(Math.random() * samples.length)];
+
+    return {
+      ...selectedPixel,
+      pixelX: sample.pixelX,
+      pixelY: sample.pixelY
+    };
   }
 
   /** Imports the JSON object, and appends it to any JSON object already loaded
@@ -817,7 +893,7 @@ export default class TemplateManager {
    * @param {Array<Number, Number, Number, Number>} params.templateInfo - Information about template location and size
    * @param {Array<number[]>} params.highlightPattern - The highlight pattern selected by the user
    * @param {boolean} params.highlightDisabled - Should highlighting be disabled?
-   * @returns {{correctPixels: Map<number, number>, filteredTemplate: Uint32Array}} A Map containing the color IDs (keys) and how many correct pixels there are for that color (values)
+   * @returns {{correctPixels: Map<number, number>, filteredTemplate: Uint32Array, pendingPixels: Map<number, {pixelX: number, pixelY: number, colorID: number, count: number, samples: Array<{pixelX: number, pixelY: number}>}>}} A Map containing correct pixel totals and compact pending pixel samples
    */
   #calculateCorrectPixelsOnTile_And_FilterTile({
     tile: tile32, 
@@ -853,6 +929,35 @@ export default class TemplateManager {
 
     // Makes a copy of the color palette Blue Marble uses, turns it into a Map, and adds data to count the amount of each color
     const _colorpalette = new Map(); // Temp color palette
+    const pendingPixels = new Map();
+    const maxPendingSamplesPerColor = 32;
+    const trackPendingPixel = (colorID, tileColumn, tileRow) => {
+      const pendingSample = {
+        pixelX: (tileColumn / pixelSize) | 0,
+        pixelY: (tileRow / pixelSize) | 0
+      };
+      const colorPendingPixels = pendingPixels.get(colorID);
+
+      if (!colorPendingPixels) {
+        pendingPixels.set(colorID, {
+          pixelX: pendingSample.pixelX,
+          pixelY: pendingSample.pixelY,
+          colorID: colorID,
+          count: 1,
+          samples: [pendingSample]
+        });
+        return;
+      }
+
+      const sampleIndex = colorPendingPixels.count % maxPendingSamplesPerColor;
+      colorPendingPixels.count += 1;
+
+      if (colorPendingPixels.samples.length < maxPendingSamplesPerColor) {
+        colorPendingPixels.samples.push(pendingSample);
+      } else {
+        colorPendingPixels.samples[sampleIndex] = pendingSample;
+      }
+    };
 
     // For each center pixel...
     for (let templateRow = 1; templateRow < templateHeight; templateRow += pixelSize) {
@@ -969,14 +1074,22 @@ export default class TemplateManager {
         }
         // If the code passes this point, the pixel is not a correct Erased color.
 
+        // If the template pixel is Erased, and the tile pixel is not transparent...
+        if (bestTemplateColorID == -1) {
+          trackPendingPixel(bestTemplateColorID, tileColumn, tileRow);
+          continue;
+        }
+
         // If either pixel is transparent...
         if ((templatePixelAlpha <= tolerance) || (tilePixelAlpha <= tolerance)) {
+          if (templatePixelAlpha > tolerance) {trackPendingPixel(bestTemplateColorID, tileColumn, tileRow);}
           continue; // ...we skip it. We can't match the RGB color of transparent pixels.
         }
         // If the code passes this point, both pixels are opaque & not Erased.
 
         // If the template pixel does not match the tile pixel, then the pixel is skipped after highlighting.
         if (bestTileColorID != bestTemplateColorID) {
+          trackPendingPixel(bestTemplateColorID, tileColumn, tileRow);
           continue;
         }
         // If the code passes this point, the template pixel matches the tile pixel.
@@ -990,6 +1103,6 @@ export default class TemplateManager {
 
     console.log(`List of template pixels that match the tile:`);
     console.log(_colorpalette);
-    return { correctPixels: _colorpalette, filteredTemplate: template32 };
+    return { correctPixels: _colorpalette, filteredTemplate: template32, pendingPixels: pendingPixels };
   }
 }

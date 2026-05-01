@@ -56,6 +56,13 @@
   height: fit-content;
 }
 
+.bm-button-icon {
+  display: block;
+  width: 1.1em;
+  height: 1.1em;
+  pointer-events: none;
+}
+
 /* When a window is being dragged */
 .bm-dragbar.bm-dragging {
   cursor: grabbing;
@@ -169,13 +176,33 @@
 
 /* Icon buttons (single character text content buttons) */
 .bm-button-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: white 1px solid;
   height: 1.5em;
   width: 1.5em;
   margin-top: 2px;
-  text-align: center;
-  line-height: 1em;
+  border-radius: 999px;
+  box-sizing: border-box;
+  line-height: 1;
   padding: 0 !important; /* Overrides the padding in ".bm-window button" */
+  vertical-align: middle;
+}
+
+.bm-button-upstream-update {
+  color: #1ed760;
+  border-color: #1ed760;
+  box-shadow: 0 0 0 1px rgba(30, 215, 96, 0.35);
+}
+
+.bm-window button.bm-button-upstream-update {
+  background-color: rgba(20, 78, 185, 0.85);
+}
+
+.bm-window button.bm-button-upstream-update:hover,
+.bm-window button.bm-button-upstream-update:focus-visible {
+  background-color: rgba(30, 215, 96, 0.22);
 }
 
 /* Pin button */

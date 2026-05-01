@@ -59,6 +59,17 @@ export default class SettingsManager extends WindowSettings {
     }
   }
 
+  /** Saves user settings immediately, bypassing the periodic throttle.
+   * @since 0.92.1
+   */
+  async saveUserStorageNow() {
+    const userSettingsCurrent = JSON.stringify(this.userSettings);
+    await GM.setValue(this.userSettingsSaveLocation, userSettingsCurrent);
+    this.userSettingsOld = structuredClone(this.userSettings);
+    this.lastUpdateTime = Date.now();
+    console.log(userSettingsCurrent);
+  }
+
   /** Toggles a boolean flag to the state that was passed in.
    * If no state was passed in, the flag will flip to the opposite state.
    * The existence of the flag determines its state. If it exists, it is `true`.
