@@ -118,10 +118,13 @@
   <ul>
     <li>Displaying the number of pixels you need to level up</li>
     <li>Displaying a simple coordinate system (tile coordinats & pixel coordinates)</li>
+    <li>Autofilling template coordinates from filenames that start with <code>tileX-tileY-pixelX-pixelY</code></li>
     <li>Allowing you to move the color palette to the top of the screen when placing pixels</li>
     <li>Allowing you to use the eyedropper on the template image, provided the colors are correct</li>
     <li>Minimizing or maximizing the menu to switch between compact and full views</li>
-    <li>Filtering overlay colors by toggling individual template colors or using global enable/disable buttons</li>
+    <li>Filtering overlay colors with a refreshed Color Filter UI, live progress stats, reactive free/premium/completed color filters, responsive small-screen sizing, and persistent resizable window mode</li>
+    <li>Jumping from each color in the full Color Filter view to a bounded random sample pool of remaining pixels for that color from the loaded template tiles, using smooth map navigation when Wplace exposes its map instance</li>
+    <li>Showing a small green update arrow in the fork UI only when the original Blue Marble repository has a newer version than this script</li>
     <li>...and more!</li>
   </ul>
   If you like this userscript, please ⭐ the repository! For more information and updates, visit the <a href="https://bluemarble.lol/" target="_blank" rel="noopener noreferrer">Blue Marble website</a>. If you wish to contribute to Blue Marble, check out the <a href="https://github.com/SwingTheVine/Wplace-BlueMarble/blob/main/docs/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a> file in <code>docs/</code>.

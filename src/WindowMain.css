@@ -1,0 +1,36 @@
+/* @since 0.92.6 */
+
+@media (max-width: 620px) {
+  /* Keep the startup window compact on narrow screens without affecting secondary Blue Marble windows. */
+  #bm-window-main {
+    width: min(210px, calc(100vw - 16px));
+    max-width: min(210px, calc(100vw - 16px));
+    font-size: 0.9em;
+    box-sizing: border-box;
+  }
+
+  #bm-window-main .bm-favicon {
+    height: 2.1em;
+    margin-right: 0.5ch;
+  }
+
+  #bm-window-main h1 {
+    font-size: 1.35em;
+    letter-spacing: 0;
+  }
+
+  #bm-window-main .bm-container {
+    min-width: 0;
+  }
+
+  #bm-window-main input[type="number"].bm-input-coords {
+    width: 4.7ch;
+    margin-left: 0.25ch;
+    padding: 0 0.25ch;
+    font-size: 0.78rem;
+  }
+
+  #bm-window-main .bm-flex-between {
+    flex-wrap: wrap;
+  }
+}

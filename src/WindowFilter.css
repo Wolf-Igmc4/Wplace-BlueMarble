@@ -1,45 +1,387 @@
 /* @since 0.88.459 */
 
-/* Filter window eye icon inside paragraphs */
+/* Filter window visibility icon */
+#bm-window-filter .bm-filter-eye-icon {
+  display: block;
+  width: 1.28em;
+  height: 1.28em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  overflow: visible;
+}
+
+/* Random pending pixel locator. It is only shown in the full Color Filter cards. */
+#bm-window-filter .bm-filter-locate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  color: white;
+  line-height: 1;
+}
+
+#bm-window-filter .bm-filter-locate-icon {
+  display: block;
+  width: 1.18rem;
+  height: 1.18rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#bm-window-filter.bm-windowed .bm-filter-locate {
+  display: none;
+}
+
+/* Filter window inline icons inside paragraphs */
 #bm-window-filter p svg {
-  display: inline;
+  display: inline-block;
   height: 1em;
-  fill: white;
+  width: 1em;
+  color: currentColor;
+  vertical-align: -0.16em;
+}
+
+#bm-window-filter:not(.bm-windowed) {
+  width: min(60rem, calc(100vw - 0.55rem));
+  max-width: min(60rem, calc(100vw - 0.55rem)) !important;
+}
+
+#bm-window-filter .bm-filter-header {
+  padding-top: 0.08rem;
+}
+
+#bm-window-filter .bm-filter-toolbar {
+  gap: 0.22rem;
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 0.16rem;
+}
+
+#bm-window-filter .bm-filter-toolbar > button {
+  flex: 1 1 10rem;
+}
+
+#bm-window-filter .bm-filter-scrollable {
+  padding-top: 0.42rem;
+  padding-right: 0.08rem;
+}
+
+#bm-window-filter .bm-filter-insights {
+  display: block;
+  margin: 0 0.18rem 0.5rem;
+}
+
+#bm-window-filter .bm-filter-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(8.7rem, 1.28fr);
+  gap: 0.24rem;
+}
+
+#bm-window-filter .bm-filter-stat-card,
+#bm-window-filter .bm-filter-sort-panel {
+  min-width: 0;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.22), rgba(10, 24, 56, 0.42));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 8px 20px rgba(0, 0, 0, 0.16);
+}
+
+#bm-window-filter .bm-filter-stat-card {
+  min-height: 2.28rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.04rem;
+  padding: 0.24rem 0.42rem;
+  color: rgba(255, 255, 255, 0.96);
+  line-height: 1.12;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+#bm-window-filter .bm-filter-stat-label {
+  color: rgba(220, 238, 255, 0.88);
+  font-size: 0.62rem;
+  letter-spacing: 0;
+  font-family: var(--bm-font-display);
+  text-transform: uppercase;
+}
+
+#bm-window-filter .bm-filter-stat-value {
+  display: inline-block;
+  min-width: 0;
+  color: white;
+  font-size: 0.9em;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+#bm-window-filter .bm-filter-stat-card time {
+  font-family: var(--bm-font-mono);
+  font-size: 0.9em;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+#bm-window-filter .bm-filter-sort-panel {
+  padding: 0.38rem 0.48rem;
+}
+
+#bm-window-filter .bm-filter-sort-panel fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+#bm-window-filter .bm-filter-sort-panel legend {
+  margin-bottom: 0.12rem;
+}
+
+#bm-window-filter .bm-filter-sort-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.1rem;
+  margin-bottom: 0.1rem;
+}
+
+#bm-window-filter .bm-filter-show-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.65rem;
+  margin-top: 0.16rem;
+  margin-bottom: 0.02rem;
+}
+
+#bm-window-filter .bm-filter-show-label {
+  font-weight: 700;
+}
+
+#bm-window-filter .bm-filter-show-row label {
+  gap: 0.35ch;
 }
 
 /* Filter flex */
 #bm-filter-flex {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 1em 3ch;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.38rem;
 }
 
 /* Filter color */
 #bm-window-filter .bm-filter-color {
+  position: relative;
+  overflow: hidden;
   width: fit-content;
   max-width: 35ch;
-  background-color: rgba(21, 48, 99, 0.9);
-  border-radius: 1em;
-  padding: 0.5em;
-  gap: 1ch;
-  transition: background-color 0.3s ease;
+  padding: 0.28rem;
+  gap: 0.28rem;
+  border-radius: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.07));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 8px 20px rgba(0, 0, 0, 0.08);
+  transition:
+    background 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    transform 0.25s ease;
+}
+
+#bm-window-filter .bm-filter-color::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.18), transparent 24%),
+    radial-gradient(circle at 18% 0%, rgba(186, 246, 255, 0.12), transparent 22%);
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color::before {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.04));
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color::after {
+  content: none;
+}
+
+#bm-window-filter .bm-filter-color-toggle {
+  cursor: pointer;
 }
 
 /* Filter color on hover */
 #bm-window-filter .bm-filter-color:hover,
-#bm-window-filter.bm-filter-color:focus-within {
-  background-color: rgba(17, 40, 85, 0.9);
+#bm-window-filter .bm-filter-color:focus-within {
+  transform: translateY(-2px);
+  border-color: rgba(146, 221, 255, 0.26);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 10px 24px rgba(0, 0, 0, 0.1);
+}
+
+/* Fullscreen filter color cards */
+#bm-window-filter:not(.bm-windowed) .bm-filter-color {
+  width: 100%;
+  max-width: none;
+  min-height: 6.15rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(7.1rem, 0.8fr);
+  align-items: stretch;
+  gap: 0.48rem;
+  padding: 0.5rem;
+  color: var(--bm-filter-card-fg);
+  background-color: var(--bm-filter-card-bg);
+  background-image: none;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color[data-id="-2"][data-state="shown"] {
+  background-image: conic-gradient(
+      #aa0000 0%,
+      #aaaa00 16.6%,
+      #00aa00 33.3%,
+      #00aaaa 50%,
+      #0000aa 66.6%,
+      #aa00aa 83.3%,
+      #aa0000 100%
+    );
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color[data-id="-1"][data-state="shown"],
+#bm-window-filter:not(.bm-windowed) .bm-filter-color[data-id="0"][data-state="shown"] {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 8 8" width="1em" height="1em"><path d="M0,0V8H16V16H8V0" fill="rgba(0,0,0,0.35)"/></svg>');
+  background-color: rgba(255, 255, 255, 0.18);
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color[data-state="hidden"] {
+  color: var(--bm-filter-card-fg);
+  border-color: rgba(255, 255, 255, 0.16);
+  background-color: var(--bm-filter-card-bg);
+  background-image: none;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color[data-id="-2"][data-state="hidden"] {
+  background-image: conic-gradient(
+      #aa0000 0%,
+      #aaaa00 16.6%,
+      #00aa00 33.3%,
+      #00aaaa 50%,
+      #0000aa 66.6%,
+      #aa00aa 83.3%,
+      #aa0000 100%
+    );
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color[data-id="-1"][data-state="hidden"],
+#bm-window-filter:not(.bm-windowed) .bm-filter-color[data-id="0"][data-state="hidden"] {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 8 8" width="1em" height="1em"><path d="M0,0V8H16V16H8V0" fill="rgba(0,0,0,0.28)"/></svg>');
+  background-color: rgba(255, 255, 255, 0.18);
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color[data-state="hidden"]::before {
+  opacity: 0.16;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color > * {
+  position: relative;
+  z-index: 1;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-premium-star {
+  display: none;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color[data-premium="1"] .bm-filter-premium-star {
+  position: absolute;
+  top: 50%;
+  right: -3.2rem;
+  z-index: 0;
+  display: block;
+  width: 10.5rem;
+  aspect-ratio: 1;
+  background: currentColor;
+  clip-path: polygon(50% 5%, 62% 38%, 98% 38%, 69% 59%, 80% 93%, 50% 72%, 20% 93%, 31% 59%, 2% 38%, 38% 38%);
+  opacity: 0.12;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color[data-premium="1"][data-state="hidden"] .bm-filter-premium-star {
+  opacity: 0.18;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color-main,
+#bm-window-filter:not(.bm-windowed) .bm-filter-color-meta,
+#bm-window-filter:not(.bm-windowed) .bm-filter-color-progress {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color-main {
+  position: static;
+  justify-content: flex-start;
+  gap: 0.4rem;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color-title {
+  min-width: 0;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color-meta {
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 0.36rem;
+  text-align: right;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color-progress {
+  align-items: flex-end;
+  gap: 0.18rem;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color .bm-filter-color-pxl-cnt {
+  font-family: var(--bm-font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.15;
+  min-height: 1.15em;
+  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+
+#bm-window-filter .bm-filter-color-toggle:focus-visible {
+  outline: none;
+  border-color: rgba(116, 231, 255, 0.62);
+  box-shadow:
+    0 0 0 3px rgba(116, 231, 255, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 10px 24px rgba(0, 0, 0, 0.1);
 }
 
 /* Filter window container for RGB color display */
 #bm-window-filter .bm-filter-container-rgb {
   display: block;
-  border: thick double darkslategray;
   width: fit-content;
   height: fit-content;
-  padding: 1ch;
+  padding: 0.26rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 6px 16px rgba(0, 0, 0, 0.08);
 }
 
 /* Filter window container for RGB color display for Other color */
@@ -60,8 +402,9 @@
   background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 8 8" width="1em" height="1em"><path d="M0,0V8H16V16H8V0" fill="rgba(0,0,0,0.5)"/></svg>') repeat;
   background-color: transparent !important;
 }
+
 #bm-window-filter .bm-filter-color[data-id="-1"] .bm-filter-container-rgb svg {
-  fill: white !important;
+  color: white !important;
 }
 
 /* Filter window container for RGB color display for Transparent color */
@@ -71,24 +414,124 @@
 
 /* Filter window hide color button */
 #bm-window-filter .bm-filter-container-rgb button {
-  padding: 0.75em 0.5ch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.24em;
+  min-width: 2.05rem;
+  min-height: 2.05rem;
+  border-radius: 999px;
+  line-height: 1;
 }
 
 /* Filter window hide color button SVG */
-#bm-window-filter .bm-filter-container-rgb svg {
-  width: 4ch;
+#bm-window-filter .bm-filter-container-rgb .bm-filter-eye-icon {
+  width: 1.55rem;
+  height: 1.55rem;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.18));
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-container-rgb {
+  position: absolute;
+  left: 0.52rem;
+  bottom: 0.46rem;
+  z-index: 1;
+  display: inline-flex;
+  width: 1.65rem;
+  height: 1.65rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: currentColor;
+  background: transparent !important;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color[data-state="hidden"] .bm-filter-container-rgb {
+  opacity: 0.88;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-container-rgb button {
+  min-width: 1.65rem;
+  min-height: 1.65rem;
+  padding: 0;
+  border-radius: 0;
+  color: currentColor !important;
+  pointer-events: none;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-container-rgb .bm-filter-eye-icon {
+  width: 1.65rem;
+  height: 1.65rem;
+  filter: none;
+}
+
+#bm-window-filter .bm-filter-color-visibility.bm-filter-eye-animate-hide .bm-filter-eye-icon path:nth-of-type(3),
+#bm-window-filter .bm-filter-color-visibility.bm-filter-eye-animate-show .bm-filter-eye-icon path:nth-of-type(3) {
+  stroke-dasharray: 20;
+}
+
+#bm-window-filter .bm-filter-color-visibility.bm-filter-eye-animate-hide .bm-filter-eye-icon path:nth-of-type(3) {
+  stroke-dashoffset: 20;
+  animation: bm-filter-eye-slash-draw 220ms ease-out forwards;
+}
+
+#bm-window-filter .bm-filter-color-visibility.bm-filter-eye-animate-show .bm-filter-eye-icon path:nth-of-type(3) {
+  stroke-dashoffset: 0;
+  animation: bm-filter-eye-slash-erase 220ms ease-in forwards;
+}
+
+@keyframes bm-filter-eye-slash-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes bm-filter-eye-slash-erase {
+  to {
+    stroke-dashoffset: 20;
+  }
 }
 
 /* Filter window container for color information */
 #bm-window-filter .bm-filter-color > .bm-flex-between {
   flex-direction: column;
   align-items: flex-start;
-  gap: 0;
+  gap: 0.02rem;
+}
+
+#bm-window-filter .bm-filter-color h2 {
+  margin: 0.04rem 0 0;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color h2 {
+  display: block;
+  max-width: 100%;
+  margin: 0.08rem 0 0;
+  color: currentColor;
+  font-size: 1.02rem;
+  letter-spacing: 0;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+}
+
+#bm-window-filter .bm-filter-color .bm-filter-color-pxl-desc {
+  margin: 0.1rem 0 0;
 }
 
 /* Filter window color flavor text */
 #bm-window-filter .bm-filter-color small {
   font-size: 0.75em;
+}
+
+#bm-window-filter:not(.bm-windowed) .bm-filter-color small {
+  color: currentColor;
+  letter-spacing: 0;
+  opacity: 0.82;
 }
 
 /* Filter window hide unused colors */
@@ -98,46 +541,225 @@
 
 /* WINDOWED MODE */
 
+/* Resizable filter window in windowed mode */
+#bm-window-filter.bm-windowed {
+  --bm-scrollable-max-height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(360px, calc(100vw - 16px));
+  height: min(60vh, 22rem);
+  min-width: min(320px, calc(100vw - 16px));
+  min-height: 180px;
+  max-width: min(1000px, calc(100vw - 16px)) !important;
+  max-height: min(1400px, calc(100vh - 16px)) !important;
+  overflow: hidden;
+  box-sizing: border-box;
+  position: fixed;
+  transition:
+    background 320ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    transform 0s;
+}
+
+/* Keep the content area flexible inside the resizable window */
+#bm-window-filter.bm-windowed .bm-window-content {
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  grid-row: 2;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+#bm-window-filter.bm-windowed .bm-filter-toolbar {
+  gap: 0.16rem;
+  flex-wrap: nowrap;
+  width: 100%;
+  padding: 0.12rem;
+}
+
+#bm-window-filter.bm-windowed .bm-filter-toolbar > button {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 /* Filter flex in windowed mode */
 #bm-window-filter.bm-windowed #bm-filter-flex {
+  display: flex;
   flex-direction: column;
-  gap: 0.25em;
+  align-items: stretch;
+  gap: 0.16rem;
+  width: 100%;
+  align-self: stretch;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* Filter color in windowed mode */
 #bm-window-filter.bm-windowed .bm-filter-color {
-  width: auto;
+  width: 100%;
+  max-width: none;
+  align-self: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
-  padding: 0;
+  padding: 0.12rem;
+  border-radius: 11px;
+  box-sizing: border-box;
+}
+
+#bm-window-filter.bm-windowed .bm-filter-color > .bm-flex-between {
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Let the scroll area grow and shrink with the resizable window */
+#bm-window-filter.bm-windowed .bm-container.bm-scrollable {
+  display: block;
+  grid-row: 5;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  width: 100%;
+  max-height: 100% !important;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+/* Visible resize handle in the bottom-right corner */
+#bm-window-filter.bm-windowed .bm-resize-corner {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: flex;
+  width: 20px;
+  height: 20px;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding-right: 4px;
+  padding-bottom: 4px;
+  box-sizing: border-box;
+  z-index: 5;
+  cursor: nwse-resize;
+  pointer-events: auto;
+  opacity: 0.78;
+  touch-action: none;
+  user-select: none;
+  color: rgba(255, 255, 255, 0.86);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(83, 141, 255, 0.14));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+#bm-window-filter.bm-windowed .bm-resize-corner:hover,
+#bm-window-filter.bm-windowed .bm-resize-corner.bm-resizing {
+  opacity: 1;
+  border-color: rgba(146, 221, 255, 0.36);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 8px 16px rgba(0, 0, 0, 0.16);
 }
 
 /* Filter window container for RGB color display in windowed mode */
 #bm-window-filter.bm-windowed .bm-filter-container-rgb {
   display: flex;
   width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
   gap: 0.5ch;
   align-items: center;
-  padding: 0.1em 0.5ch;
+  padding: 0.1rem 0.2rem;
   border: none;
-  border-radius: 1em;
+  border-radius: 8px;
+  box-sizing: border-box;
 }
 
 /* Filter window hide color button */
 #bm-window-filter.bm-windowed .bm-filter-container-rgb button {
-  padding: 0.5em 0.25ch;
+  padding: 0.2em;
+  flex: 0 0 auto;
 }
 
 /* Filter window hide color button SVG in windowed mode */
-#bm-window-filter.bm-windowed .bm-filter-container-rgb svg {
-  width: 3ch;
+#bm-window-filter.bm-windowed .bm-filter-container-rgb .bm-filter-eye-icon {
+  width: 1.36rem;
+  height: 1.36rem;
 }
 
 /* Filter window header 2 in windowed mode */
 #bm-window-filter.bm-windowed .bm-filter-color h2 {
-  font-size: 0.75em;
+  font-size: 0.78rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Filter window dragbar text area in windowed mode */
 #bm-window-filter #bm-filter-windowed-color-totals {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.08rem 0.24rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   font-size: 1em;
+}
+
+@media (max-width: 980px) {
+  #bm-window-filter:not(.bm-windowed) {
+    width: min(100vw - 0.35rem, 42rem);
+    max-width: min(100vw - 0.35rem, 42rem) !important;
+  }
+
+  #bm-window-filter:not(.bm-windowed) #bm-filter-flex {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #bm-window-filter .bm-filter-stat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  #bm-window-filter .bm-filter-stat-card-wide {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 620px) {
+  #bm-window-filter:not(.bm-windowed) {
+    width: min(24rem, calc(100vw - 2rem));
+    max-width: min(24rem, calc(100vw - 2rem)) !important;
+  }
+
+  #bm-window-filter.bm-windowed {
+    width: min(300px, calc(100vw - 2rem));
+    min-width: min(280px, calc(100vw - 2rem));
+  }
+
+  #bm-window-filter .bm-filter-stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #bm-window-filter .bm-filter-stat-card-wide {
+    grid-column: auto;
+  }
+
+  #bm-window-filter:not(.bm-windowed) .bm-filter-color {
+    width: 100%;
+    max-width: none;
+    grid-template-columns: 1fr;
+  }
+
+  #bm-window-filter:not(.bm-windowed) #bm-filter-flex {
+    grid-template-columns: 1fr;
+  }
+
+  #bm-window-filter:not(.bm-windowed) .bm-filter-color-meta,
+  #bm-window-filter:not(.bm-windowed) .bm-filter-color-progress {
+    align-items: flex-start;
+    text-align: left;
+  }
 }
