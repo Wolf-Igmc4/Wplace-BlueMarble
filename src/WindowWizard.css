@@ -11,10 +11,12 @@
 /* Wizard template card */
 #bm-wizard-tlist > .bm-container {
   width: 100%;
+  min-width: 0;
   justify-content: flex-start;
   background-color: rgba(21, 48, 99, 0.9);
   border-radius: 1em;
   padding: 0.5em;
+  box-sizing: border-box;
   transition: background-color 0.3s ease;
 }
 
@@ -26,13 +28,39 @@
 
 /* Wizard template card image container */
 #bm-wizard-tlist .bm-wizard-template-container-image {
+  flex: 0 0 auto;
   height: 100%;
   font-size: xxx-large;
 }
 
 /* Wizard template card text container */
 #bm-wizard-tlist .bm-wizard-template-container-flavor {
+  min-width: 0;
+  flex: 1 1 auto;
   flex-direction: column;
   align-items: flex-start;
   gap: 0;
+}
+
+#bm-wizard-tlist .bm-wizard-template-container-flavor > * {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+  #bm-wizard-tlist > .bm-container {
+    gap: 0.38ch;
+    padding: 0.42em;
+  }
+
+  #bm-wizard-tlist .bm-wizard-template-container-flavor h3 {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.08;
+  }
+
+  #bm-wizard-tlist .bm-wizard-template-container-flavor span {
+    font-size: 0.68rem;
+    line-height: 1.12;
+  }
 }
