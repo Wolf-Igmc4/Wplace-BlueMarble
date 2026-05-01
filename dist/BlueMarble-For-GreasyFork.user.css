@@ -353,8 +353,8 @@ input[type=file] {
   vertical-align: -0.16em;
 }
 #bm-window-filter:not(.bm-windowed) {
-  width: min(92vw, calc(100vw - 0.55rem));
-  max-width: min(92vw, calc(100vw - 0.55rem)) !important;
+  width: min(75vw, calc(100vw - 0.55rem));
+  max-width: min(75vw, calc(100vw - 0.55rem)) !important;
 }
 #bm-window-filter .bm-filter-header {
   padding-top: 0.08rem;
