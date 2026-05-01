@@ -45,7 +45,7 @@
 </table>
 
 <h1>Blue Marble</h1>
-<a href="" target="_blank" rel="noopener noreferrer"><img alt="Latest Version" src="https://img.shields.io/badge/Latest_Version-0.92.0-lightblue?style=flat"></a>
+<a href="" target="_blank" rel="noopener noreferrer"><img alt="Latest Version" src="https://img.shields.io/badge/Latest_Version-0.92.10-lightblue?style=flat"></a>
 <a href="https://github.com/SwingTheVine/Wplace-BlueMarble/releases" target="_blank" rel="noopener noreferrer"><img alt="Latest Release" src="https://img.shields.io/github/v/release/SwingTheVine/Wplace-BlueMarble?sort=semver&style=flat&label=Latest%20Release&color=blue"></a>
 <a href="https://github.com/SwingTheVine/Wplace-BlueMarble/blob/main/LICENSE.txt" target="_blank" rel="noopener noreferrer"><img alt="Software License: MPL-2.0" src="https://img.shields.io/badge/Software_License-MPL--2.0-slateblue?style=flat"></a>
 <a href="https://discord.gg/tpeBPy46hf" target="_blank" rel="noopener noreferrer"><img alt="Contact Me" src="https://img.shields.io/badge/Contact_Me-gray?style=flat&logo=Discord&logoColor=white&logoSize=auto&labelColor=cornflowerblue"></a>
@@ -122,7 +122,7 @@
     <li>Allowing you to move the color palette to the top of the screen when placing pixels</li>
     <li>Allowing you to use the eyedropper on the template image, provided the colors are correct</li>
     <li>Minimizing or maximizing the menu to switch between compact and full views</li>
-    <li>Filtering overlay colors with a refreshed Color Filter UI, live progress stats, reactive free/premium/completed color filters, a four-column desktop fullscreen grid, responsive small-screen sizing, and persistent resizable window mode</li>
+    <li>Filtering overlay colors with a refreshed Color Filter UI, live progress stats, reactive free/premium/completed color filters, a four-column desktop fullscreen grid, responsive small-screen sizing, and resizable fullscreen/windowed layouts</li>
     <li>Keeping Template Wizard template details compact on small mobile screens so saved template slots stay readable</li>
     <li>Showing the Color Filter button only after a template is loaded</li>
     <li>Jumping from each color in the full Color Filter view to a bounded random sample pool of remaining pixels for that color from the loaded template tiles, using smooth map navigation when Wplace exposes its map instance</li>

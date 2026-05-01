@@ -212,10 +212,23 @@ export default class WindowFilter extends Overlay {
           // Color list will appear here in the DOM tree
         .buildElement()
       .buildElement()
+      .addDiv({
+        'class': 'bm-resize-corner',
+        'title': 'Resize Color Filter window',
+        'aria-label': 'Resize Color Filter window',
+        'role': 'presentation',
+        'textContent': '◢'
+      }).buildElement()
     .buildElement().buildOverlay(this.windowParent);
 
     // Creates dragging capability on the drag bar for dragging the window
     this.handleDrag(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-dragbar`);
+    this.handleResize(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-resize-corner`, {
+      minWidth: Math.min(this.windowMinWidth, window.innerWidth - 16),
+      minHeight: this.windowMinHeight,
+      maxWidth: window.innerWidth - 16,
+      maxHeight: window.innerHeight - 16
+    });
 
     // Obtains the scrollable container to put the color filter in
     const scrollableContainer = document.querySelector(`#${this.windowID} .bm-container.bm-scrollable`);
@@ -307,8 +320,7 @@ export default class WindowFilter extends Overlay {
         'title': 'Resize Color Filter window',
         'aria-label': 'Resize Color Filter window',
         'role': 'presentation',
-        'textContent': '◢',
-        'style': 'position: absolute; right: 0; bottom: 0; width: 28px; height: 28px; display: flex; align-items: flex-end; justify-content: flex-end; padding-right: 4px; padding-bottom: 4px; box-sizing: border-box; z-index: 5; cursor: nwse-resize; pointer-events: auto; touch-action: none; user-select: none; font-size: 8px; line-height: 1; color: rgba(255,255,255,0.95); background: transparent; border: none; box-shadow: none;'
+        'textContent': '◢'
       }).buildElement()
     .buildElement().buildOverlay(this.windowParent);
 
