@@ -201,7 +201,7 @@ export default class TemplateManager {
    */
   async createJSON() {
     return {
-      "whoami": this.name.replace(' ', ''), // Name of userscript without spaces
+      "whoami": "BlueMarble", // Canonical storage identifier shared by Blue Marble forks
       "scriptVersion": this.version, // Version of userscript
       "schemaVersion": this.schemaVersion, // Version of JSON schema
       "templates": {} // The templates
@@ -618,15 +618,10 @@ export default class TemplateManager {
     // Format tile coordinates with proper padding for consistent lookup
     tileCoords = tileCoords[0].toString().padStart(4, '0') + ',' + tileCoords[1].toString().padStart(4, '0');
 
-    console.log(`Searching for templates in tile: "${tileCoords}"`);
-
     const templateArray = this.templatesArray; // Stores a copy for sorting
-    console.log(templateArray);
 
     // Sorts the array of Template class instances. 0 = first = lowest draw priority
     templateArray.sort((a, b) => {return a.sortID - b.sortID;});
-
-    console.log(templateArray);
 
     // Retrieves the relavent template tile blobs
     const templatesToDraw = templateArray
@@ -655,10 +650,7 @@ export default class TemplateManager {
       })
     .filter(Boolean);
 
-    console.log(templatesToDraw);
-
     const templateCount = templatesToDraw?.length || 0; // Number of templates to draw on this tile
-    console.log(`templateCount = ${templateCount}`);
 
     if (templateCount > 0) {
       
@@ -728,9 +720,6 @@ export default class TemplateManager {
     
     // For each template in this tile, draw them.
     for (const template of templatesToDraw) {
-      console.log(`Template:`);
-      console.log(template);
-
       const templateHasErased = !!template.instance.pixelCount?.colors?.get(-1); // Does this template have Erased (#deface) pixels?
 
       // Obtains the template (for only this tile) as a Uint32Array
@@ -752,7 +741,6 @@ export default class TemplateManager {
       }
 
       // Take the pre-filter template ImageData + the pre-filter tile ImageData, and use that to calculate the correct pixels
-      const timer = Date.now();
       const {
         correctPixels: pixelsCorrect,
         filteredTemplate: templateAfterFilter,
@@ -765,27 +753,13 @@ export default class TemplateManager {
         highlightDisabled: highlightDisabled
       });
 
-      let pixelsCorrectTotal = 0;
-      const transparentColorID = 0;
-
-      // For each color with correct pixels placed for this template...
-      for (const [color, total] of pixelsCorrect) {
-
-        if (color == transparentColorID) {continue;} // Skip Transparent color
-
-        pixelsCorrectTotal += total; // Add the current total for this color to the summed total of all correct
-      }
-
       // If there are colors to filter, then we draw the filtered template on the canvas
       // Or, if there are Erased (#deface) pixels, then we draw the modified template on the canvas
       // Or, if the user has enabled highlighting, then we draw the modified template on the canvas
       if ((this.shouldFilterColor.size != 0) || templateHasErased || !highlightDisabled) {
-        console.log('Colors to filter: ', this.shouldFilterColor);
         //context.putImageData(new ImageData(new Uint8ClampedArray(templateAfterFilter.buffer), template.bitmap.width, template.bitmap.height), coordXtoDrawAt, coordYtoDrawAt);
         context.drawImage(await createImageBitmap(new ImageData(new Uint8ClampedArray(templateAfterFilter.buffer), template.bitmap.width, template.bitmap.height)), coordXtoDrawAt, coordYtoDrawAt);
       }
-
-      console.log(`Finished calculating correct pixels & filtering colors for the tile ${tileCoords} in ${(Date.now() - timer) / 1000} seconds!\nThere are ${pixelsCorrectTotal} correct pixels.`);
 
       // If "correct" does not exist as a key of the object "pixelCount", we create it
       if (typeof template.instance.pixelCount['correct'] == 'undefined') {
@@ -869,13 +843,28 @@ export default class TemplateManager {
     console.log(json);
 
     // If the passed in JSON is a Blue Marble template object...
-    if (json?.whoami == 'BlueMarble') {
+    if (this.#isBlueMarbleTemplateJSON(json)) {
       this.templatesLoadingPromise = this.#parseBlueMarble(json)
         .finally(() => {
           this.templatesLoadingPromise = null;
         });
       return await this.templatesLoadingPromise; // ...parse the template object as Blue Marble
     }
+  }
+
+  /** Checks whether a saved template payload belongs to Blue Marble.
+   * Forked builds used names such as "BlueMarble X", so normalize the marker
+   * instead of requiring one exact string.
+   * @param {Object} json - Template storage payload
+   * @returns {boolean}
+   * @since 0.92.12
+   */
+  #isBlueMarbleTemplateJSON(json) {
+    const whoami = json?.whoami;
+    if (typeof whoami != 'string') {return false;}
+
+    const normalizedWhoami = whoami.replace(/\s+/g, '');
+    return ['BlueMarble', 'BlueMarbleX'].includes(normalizedWhoami);
   }
 
   /** Parses the Blue Marble JSON object
@@ -888,6 +877,7 @@ export default class TemplateManager {
 
     const templates = json.templates || {};
     json.templates = templates;
+    json.whoami = "BlueMarble";
     this.templatesJSON = json;
 
     console.log(`BlueMarble length: ${Object.keys(templates).length}`);
@@ -1260,8 +1250,6 @@ export default class TemplateManager {
       }
     }
 
-    console.log(`List of template pixels that match the tile:`);
-    console.log(_colorpalette);
     return { correctPixels: _colorpalette, filteredTemplate: template32, pendingPixels: pendingPixels };
   }
 }

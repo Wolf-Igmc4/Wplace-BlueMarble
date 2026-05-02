@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.11
+// @version         0.92.13
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -22,7 +22,7 @@
 // @grant           GM.download
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.11
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.13
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -4020,7 +4020,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
   };
 
   // src/templateManager.js
-  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, loadTemplate_fn, storeTemplates_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
+  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, loadTemplate_fn, storeTemplates_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
   var TemplateManager = class {
     /** The constructor for the {@link TemplateManager} class.
      * @param {string} name - The name of the userscript
@@ -4100,8 +4100,8 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
      */
     async createJSON() {
       return {
-        "whoami": this.name.replace(" ", ""),
-        // Name of userscript without spaces
+        "whoami": "BlueMarble",
+        // Canonical storage identifier shared by Blue Marble forks
         "scriptVersion": this.version,
         // Version of userscript
         "schemaVersion": this.schemaVersion,
@@ -4343,13 +4343,10 @@ Canvas Height: ${canvasHeight}`);
       }
       const drawSize = this.tileSize * this.drawMult;
       tileCoords = tileCoords[0].toString().padStart(4, "0") + "," + tileCoords[1].toString().padStart(4, "0");
-      console.log(`Searching for templates in tile: "${tileCoords}"`);
       const templateArray = this.templatesArray;
-      console.log(templateArray);
       templateArray.sort((a, b) => {
         return a.sortID - b.sortID;
       });
-      console.log(templateArray);
       const templatesToDraw = templateArray.map((template) => {
         const matchingTiles = Object.keys(template.chunked).filter(
           (tile) => tile.startsWith(tileCoords)
@@ -4369,9 +4366,7 @@ Canvas Height: ${canvasHeight}`);
         });
         return matchingTileBlobs?.[0];
       }).filter(Boolean);
-      console.log(templatesToDraw);
       const templateCount = templatesToDraw?.length || 0;
-      console.log(`templateCount = ${templateCount}`);
       if (templateCount > 0) {
         const totalPixels = templateArray.filter((template) => {
           const matchingTiles = Object.keys(template.chunked).filter(
@@ -4404,8 +4399,6 @@ Version: ${this.version}`);
       const highlightPatternIndexZero = highlightPattern?.[0];
       const highlightDisabled = highlightPattern?.length == 1 && highlightPatternIndexZero?.[0] == 2 && highlightPatternIndexZero?.[1] == 0 && highlightPatternIndexZero?.[2] == 0;
       for (const template of templatesToDraw) {
-        console.log(`Template:`);
-        console.log(template);
         const templateHasErased = !!template.instance.pixelCount?.colors?.get(-1);
         let templateBeforeFilter32 = template.chunked32?.slice();
         const coordXtoDrawAt = Number(template.pixelCoords[0]) * this.drawMult;
@@ -4417,7 +4410,6 @@ Version: ${this.version}`);
           const templateBeforeFilter = context.getImageData(coordXtoDrawAt, coordYtoDrawAt, template.bitmap.width, template.bitmap.height);
           templateBeforeFilter32 = new Uint32Array(templateBeforeFilter.data.buffer);
         }
-        const timer = Date.now();
         const {
           correctPixels: pixelsCorrect,
           filteredTemplate: templateAfterFilter,
@@ -4429,20 +4421,9 @@ Version: ${this.version}`);
           highlightPattern,
           highlightDisabled
         });
-        let pixelsCorrectTotal = 0;
-        const transparentColorID = 0;
-        for (const [color, total] of pixelsCorrect) {
-          if (color == transparentColorID) {
-            continue;
-          }
-          pixelsCorrectTotal += total;
-        }
         if (this.shouldFilterColor.size != 0 || templateHasErased || !highlightDisabled) {
-          console.log("Colors to filter: ", this.shouldFilterColor);
           context.drawImage(await createImageBitmap(new ImageData(new Uint8ClampedArray(templateAfterFilter.buffer), template.bitmap.width, template.bitmap.height)), coordXtoDrawAt, coordYtoDrawAt);
         }
-        console.log(`Finished calculating correct pixels & filtering colors for the tile ${tileCoords} in ${(Date.now() - timer) / 1e3} seconds!
-There are ${pixelsCorrectTotal} correct pixels.`);
         if (typeof template.instance.pixelCount["correct"] == "undefined") {
           template.instance.pixelCount["correct"] = {};
         }
@@ -4506,7 +4487,7 @@ There are ${pixelsCorrectTotal} correct pixels.`);
     async importJSON(json) {
       console.log(`Importing JSON...`);
       console.log(json);
-      if (json?.whoami == "BlueMarble") {
+      if (__privateMethod(this, _TemplateManager_instances, isBlueMarbleTemplateJSON_fn).call(this, json)) {
         this.templatesLoadingPromise = __privateMethod(this, _TemplateManager_instances, parseBlueMarble_fn).call(this, json).finally(() => {
           this.templatesLoadingPromise = null;
         });
@@ -4620,10 +4601,26 @@ There are ${pixelsCorrectTotal} correct pixels.`);
       consoleWarn("Could not ask Wplace to refresh visible tiles after loading templates.");
     }
   };
+  /** Checks whether a saved template payload belongs to Blue Marble.
+   * Forked builds used names such as "BlueMarble X", so normalize the marker
+   * instead of requiring one exact string.
+   * @param {Object} json - Template storage payload
+   * @returns {boolean}
+   * @since 0.92.12
+   */
+  isBlueMarbleTemplateJSON_fn = function(json) {
+    const whoami = json?.whoami;
+    if (typeof whoami != "string") {
+      return false;
+    }
+    const normalizedWhoami = whoami.replace(/\s+/g, "");
+    return ["BlueMarble", "BlueMarbleX"].includes(normalizedWhoami);
+  };
   parseBlueMarble_fn = async function(json) {
     console.log(`Parsing BlueMarble...`);
     const templates = json.templates || {};
     json.templates = templates;
+    json.whoami = "BlueMarble";
     this.templatesJSON = json;
     console.log(`BlueMarble length: ${Object.keys(templates).length}`);
     const schemaVersion = json?.schemaVersion;
@@ -4847,8 +4844,6 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         _colorpalette.set(bestTemplateColorID, colorIDcount ? colorIDcount + 1 : 1);
       }
     }
-    console.log(`List of template pixels that match the tile:`);
-    console.log(_colorpalette);
     return { correctPixels: _colorpalette, filteredTemplate: template32, pendingPixels };
   };
 
