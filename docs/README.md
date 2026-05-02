@@ -122,8 +122,8 @@
     <li>Allowing you to move the color palette to the top of the screen when placing pixels</li>
     <li>Allowing you to use the eyedropper on the template image, provided the colors are correct</li>
     <li>Minimizing or maximizing the menu to switch between compact and full views</li>
-    <li>Filtering overlay colors with a refreshed Color Filter UI, live progress stats, reactive free/premium/completed color filters, adaptive fullscreen color columns, responsive small-screen sizing, and resizable fullscreen/windowed layouts</li>
-    <li>Keeping Template Wizard template details compact on small mobile screens so saved template slots stay readable</li>
+    <li>Filtering overlay colors with a refreshed Color Filter UI, live progress stats, reactive free/premium/completed color filters, persisted sort/visibility settings, adaptive fullscreen color columns, responsive small-screen sizing, and resizable fullscreen/windowed layouts</li>
+    <li>Keeping Template Wizard template details compact on small mobile screens so saved template slots stay readable, with per-template active controls for saved templates</li>
     <li>Showing the Color Filter button only after a template is loaded</li>
     <li>Jumping from each color in the full Color Filter view to a bounded random sample pool of remaining pixels for that color from the loaded template tiles, using smooth map navigation when Wplace exposes its map instance</li>
     <li>Showing a small green update arrow in the fork UI only when the original Blue Marble repository has a newer version than this script</li>

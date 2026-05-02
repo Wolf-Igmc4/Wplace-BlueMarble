@@ -88,6 +88,7 @@ export default class WindowFilter extends Overlay {
     this.showCompleted = true; // Were completed colors shown the last time the user sorted the color list?
     this.showFree = true; // Were free colors shown the last time the user sorted the color list?
     this.showPremium = true; // Were premium colors shown the last time the user sorted the color list?
+    this.#loadFilterViewSettings();
   }
 
   /** Builds the preferred filter window mode for the user.
@@ -346,6 +347,50 @@ export default class WindowFilter extends Overlay {
     return this.settingsManager.userSettings[this.windowStateKey];
   }
 
+  /** Loads persisted sort and show/hide controls for the Color Filter.
+   * @since 0.92.11
+   */
+  #loadFilterViewSettings() {
+    const filterView = this.settingsManager?.userSettings?.filterView;
+    if (!filterView || typeof filterView != 'object') {return;}
+
+    const allowedPrimarySorts = new Set(['id', 'name', 'premium', 'percent', 'correct', 'incorrect', 'total']);
+    const allowedSecondarySorts = new Set(['ascending', 'descending']);
+
+    if (allowedPrimarySorts.has(filterView.sortPrimary)) {
+      this.sortPrimary = filterView.sortPrimary;
+    }
+    if (allowedSecondarySorts.has(filterView.sortSecondary)) {
+      this.sortSecondary = filterView.sortSecondary;
+    }
+
+    if (typeof filterView.showUnused == 'boolean') {this.showUnused = filterView.showUnused;}
+    if (typeof filterView.showCompleted == 'boolean') {this.showCompleted = filterView.showCompleted;}
+    if (typeof filterView.showFree == 'boolean') {this.showFree = filterView.showFree;}
+    if (typeof filterView.showPremium == 'boolean') {this.showPremium = filterView.showPremium;}
+  }
+
+  /** Saves current sort and show/hide controls in user settings.
+   * @param {boolean} [shouldSaveNow=false] - Whether to flush userscript storage immediately
+   * @since 0.92.11
+   */
+  #persistFilterViewSettings(shouldSaveNow = false) {
+    if (!this.settingsManager?.userSettings) {return;}
+
+    this.settingsManager.userSettings.filterView = {
+      sortPrimary: this.sortPrimary,
+      sortSecondary: this.sortSecondary,
+      showUnused: this.showUnused,
+      showCompleted: this.showCompleted,
+      showFree: this.showFree,
+      showPremium: this.showPremium
+    };
+
+    if (shouldSaveNow) {
+      void this.settingsManager.saveUserStorageNow();
+    }
+  }
+
   /** Returns whether the filter should open in windowed mode.
    * Defaults to the original fullscreen view unless the user chose windowed mode.
    * @returns {boolean}
@@ -424,6 +469,7 @@ export default class WindowFilter extends Overlay {
       formValues['showFree'] == 'on',
       formValues['showPremium'] == 'on'
     );
+    this.#persistFilterViewSettings(true);
   }
 
   /** Makes the sort form reactive, so the list updates as soon as a control changes.
@@ -445,6 +491,7 @@ export default class WindowFilter extends Overlay {
    */
   #closeWindow() {
     const windowElement = document.querySelector(`#${this.windowID}`);
+    this.#persistFilterViewSettings(true);
     if (windowElement?.classList.contains('bm-windowed')) {
       this.#saveWindowState(windowElement);
     }
@@ -832,6 +879,7 @@ export default class WindowFilter extends Overlay {
     this.showCompleted = showCompleted;
     this.showFree = showFree;
     this.showPremium = showPremium;
+    this.#persistFilterViewSettings();
 
     const colorList = document.querySelector(`#${this.colorListID}`);
 

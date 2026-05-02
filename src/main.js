@@ -208,7 +208,12 @@ templateManager.setSettingsManager(settingsManager); // Sets the settings manage
 
 const storageTemplates = JSON.parse(GM_getValue('bmTemplates', '{}'));
 console.log(storageTemplates);
-templateManager.importJSON(storageTemplates); // Loads the templates
+apiManager.spontaneousResponseListener(windowMain); // Reads spontaneous fetch responces
+templateManager.importJSON(storageTemplates).then(() => {
+  windowMain.refreshTemplateControls();
+}).catch(error => {
+  consoleWarn(`Failed to load saved templates: ${error?.message || error}`);
+}); // Loads the templates
 
 
 console.log(userSettings);
@@ -231,8 +236,6 @@ if ((previousTelemetryVersion == undefined) || (previousTelemetryVersion > curre
 }
 
 windowMain.buildWindow(); // Builds the main Blue Marble window
-
-apiManager.spontaneousResponseListener(windowMain); // Reads spontaneous fetch responces
 
 observeBlack(); // Observes the black palette color
 

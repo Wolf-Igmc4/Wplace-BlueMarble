@@ -114,6 +114,7 @@ export default class TemplateManager {
     this.templatePixelsCorrect = null; // An object where the keys are the tile coords, and the values are Maps (BM palette color IDs) containing the amount of correctly placed pixels for that tile in this template
     /** Will contain all color ID's to filter @type {Map<number, boolean>} */
     this.shouldFilterColor = new Map();
+    this.templatesLoadingPromise = null; // Promise used to keep tile rendering from racing saved template loading
   }
 
   /** Updates the stored instance of the main window.
@@ -130,6 +131,7 @@ export default class TemplateManager {
    */
   setSettingsManager(settingsManager) {
     this.settingsManager = settingsManager;
+    this.#loadColorFilterSettings();
   }
 
   /** Sets whether a palette color should be hidden from rendered template overlays.
@@ -140,10 +142,39 @@ export default class TemplateManager {
   setColorFiltered(colorID, shouldBeFiltered) {
     if (shouldBeFiltered) {
       this.shouldFilterColor.set(colorID, true);
+      this.#persistColorFilterSettings();
       return;
     }
 
     this.shouldFilterColor.delete(colorID);
+    this.#persistColorFilterSettings();
+  }
+
+  /** Loads persisted hidden color IDs into the template renderer.
+   * @since 0.92.11
+   */
+  #loadColorFilterSettings() {
+    const hiddenColors = this.settingsManager?.userSettings?.filter;
+    if (!Array.isArray(hiddenColors)) {return;}
+
+    this.shouldFilterColor = new Map(
+      hiddenColors
+        .map(colorID => Number(colorID))
+        .filter(colorID => Number.isFinite(colorID))
+        .map(colorID => [colorID, true])
+    );
+  }
+
+  /** Persists hidden color IDs in user settings.
+   * @since 0.92.11
+   */
+  #persistColorFilterSettings() {
+    if (!this.settingsManager?.userSettings) {return;}
+
+    this.settingsManager.userSettings.filter = Array.from(this.shouldFilterColor.keys())
+      .map(colorID => Number(colorID))
+      .filter(colorID => Number.isFinite(colorID))
+      .sort((a, b) => a - b);
   }
 
   /** Checks whether any template is currently loaded.
@@ -261,6 +292,74 @@ export default class TemplateManager {
    */
   async #storeTemplates() {
     await GM.setValue('bmTemplates', JSON.stringify(this.templatesJSON));
+  }
+
+  /** Returns the storage key that should be considered the single active template.
+   * @param {Object} templates - Template storage object
+   * @returns {string | null}
+   * @since 0.92.11
+   */
+  #getActiveTemplateKey(templates) {
+    const entries = Object.entries(templates || {});
+    if (!entries.length) {return null;}
+
+    entries.sort(([keyA], [keyB]) => keyA.localeCompare(keyB, undefined, {numeric: true}));
+
+    const explicitlyEnabled = entries.find(([, template]) => template?.enabled === true);
+    if (explicitlyEnabled) {return explicitlyEnabled[0];}
+
+    const implicitlyEnabled = entries.find(([, template]) => template?.enabled !== false);
+    if (implicitlyEnabled) {return implicitlyEnabled[0];}
+
+    return entries[0][0];
+  }
+
+  /** Normalizes template storage so exactly one template is active.
+   * @param {Object} templates - Template storage object
+   * @returns {boolean} Whether storage was changed
+   * @since 0.92.11
+   */
+  #normalizeActiveTemplate(templates) {
+    const activeTemplateKey = this.#getActiveTemplateKey(templates);
+    if (!activeTemplateKey) {return false;}
+
+    let changed = false;
+    for (const [key, template] of Object.entries(templates)) {
+      if (!template || typeof template != 'object') {continue;}
+
+      const shouldBeEnabled = key == activeTemplateKey;
+      if (template.enabled !== shouldBeEnabled) {
+        template.enabled = shouldBeEnabled;
+        changed = true;
+      }
+    }
+
+    return changed;
+  }
+
+  /** Makes one stored template active and reloads active template instances.
+   * @param {string} templateKey - Storage key for the template to activate
+   * @returns {Promise<boolean>} Whether the template was found
+   * @since 0.92.11
+   */
+  async setActiveTemplate(templateKey) {
+    if (!this.templatesJSON) {
+      this.templatesJSON = JSON.parse(GM_getValue('bmTemplates', '{}'));
+    }
+
+    const templates = this.templatesJSON?.templates || {};
+    if (!templates[templateKey]) {return false;}
+
+    for (const [key, template] of Object.entries(templates)) {
+      if (!template || typeof template != 'object') {continue;}
+      template.enabled = key == templateKey;
+    }
+
+    await this.#storeTemplates();
+    await this.importJSON(this.templatesJSON);
+    this.windowMain?.refreshTemplateControls?.();
+    this.windowMain?.handleDisplayStatus?.(`Activated template "${templates[templateKey].name || templateKey}".`);
+    return true;
   }
 
   /** Deletes a template from the JSON object.
@@ -482,6 +581,15 @@ export default class TemplateManager {
 
     // Returns early if no templates should be drawn
     if (!this.templatesShouldBeDrawn) {return tileBlob;}
+
+    if (this.templatesLoadingPromise) {
+      try {
+        await this.templatesLoadingPromise;
+      } catch (error) {
+        consoleWarn(`Could not finish loading saved templates before drawing tile: ${error?.message || error}`);
+        return tileBlob;
+      }
+    }
 
     const drawSize = this.tileSize * this.drawMult; // Calculate draw multiplier for scaling
 
@@ -733,14 +841,18 @@ export default class TemplateManager {
   /** Imports the JSON object, and appends it to any JSON object already loaded
    * @param {string} json - The JSON string to parse
    */
-  importJSON(json) {
+  async importJSON(json) {
 
     console.log(`Importing JSON...`);
     console.log(json);
 
     // If the passed in JSON is a Blue Marble template object...
     if (json?.whoami == 'BlueMarble') {
-      this.#parseBlueMarble(json); // ...parse the template object as Blue Marble
+      this.templatesLoadingPromise = this.#parseBlueMarble(json)
+        .finally(() => {
+          this.templatesLoadingPromise = null;
+        });
+      return await this.templatesLoadingPromise; // ...parse the template object as Blue Marble
     }
   }
 
@@ -752,7 +864,9 @@ export default class TemplateManager {
 
     console.log(`Parsing BlueMarble...`);
 
-    const templates = json.templates;
+    const templates = json.templates || {};
+    json.templates = templates;
+    this.templatesJSON = json;
 
     console.log(`BlueMarble length: ${Object.keys(templates).length}`);
 
@@ -774,12 +888,18 @@ export default class TemplateManager {
         windowWizard.buildWindow();
       }
 
+      const normalizedActiveTemplate = this.#normalizeActiveTemplate(templates);
+
       // Load using the latest schema loader. It will be fine, probably...
+      this.templatesArray = [];
       this.templatesArray = await loadSchema({
         tileSize: this.tileSize,
         drawMult: this.drawMult,
         templatesArray: this.templatesArray
       });
+      if (normalizedActiveTemplate) {
+        await this.#storeTemplates();
+      }
       this.windowMain?.refreshTemplateControls?.();
 
     } else if (schemaVersionArray[0] < schemaVersionBleedingEdge[0]) {
@@ -819,6 +939,7 @@ export default class TemplateManager {
           console.log(`Template Key: ${templateKey}`);
   
           if (templates.hasOwnProperty(template)) {
+            if (templateValue.enabled === false) {continue;}
   
             const templateKeyArray = templateKey.split(' '); // E.g., "0 $Z" -> ["0", "$Z"]
             const sortID = Number.parseInt(templateKeyArray?.[0], 10); // Sort ID of the template

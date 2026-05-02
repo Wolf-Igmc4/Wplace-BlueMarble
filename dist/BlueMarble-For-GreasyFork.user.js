@@ -2547,7 +2547,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     return `${day}/${month}/${year} ${hour}:${minute}${period}`;
   }
-  var _WindowFilter_instances, getWindowState_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, buildColorList_fn, sortColorList_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
+  var _WindowFilter_instances, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, buildColorList_fn, sortColorList_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
   var WindowFilter = class extends Overlay {
     /** Constructor for the color filter window
      * @param {*} executor - The executing class
@@ -2593,6 +2593,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       this.showCompleted = true;
       this.showFree = true;
       this.showPremium = true;
+      __privateMethod(this, _WindowFilter_instances, loadFilterViewSettings_fn).call(this);
     }
     /** Builds the preferred filter window mode for the user.
      * @since 0.92.0
@@ -2832,6 +2833,55 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     (_a = this.settingsManager.userSettings)[_b = this.windowStateKey] ?? (_a[_b] = {});
     return this.settingsManager.userSettings[this.windowStateKey];
   };
+  /** Loads persisted sort and show/hide controls for the Color Filter.
+   * @since 0.92.11
+   */
+  loadFilterViewSettings_fn = function() {
+    const filterView = this.settingsManager?.userSettings?.filterView;
+    if (!filterView || typeof filterView != "object") {
+      return;
+    }
+    const allowedPrimarySorts = /* @__PURE__ */ new Set(["id", "name", "premium", "percent", "correct", "incorrect", "total"]);
+    const allowedSecondarySorts = /* @__PURE__ */ new Set(["ascending", "descending"]);
+    if (allowedPrimarySorts.has(filterView.sortPrimary)) {
+      this.sortPrimary = filterView.sortPrimary;
+    }
+    if (allowedSecondarySorts.has(filterView.sortSecondary)) {
+      this.sortSecondary = filterView.sortSecondary;
+    }
+    if (typeof filterView.showUnused == "boolean") {
+      this.showUnused = filterView.showUnused;
+    }
+    if (typeof filterView.showCompleted == "boolean") {
+      this.showCompleted = filterView.showCompleted;
+    }
+    if (typeof filterView.showFree == "boolean") {
+      this.showFree = filterView.showFree;
+    }
+    if (typeof filterView.showPremium == "boolean") {
+      this.showPremium = filterView.showPremium;
+    }
+  };
+  /** Saves current sort and show/hide controls in user settings.
+   * @param {boolean} [shouldSaveNow=false] - Whether to flush userscript storage immediately
+   * @since 0.92.11
+   */
+  persistFilterViewSettings_fn = function(shouldSaveNow = false) {
+    if (!this.settingsManager?.userSettings) {
+      return;
+    }
+    this.settingsManager.userSettings.filterView = {
+      sortPrimary: this.sortPrimary,
+      sortSecondary: this.sortSecondary,
+      showUnused: this.showUnused,
+      showCompleted: this.showCompleted,
+      showFree: this.showFree,
+      showPremium: this.showPremium
+    };
+    if (shouldSaveNow) {
+      void this.settingsManager.saveUserStorageNow();
+    }
+  };
   /** Returns whether the filter should open in windowed mode.
    * Defaults to the original fullscreen view unless the user chose windowed mode.
    * @returns {boolean}
@@ -2905,6 +2955,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       formValues[input] = value;
     }
     __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, formValues["sortPrimary"], formValues["sortSecondary"], formValues["showUnused"] == "on", formValues["showCompleted"] == "on", formValues["showFree"] == "on", formValues["showPremium"] == "on");
+    __privateMethod(this, _WindowFilter_instances, persistFilterViewSettings_fn).call(this, true);
   };
   /** Makes the sort form reactive, so the list updates as soon as a control changes.
    * @since 0.92.7
@@ -2925,6 +2976,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
    */
   closeWindow_fn = function() {
     const windowElement = document.querySelector(`#${this.windowID}`);
+    __privateMethod(this, _WindowFilter_instances, persistFilterViewSettings_fn).call(this, true);
     if (windowElement?.classList.contains("bm-windowed")) {
       __privateMethod(this, _WindowFilter_instances, saveWindowState_fn).call(this, windowElement);
     }
@@ -3237,6 +3289,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     this.showCompleted = showCompleted;
     this.showFree = showFree;
     this.showPremium = showPremium;
+    __privateMethod(this, _WindowFilter_instances, persistFilterViewSettings_fn).call(this);
     const colorList = document.querySelector(`#${this.colorListID}`);
     const colors = Array.from(colorList.children);
     for (const color of colors) {
@@ -3548,7 +3601,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
    * @since 0.88.441
    */
   displayTemplateList_fn = function() {
-    const templates = this.currentJSON?.templates;
+    const templates = this.currentJSON?.templates || {};
     if (Object.keys(templates).length > 0) {
       const templateListParentElement = document.querySelector(`#${this.windowID} .bm-scrollable`);
       const templateList = new Overlay(this.name, this.version);
@@ -3564,10 +3617,31 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
           const coords2 = templateValue?.coords?.split(",").map(Number);
           const totalPixelCount = templateValue.pixels?.total ?? void 0;
           const templateImage = void 0;
+          const isActive = templateValue.enabled === true;
           const sortIDLocalized = typeof sortID == "number" ? localizeNumber(sortID) : "???";
           const authorIDLocalized = typeof authorID == "number" ? localizeNumber(authorID) : "???";
           const totalPixelCountLocalized = typeof totalPixelCount == "number" ? localizeNumber(totalPixelCount) : "???";
-          templateList.addDiv({ "class": "bm-container bm-flex-center" }).addDiv({ "class": "bm-flex-center", "style": "flex-direction: column; gap: 0;" }).addDiv({ "class": "bm-wizard-template-container-image", "textContent": templateImage || "\u{1F5BC}\uFE0F" }).buildElement().addSmall({ "textContent": `#${sortIDLocalized}` }).buildElement().buildElement().addDiv({ "class": "bm-flex-center bm-wizard-template-container-flavor" }).addHeader(3, { "textContent": displayName }).buildElement().addSpan({ "textContent": `Uploaded by user #${authorIDLocalized}` }).buildElement().addSpan({ "textContent": `Coordinates: ${coords2.join(", ")}` }).buildElement().addSpan({ "textContent": `Total Pixels: ${totalPixelCountLocalized}` }).buildElement().buildElement().buildElement();
+          templateList.addDiv({ "class": `bm-container bm-wizard-template-card${isActive ? " bm-wizard-template-card-active" : ""}` }).addDiv({ "class": "bm-flex-center", "style": "flex-direction: column; gap: 0;" }).addDiv({ "class": "bm-wizard-template-container-image", "textContent": templateImage || "\u{1F5BC}\uFE0F" }).buildElement().addSmall({ "textContent": `#${sortIDLocalized}` }).buildElement().buildElement().addDiv({ "class": "bm-flex-center bm-wizard-template-container-flavor" }).addHeader(3, { "textContent": displayName }).buildElement().addSpan({ "textContent": `Uploaded by user #${authorIDLocalized}` }).buildElement().addSpan({ "textContent": `Coordinates: ${coords2.join(", ")}` }).buildElement().addSpan({ "textContent": `Total Pixels: ${totalPixelCountLocalized}` }).buildElement().buildElement().addDiv({ "class": "bm-wizard-template-actions" }).addButton({
+            "class": "bm-button-secondary bm-wizard-template-active-button",
+            "textContent": isActive ? "Active" : "Make active",
+            "aria-label": isActive ? `Template "${displayName}" is active` : `Make template "${displayName}" active`,
+            "disabled": isActive
+          }, (instance, button) => {
+            button.onclick = async () => {
+              button.disabled = true;
+              button.textContent = "Activating...";
+              const activated = await this.templateManager?.setActiveTemplate?.(templateKey);
+              if (!activated) {
+                button.textContent = "Make active";
+                button.disabled = false;
+                this.updateInnerHTML("#bm-wizard-status", "Could not activate that template. It may no longer exist.", true);
+                return;
+              }
+              this.currentJSON = JSON.parse(GM_getValue("bmTemplates", "{}"));
+              document.querySelector(`#${this.windowID} #bm-wizard-tlist`)?.remove();
+              __privateMethod(this, _WindowWizard_instances, displayTemplateList_fn).call(this);
+            };
+          }).buildElement().buildElement().buildElement();
         }
       }
       templateList.buildElement().buildOverlay(templateListParentElement);
@@ -3886,7 +3960,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
   };
 
   // src/templateManager.js
-  var _TemplateManager_instances, loadTemplate_fn, storeTemplates_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
+  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, loadTemplate_fn, storeTemplates_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
   var TemplateManager = class {
     /** The constructor for the {@link TemplateManager} class.
      * @param {string} name - The name of the userscript
@@ -3913,6 +3987,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       this.templatesShouldBeDrawn = true;
       this.templatePixelsCorrect = null;
       this.shouldFilterColor = /* @__PURE__ */ new Map();
+      this.templatesLoadingPromise = null;
     }
     /** Updates the stored instance of the main window.
      * @param {WindowMain} windowMain - The main window instance
@@ -3927,6 +4002,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
      */
     setSettingsManager(settingsManager2) {
       this.settingsManager = settingsManager2;
+      __privateMethod(this, _TemplateManager_instances, loadColorFilterSettings_fn).call(this);
     }
     /** Sets whether a palette color should be hidden from rendered template overlays.
      * @param {number} colorID - Blue Marble palette color ID
@@ -3936,9 +4012,11 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
     setColorFiltered(colorID, shouldBeFiltered) {
       if (shouldBeFiltered) {
         this.shouldFilterColor.set(colorID, true);
+        __privateMethod(this, _TemplateManager_instances, persistColorFilterSettings_fn).call(this);
         return;
       }
       this.shouldFilterColor.delete(colorID);
+      __privateMethod(this, _TemplateManager_instances, persistColorFilterSettings_fn).call(this);
     }
     /** Checks whether any template is currently loaded.
      * @returns {boolean} Whether there are templates available for template-only tools
@@ -4009,6 +4087,31 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       console.log(this.templatesArray);
       console.log(JSON.stringify(this.templatesJSON));
       await __privateMethod(this, _TemplateManager_instances, storeTemplates_fn).call(this);
+    }
+    /** Makes one stored template active and reloads active template instances.
+     * @param {string} templateKey - Storage key for the template to activate
+     * @returns {Promise<boolean>} Whether the template was found
+     * @since 0.92.11
+     */
+    async setActiveTemplate(templateKey) {
+      if (!this.templatesJSON) {
+        this.templatesJSON = JSON.parse(GM_getValue("bmTemplates", "{}"));
+      }
+      const templates = this.templatesJSON?.templates || {};
+      if (!templates[templateKey]) {
+        return false;
+      }
+      for (const [key, template] of Object.entries(templates)) {
+        if (!template || typeof template != "object") {
+          continue;
+        }
+        template.enabled = key == templateKey;
+      }
+      await __privateMethod(this, _TemplateManager_instances, storeTemplates_fn).call(this);
+      await this.importJSON(this.templatesJSON);
+      this.windowMain?.refreshTemplateControls?.();
+      this.windowMain?.handleDisplayStatus?.(`Activated template "${templates[templateKey].name || templateKey}".`);
+      return true;
     }
     /** Deletes a template from the JSON object.
      * Also delete's the corrosponding {@link Template} class instance
@@ -4160,6 +4263,14 @@ Canvas Height: ${canvasHeight}`);
     async drawTemplateOnTile(tileBlob, tileCoords) {
       if (!this.templatesShouldBeDrawn) {
         return tileBlob;
+      }
+      if (this.templatesLoadingPromise) {
+        try {
+          await this.templatesLoadingPromise;
+        } catch (error) {
+          consoleWarn(`Could not finish loading saved templates before drawing tile: ${error?.message || error}`);
+          return tileBlob;
+        }
       }
       const drawSize = this.tileSize * this.drawMult;
       tileCoords = tileCoords[0].toString().padStart(4, "0") + "," + tileCoords[1].toString().padStart(4, "0");
@@ -4323,11 +4434,14 @@ There are ${pixelsCorrectTotal} correct pixels.`);
     /** Imports the JSON object, and appends it to any JSON object already loaded
      * @param {string} json - The JSON string to parse
      */
-    importJSON(json) {
+    async importJSON(json) {
       console.log(`Importing JSON...`);
       console.log(json);
       if (json?.whoami == "BlueMarble") {
-        __privateMethod(this, _TemplateManager_instances, parseBlueMarble_fn).call(this, json);
+        this.templatesLoadingPromise = __privateMethod(this, _TemplateManager_instances, parseBlueMarble_fn).call(this, json).finally(() => {
+          this.templatesLoadingPromise = null;
+        });
+        return await this.templatesLoadingPromise;
       }
     }
     /** Sets the `templatesShouldBeDrawn` boolean to a value.
@@ -4339,6 +4453,27 @@ There are ${pixelsCorrectTotal} correct pixels.`);
     }
   };
   _TemplateManager_instances = new WeakSet();
+  /** Loads persisted hidden color IDs into the template renderer.
+   * @since 0.92.11
+   */
+  loadColorFilterSettings_fn = function() {
+    const hiddenColors = this.settingsManager?.userSettings?.filter;
+    if (!Array.isArray(hiddenColors)) {
+      return;
+    }
+    this.shouldFilterColor = new Map(
+      hiddenColors.map((colorID) => Number(colorID)).filter((colorID) => Number.isFinite(colorID)).map((colorID) => [colorID, true])
+    );
+  };
+  /** Persists hidden color IDs in user settings.
+   * @since 0.92.11
+   */
+  persistColorFilterSettings_fn = function() {
+    if (!this.settingsManager?.userSettings) {
+      return;
+    }
+    this.settingsManager.userSettings.filter = Array.from(this.shouldFilterColor.keys()).map((colorID) => Number(colorID)).filter((colorID) => Number.isFinite(colorID)).sort((a, b) => a - b);
+  };
   /** Generates a {@link Template} class instance from the JSON object template.
    * {@link createTemplate()} will create a class instance and save to template storage.
    * `#loadTemplate()` will create a class instance without saving to the template storage.
@@ -4363,9 +4498,55 @@ There are ${pixelsCorrectTotal} correct pixels.`);
   storeTemplates_fn = async function() {
     await GM.setValue("bmTemplates", JSON.stringify(this.templatesJSON));
   };
+  /** Returns the storage key that should be considered the single active template.
+   * @param {Object} templates - Template storage object
+   * @returns {string | null}
+   * @since 0.92.11
+   */
+  getActiveTemplateKey_fn = function(templates) {
+    const entries = Object.entries(templates || {});
+    if (!entries.length) {
+      return null;
+    }
+    entries.sort(([keyA], [keyB]) => keyA.localeCompare(keyB, void 0, { numeric: true }));
+    const explicitlyEnabled = entries.find(([, template]) => template?.enabled === true);
+    if (explicitlyEnabled) {
+      return explicitlyEnabled[0];
+    }
+    const implicitlyEnabled = entries.find(([, template]) => template?.enabled !== false);
+    if (implicitlyEnabled) {
+      return implicitlyEnabled[0];
+    }
+    return entries[0][0];
+  };
+  /** Normalizes template storage so exactly one template is active.
+   * @param {Object} templates - Template storage object
+   * @returns {boolean} Whether storage was changed
+   * @since 0.92.11
+   */
+  normalizeActiveTemplate_fn = function(templates) {
+    const activeTemplateKey = __privateMethod(this, _TemplateManager_instances, getActiveTemplateKey_fn).call(this, templates);
+    if (!activeTemplateKey) {
+      return false;
+    }
+    let changed = false;
+    for (const [key, template] of Object.entries(templates)) {
+      if (!template || typeof template != "object") {
+        continue;
+      }
+      const shouldBeEnabled = key == activeTemplateKey;
+      if (template.enabled !== shouldBeEnabled) {
+        template.enabled = shouldBeEnabled;
+        changed = true;
+      }
+    }
+    return changed;
+  };
   parseBlueMarble_fn = async function(json) {
     console.log(`Parsing BlueMarble...`);
-    const templates = json.templates;
+    const templates = json.templates || {};
+    json.templates = templates;
+    this.templatesJSON = json;
     console.log(`BlueMarble length: ${Object.keys(templates).length}`);
     const schemaVersion = json?.schemaVersion;
     const schemaVersionArray = schemaVersion.split(/[-\.\+]/);
@@ -4377,11 +4558,16 @@ There are ${pixelsCorrectTotal} correct pixels.`);
         const windowWizard = new WindowWizard(this.name, this.version, this.schemaVersion, this);
         windowWizard.buildWindow();
       }
+      const normalizedActiveTemplate = __privateMethod(this, _TemplateManager_instances, normalizeActiveTemplate_fn).call(this, templates);
+      this.templatesArray = [];
       this.templatesArray = await loadSchema({
         tileSize: this.tileSize,
         drawMult: this.drawMult,
         templatesArray: this.templatesArray
       });
+      if (normalizedActiveTemplate) {
+        await __privateMethod(this, _TemplateManager_instances, storeTemplates_fn).call(this);
+      }
       this.windowMain?.refreshTemplateControls?.();
     } else if (schemaVersionArray[0] < schemaVersionBleedingEdge[0]) {
       const windowWizard = new WindowWizard(this.name, this.version, this.schemaVersion, this);
@@ -4401,6 +4587,9 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           const templateValue = templates[template];
           console.log(`Template Key: ${templateKey}`);
           if (templates.hasOwnProperty(template)) {
+            if (templateValue.enabled === false) {
+              continue;
+            }
             const templateKeyArray = templateKey.split(" ");
             const sortID = Number.parseInt(templateKeyArray?.[0], 10);
             const authorID = templateKeyArray?.[1] || "0";
@@ -4958,7 +5147,12 @@ Time Since Blink: ${String(Math.floor(elapsed / 6e4)).padStart(2, "0")}:${String
   templateManager.setSettingsManager(settingsManager);
   var storageTemplates = JSON.parse(GM_getValue("bmTemplates", "{}"));
   console.log(storageTemplates);
-  templateManager.importJSON(storageTemplates);
+  apiManager.spontaneousResponseListener(windowMain);
+  templateManager.importJSON(storageTemplates).then(() => {
+    windowMain.refreshTemplateControls();
+  }).catch((error) => {
+    consoleWarn(`Failed to load saved templates: ${error?.message || error}`);
+  });
   console.log(userSettings);
   setInterval(() => apiManager.sendHeartbeat(version), 1e3 * 60 * 30);
   var currentTelemetryVersion = 1;
@@ -4970,7 +5164,6 @@ Time Since Blink: ${String(Math.floor(elapsed / 6e4)).padStart(2, "0")}:${String
     windowTelemetry.buildWindow();
   }
   windowMain.buildWindow();
-  apiManager.spontaneousResponseListener(windowMain);
   observeBlack();
   consoleLog(`%c${name}%c (${version}) userscript has loaded!`, "color: cornflowerblue;", "");
   function observeBlack() {

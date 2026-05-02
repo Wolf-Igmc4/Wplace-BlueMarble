@@ -176,7 +176,7 @@ export default class WindowWizard extends Overlay {
    */
   #displayTemplateList() {
 
-    const templates = this.currentJSON?.templates; // Templates in user storage
+    const templates = this.currentJSON?.templates || {}; // Templates in user storage
 
     // If there is at least one template loaded...
     if (Object.keys(templates).length > 0) {
@@ -205,13 +205,14 @@ export default class WindowWizard extends Overlay {
           const coords = templateValue?.coords?.split(',').map(Number); // "1,2,3,4" -> [1, 2, 3, 4]
           const totalPixelCount = templateValue.pixels?.total ?? undefined;
           const templateImage = undefined; // TODO: Add template image
+          const isActive = templateValue.enabled === true;
 
           // Localization of information to display to the user
           const sortIDLocalized = (typeof sortID == 'number') ? localizeNumber(sortID) : '???';
           const authorIDLocalized = (typeof authorID == 'number') ? localizeNumber(authorID) : '???';
           const totalPixelCountLocalized = (typeof totalPixelCount == 'number') ? localizeNumber(totalPixelCount) : '???';
 
-          templateList.addDiv({'class': 'bm-container bm-flex-center'})
+          templateList.addDiv({'class': `bm-container bm-wizard-template-card${isActive ? ' bm-wizard-template-card-active' : ''}`})
             .addDiv({'class': 'bm-flex-center', 'style': 'flex-direction: column; gap: 0;'})
               .addDiv({'class': 'bm-wizard-template-container-image', 'textContent': templateImage || '🖼️'})
                 // TODO: Add image element and SVG fallback
@@ -223,6 +224,30 @@ export default class WindowWizard extends Overlay {
               .addSpan({'textContent': `Uploaded by user #${authorIDLocalized}`}).buildElement()
               .addSpan({'textContent': `Coordinates: ${coords.join(', ')}`}).buildElement()
               .addSpan({'textContent': `Total Pixels: ${totalPixelCountLocalized}`}).buildElement()
+            .buildElement()
+            .addDiv({'class': 'bm-wizard-template-actions'})
+              .addButton({
+                'class': 'bm-button-secondary bm-wizard-template-active-button',
+                'textContent': isActive ? 'Active' : 'Make active',
+                'aria-label': isActive ? `Template "${displayName}" is active` : `Make template "${displayName}" active`,
+                'disabled': isActive
+              }, (instance, button) => {
+                button.onclick = async () => {
+                  button.disabled = true;
+                  button.textContent = 'Activating...';
+                  const activated = await this.templateManager?.setActiveTemplate?.(templateKey);
+                  if (!activated) {
+                    button.textContent = 'Make active';
+                    button.disabled = false;
+                    this.updateInnerHTML('#bm-wizard-status', 'Could not activate that template. It may no longer exist.', true);
+                    return;
+                  }
+
+                  this.currentJSON = JSON.parse(GM_getValue('bmTemplates', '{}'));
+                  document.querySelector(`#${this.windowID} #bm-wizard-tlist`)?.remove();
+                  this.#displayTemplateList();
+                };
+              }).buildElement()
             .buildElement()
           .buildElement()
         }

@@ -1098,6 +1098,50 @@ input[type=file] {
 }
 
 /* src/WindowWizard.css */
+#bm-window-wizard {
+  width: min(34rem, calc(100vw - 1rem));
+  max-width: calc(100vw - 1rem);
+  max-height: min(82vh, calc(100vh - 1rem));
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  font-size: 0.92rem;
+  letter-spacing: 0;
+}
+#bm-window-wizard .bm-window-content {
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+#bm-window-wizard .bm-window-content > .bm-container {
+  min-width: 0;
+}
+#bm-window-wizard .bm-scrollable {
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+#bm-window-wizard h1 {
+  margin: 0.2rem 0;
+  font-size: 1.32rem;
+}
+#bm-window-wizard h2 {
+  margin: 0.1rem 0;
+  font-size: 1rem;
+}
+#bm-window-wizard p,
+#bm-window-wizard span,
+#bm-window-wizard small {
+  line-height: 1.25;
+}
+#bm-window-wizard #bm-wizard-status {
+  max-height: min(12rem, 32vh);
+  overflow: auto;
+  padding-right: 0.15rem;
+}
 #bm-wizard-tlist {
   display: flex;
   flex-direction: column;
@@ -1107,7 +1151,6 @@ input[type=file] {
 #bm-wizard-tlist > .bm-container {
   width: 100%;
   min-width: 0;
-  justify-content: flex-start;
   background-color: rgba(21, 48, 99, 0.9);
   border-radius: 1em;
   padding: 0.5em;
@@ -1118,10 +1161,23 @@ input[type=file] {
 #bm-wizard-tlist > .bm-container:focus-within {
   background-color: rgba(17, 40, 85, 0.9);
 }
+#bm-wizard-tlist > .bm-wizard-template-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+#bm-wizard-tlist > .bm-wizard-template-card-active {
+  border: 1px solid rgba(128, 255, 181, 0.52);
+  box-shadow: inset 0 0 0 1px rgba(128, 255, 181, 0.14);
+}
 #bm-wizard-tlist .bm-wizard-template-container-image {
   flex: 0 0 auto;
-  height: 100%;
-  font-size: xxx-large;
+  display: grid;
+  place-items: center;
+  width: 2.8rem;
+  height: 2.8rem;
+  font-size: 1.72rem;
 }
 #bm-wizard-tlist .bm-wizard-template-container-flavor {
   min-width: 0;
@@ -1134,10 +1190,65 @@ input[type=file] {
   max-width: 100%;
   overflow-wrap: anywhere;
 }
+#bm-wizard-tlist .bm-wizard-template-container-flavor h3 {
+  margin: 0 0 0.12rem;
+  font-size: 0.98rem;
+  line-height: 1.12;
+}
+#bm-wizard-tlist .bm-wizard-template-container-flavor span {
+  font-size: 0.78rem;
+}
+#bm-wizard-tlist .bm-wizard-template-actions {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 5.7rem;
+}
+#bm-wizard-tlist .bm-wizard-template-active-button {
+  min-height: 2rem;
+  white-space: nowrap;
+}
+#bm-wizard-tlist .bm-wizard-template-card-active .bm-wizard-template-active-button {
+  color: #d9ffe5;
+  border-color: rgba(128, 255, 181, 0.52);
+  text-decoration: none;
+  cursor: default;
+}
 @media (max-width: 620px) {
+  #bm-window-wizard {
+    top: 0.5rem;
+    left: 0.5rem;
+    width: calc(100vw - 1rem);
+    max-height: calc(100vh - 1rem);
+    padding: 0.45rem;
+    font-size: 0.84rem;
+  }
+  #bm-window-wizard .bm-window-content {
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+  }
+  #bm-window-wizard .bm-container {
+    margin: 0.36em 0;
+  }
+  #bm-window-wizard h1 {
+    font-size: 1.06rem;
+  }
+  #bm-window-wizard h2 {
+    font-size: 0.9rem;
+  }
+  #bm-window-wizard #bm-wizard-status {
+    max-height: 28vh;
+    font-size: 0.72rem;
+  }
   #bm-wizard-tlist > .bm-container {
     gap: 0.38ch;
     padding: 0.42em;
+  }
+  #bm-wizard-tlist > .bm-wizard-template-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.44rem;
+  }
+  #bm-wizard-tlist .bm-wizard-template-card > .bm-flex-center:first-child {
+    display: none;
   }
   #bm-wizard-tlist .bm-wizard-template-container-flavor h3 {
     margin: 0;
@@ -1147,6 +1258,14 @@ input[type=file] {
   #bm-wizard-tlist .bm-wizard-template-container-flavor span {
     font-size: 0.68rem;
     line-height: 1.12;
+  }
+  #bm-wizard-tlist .bm-wizard-template-actions {
+    min-width: 0;
+  }
+  #bm-wizard-tlist .bm-wizard-template-active-button {
+    min-height: 1.85rem;
+    padding: 0 0.55ch;
+    font-size: 0.68rem;
   }
 }
 
