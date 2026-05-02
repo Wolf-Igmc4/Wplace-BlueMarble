@@ -205,7 +205,10 @@ export default class WindowWizard extends Overlay {
           const coords = templateValue?.coords?.split(',').map(Number); // "1,2,3,4" -> [1, 2, 3, 4]
           const totalPixelCount = templateValue.pixels?.total ?? undefined;
           const templateImage = undefined; // TODO: Add template image
-          const isActive = templateValue.enabled === true;
+          const isEnabledInStorage = templateValue.enabled === true;
+          const isLoaded = !!this.templateManager?.hasLoadedTemplate?.(templateKey);
+          const isActive = isEnabledInStorage && isLoaded;
+          const activeButtonText = isActive ? 'Active' : (isEnabledInStorage ? 'Reload active' : 'Make active');
 
           // Localization of information to display to the user
           const sortIDLocalized = (typeof sortID == 'number') ? localizeNumber(sortID) : '???';
@@ -224,12 +227,13 @@ export default class WindowWizard extends Overlay {
               .addSpan({'textContent': `Uploaded by user #${authorIDLocalized}`}).buildElement()
               .addSpan({'textContent': `Coordinates: ${coords.join(', ')}`}).buildElement()
               .addSpan({'textContent': `Total Pixels: ${totalPixelCountLocalized}`}).buildElement()
+              .addSpan({'class': 'bm-wizard-template-state', 'textContent': isActive ? 'Loaded in overlay' : (isEnabledInStorage ? 'Stored as active, not loaded yet' : 'Stored template')}).buildElement()
             .buildElement()
             .addDiv({'class': 'bm-wizard-template-actions'})
               .addButton({
                 'class': 'bm-button-secondary bm-wizard-template-active-button',
-                'textContent': isActive ? 'Active' : 'Make active',
-                'aria-label': isActive ? `Template "${displayName}" is active` : `Make template "${displayName}" active`,
+                'textContent': activeButtonText,
+                'aria-label': isActive ? `Template "${displayName}" is active and loaded` : `Load template "${displayName}" as active`,
                 'disabled': isActive
               }, (instance, button) => {
                 button.onclick = async () => {

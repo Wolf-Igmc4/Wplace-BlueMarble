@@ -123,6 +123,11 @@
   font-size: 0.78rem;
 }
 
+#bm-wizard-tlist .bm-wizard-template-state {
+  color: rgba(215, 236, 255, 0.84);
+  font-style: italic;
+}
+
 #bm-wizard-tlist .bm-wizard-template-actions {
   display: flex;
   justify-content: flex-end;

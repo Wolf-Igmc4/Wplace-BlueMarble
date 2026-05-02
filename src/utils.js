@@ -211,6 +211,38 @@ export async function navigateWplaceToLatLng(lat, lng, zoom = 17.5) {
   return moved;
 }
 
+/** Asks Wplace's exposed MapLibre instance to clear and reload visible tile caches.
+ * Falls back to `false` if Wplace internals can not be reached.
+ * @returns {Promise<boolean>} Whether a map refresh was requested
+ * @since 0.92.11
+ */
+export async function refreshWplaceTiles() {
+  installWplaceNavigatorBridge();
+
+  const requestID = crypto.randomUUID();
+  return await new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', onMessage);
+      resolve(false);
+    }, 4000);
+
+    const onMessage = (event) => {
+      const data = event.data;
+      if (!data || data['source'] != 'blue-marble' || data['endpoint'] != 'refresh-tiles-result' || data['requestID'] != requestID) {return;}
+      clearTimeout(timeout);
+      window.removeEventListener('message', onMessage);
+      resolve(!!data['ok']);
+    };
+
+    window.addEventListener('message', onMessage);
+    window.postMessage({
+      'source': 'blue-marble',
+      'endpoint': 'refresh-tiles',
+      'requestID': requestID
+    }, '*');
+  });
+}
+
 /** Installs a page-context bridge that can access Wplace's internal Svelte modules.
  * @since 0.92.1
  */
@@ -257,7 +289,39 @@ function installWplaceNavigatorBridge() {
 
     window.addEventListener('message', async (event) => {
       const data = event.data;
-      if (!data || data.source != 'blue-marble' || data.endpoint != 'navigate') {return;}
+      if (!data || data.source != 'blue-marble') {return;}
+
+      if (data.endpoint == 'refresh-tiles') {
+        let ok = false;
+
+        try {
+          const map = await (state.searchPromise ||= findMap());
+          state.searchPromise = null;
+
+          if (map) {
+            const sourceCaches = map.style?.sourceCaches || {};
+            for (const sourceCache of Object.values(sourceCaches)) {
+              if (typeof sourceCache.clearTiles == 'function') {sourceCache.clearTiles();}
+              if (typeof sourceCache.reload == 'function') {sourceCache.reload();}
+            }
+            if (typeof map.triggerRepaint == 'function') {map.triggerRepaint();}
+            if (typeof map.resize == 'function') {map.resize();}
+            ok = true;
+          }
+        } catch (error) {
+          state.searchPromise = null;
+        }
+
+        window.postMessage({
+          source: 'blue-marble',
+          endpoint: 'refresh-tiles-result',
+          requestID: data.requestID,
+          ok: ok
+        }, '*');
+        return;
+      }
+
+      if (data.endpoint != 'navigate') {return;}
 
       let ok = false;
 

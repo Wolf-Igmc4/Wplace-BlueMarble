@@ -1,6 +1,6 @@
 import SettingsManager from "./settingsManager";
 import Template from "./Template";
-import { base64ToUint8, colorpaletteForBlueMarble, consoleError, consoleLog, consoleWarn, localizeNumber, numberToEncoded, sleep, viewCanvasInNewTab } from "./utils";
+import { base64ToUint8, colorpaletteForBlueMarble, consoleError, consoleLog, consoleWarn, localizeNumber, numberToEncoded, refreshWplaceTiles, sleep, viewCanvasInNewTab } from "./utils";
 import WindowMain from "./WindowMain";
 import WindowWizard from "./WindowWizard";
 
@@ -115,6 +115,7 @@ export default class TemplateManager {
     /** Will contain all color ID's to filter @type {Map<number, boolean>} */
     this.shouldFilterColor = new Map();
     this.templatesLoadingPromise = null; // Promise used to keep tile rendering from racing saved template loading
+    this.loadedTemplateKeys = new Set(); // Storage keys that were actually hydrated into Template instances
   }
 
   /** Updates the stored instance of the main window.
@@ -183,6 +184,15 @@ export default class TemplateManager {
    */
   hasTemplates() {
     return this.templatesArray.length > 0;
+  }
+
+  /** Checks whether a storage template is loaded into the active renderer.
+   * @param {string} templateKey - Storage key for the template
+   * @returns {boolean}
+   * @since 0.92.11
+   */
+  hasLoadedTemplate(templateKey) {
+    return this.loadedTemplateKeys.has(templateKey);
   }
 
   /** Creates the JSON object to store templates in
@@ -335,6 +345,18 @@ export default class TemplateManager {
     }
 
     return changed;
+  }
+
+  /** Requests current map tiles again so newly loaded templates appear without manual reloads.
+   * @since 0.92.11
+   */
+  async #refreshVisibleTiles() {
+    if (!this.templatesArray.length) {return;}
+
+    const refreshed = await refreshWplaceTiles();
+    if (!refreshed) {
+      consoleWarn('Could not ask Wplace to refresh visible tiles after loading templates.');
+    }
   }
 
   /** Makes one stored template active and reloads active template instances.
@@ -892,15 +914,18 @@ export default class TemplateManager {
 
       // Load using the latest schema loader. It will be fine, probably...
       this.templatesArray = [];
+      this.loadedTemplateKeys = new Set();
       this.templatesArray = await loadSchema({
         tileSize: this.tileSize,
         drawMult: this.drawMult,
-        templatesArray: this.templatesArray
+        templatesArray: this.templatesArray,
+        loadedTemplateKeys: this.loadedTemplateKeys
       });
       if (normalizedActiveTemplate) {
         await this.#storeTemplates();
       }
       this.windowMain?.refreshTemplateControls?.();
+      await this.#refreshVisibleTiles();
 
     } else if (schemaVersionArray[0] < schemaVersionBleedingEdge[0]) {
       // Else if the MAJOR verison is out-of-date
@@ -920,12 +945,14 @@ export default class TemplateManager {
      * @param {number} params.tileSize - Size of tile
      * @param {number} params.drawMult - Tile scale multiplier
      * @param {Array<Template>} params.templatesArray - Array of Template instances
+     * @param {Set<string>} params.loadedTemplateKeys - Storage keys that load successfully
      * @since 0.88.434
      */
     async function loadSchema({
       tileSize: tileSize,
       drawMult: drawMult,
-      templatesArray: templatesArray
+      templatesArray: templatesArray,
+      loadedTemplateKeys: loadedTemplateKeys
     }) {
 
       // Run only if there are templates saved
@@ -989,6 +1016,7 @@ export default class TemplateManager {
             template.chunked32 = templateTiles32;
             
             templatesArray.push(template);
+            loadedTemplateKeys.add(templateKey);
             console.log(templatesArray);
             console.log(`^^^ This ^^^`);
           }

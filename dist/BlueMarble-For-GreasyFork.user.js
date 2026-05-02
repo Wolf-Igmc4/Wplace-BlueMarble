@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.10
+// @version         0.92.11
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -22,7 +22,7 @@
 // @grant           GM.download
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.10
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.11
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -194,6 +194,31 @@
     }
     return moved;
   }
+  async function refreshWplaceTiles() {
+    installWplaceNavigatorBridge();
+    const requestID = crypto.randomUUID();
+    return await new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        window.removeEventListener("message", onMessage);
+        resolve(false);
+      }, 4e3);
+      const onMessage = (event) => {
+        const data = event.data;
+        if (!data || data["source"] != "blue-marble" || data["endpoint"] != "refresh-tiles-result" || data["requestID"] != requestID) {
+          return;
+        }
+        clearTimeout(timeout);
+        window.removeEventListener("message", onMessage);
+        resolve(!!data["ok"]);
+      };
+      window.addEventListener("message", onMessage);
+      window.postMessage({
+        "source": "blue-marble",
+        "endpoint": "refresh-tiles",
+        "requestID": requestID
+      }, "*");
+    });
+  }
   function installWplaceNavigatorBridge() {
     if (document.documentElement?.dataset?.bmNavigatorBridge) {
       return;
@@ -238,7 +263,39 @@
 
     window.addEventListener('message', async (event) => {
       const data = event.data;
-      if (!data || data.source != 'blue-marble' || data.endpoint != 'navigate') {return;}
+      if (!data || data.source != 'blue-marble') {return;}
+
+      if (data.endpoint == 'refresh-tiles') {
+        let ok = false;
+
+        try {
+          const map = await (state.searchPromise ||= findMap());
+          state.searchPromise = null;
+
+          if (map) {
+            const sourceCaches = map.style?.sourceCaches || {};
+            for (const sourceCache of Object.values(sourceCaches)) {
+              if (typeof sourceCache.clearTiles == 'function') {sourceCache.clearTiles();}
+              if (typeof sourceCache.reload == 'function') {sourceCache.reload();}
+            }
+            if (typeof map.triggerRepaint == 'function') {map.triggerRepaint();}
+            if (typeof map.resize == 'function') {map.resize();}
+            ok = true;
+          }
+        } catch (error) {
+          state.searchPromise = null;
+        }
+
+        window.postMessage({
+          source: 'blue-marble',
+          endpoint: 'refresh-tiles-result',
+          requestID: data.requestID,
+          ok: ok
+        }, '*');
+        return;
+      }
+
+      if (data.endpoint != 'navigate') {return;}
 
       let ok = false;
 
@@ -3617,14 +3674,17 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
           const coords2 = templateValue?.coords?.split(",").map(Number);
           const totalPixelCount = templateValue.pixels?.total ?? void 0;
           const templateImage = void 0;
-          const isActive = templateValue.enabled === true;
+          const isEnabledInStorage = templateValue.enabled === true;
+          const isLoaded = !!this.templateManager?.hasLoadedTemplate?.(templateKey);
+          const isActive = isEnabledInStorage && isLoaded;
+          const activeButtonText = isActive ? "Active" : isEnabledInStorage ? "Reload active" : "Make active";
           const sortIDLocalized = typeof sortID == "number" ? localizeNumber(sortID) : "???";
           const authorIDLocalized = typeof authorID == "number" ? localizeNumber(authorID) : "???";
           const totalPixelCountLocalized = typeof totalPixelCount == "number" ? localizeNumber(totalPixelCount) : "???";
-          templateList.addDiv({ "class": `bm-container bm-wizard-template-card${isActive ? " bm-wizard-template-card-active" : ""}` }).addDiv({ "class": "bm-flex-center", "style": "flex-direction: column; gap: 0;" }).addDiv({ "class": "bm-wizard-template-container-image", "textContent": templateImage || "\u{1F5BC}\uFE0F" }).buildElement().addSmall({ "textContent": `#${sortIDLocalized}` }).buildElement().buildElement().addDiv({ "class": "bm-flex-center bm-wizard-template-container-flavor" }).addHeader(3, { "textContent": displayName }).buildElement().addSpan({ "textContent": `Uploaded by user #${authorIDLocalized}` }).buildElement().addSpan({ "textContent": `Coordinates: ${coords2.join(", ")}` }).buildElement().addSpan({ "textContent": `Total Pixels: ${totalPixelCountLocalized}` }).buildElement().buildElement().addDiv({ "class": "bm-wizard-template-actions" }).addButton({
+          templateList.addDiv({ "class": `bm-container bm-wizard-template-card${isActive ? " bm-wizard-template-card-active" : ""}` }).addDiv({ "class": "bm-flex-center", "style": "flex-direction: column; gap: 0;" }).addDiv({ "class": "bm-wizard-template-container-image", "textContent": templateImage || "\u{1F5BC}\uFE0F" }).buildElement().addSmall({ "textContent": `#${sortIDLocalized}` }).buildElement().buildElement().addDiv({ "class": "bm-flex-center bm-wizard-template-container-flavor" }).addHeader(3, { "textContent": displayName }).buildElement().addSpan({ "textContent": `Uploaded by user #${authorIDLocalized}` }).buildElement().addSpan({ "textContent": `Coordinates: ${coords2.join(", ")}` }).buildElement().addSpan({ "textContent": `Total Pixels: ${totalPixelCountLocalized}` }).buildElement().addSpan({ "class": "bm-wizard-template-state", "textContent": isActive ? "Loaded in overlay" : isEnabledInStorage ? "Stored as active, not loaded yet" : "Stored template" }).buildElement().buildElement().addDiv({ "class": "bm-wizard-template-actions" }).addButton({
             "class": "bm-button-secondary bm-wizard-template-active-button",
-            "textContent": isActive ? "Active" : "Make active",
-            "aria-label": isActive ? `Template "${displayName}" is active` : `Make template "${displayName}" active`,
+            "textContent": activeButtonText,
+            "aria-label": isActive ? `Template "${displayName}" is active and loaded` : `Load template "${displayName}" as active`,
             "disabled": isActive
           }, (instance, button) => {
             button.onclick = async () => {
@@ -3960,7 +4020,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
   };
 
   // src/templateManager.js
-  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, loadTemplate_fn, storeTemplates_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
+  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, loadTemplate_fn, storeTemplates_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
   var TemplateManager = class {
     /** The constructor for the {@link TemplateManager} class.
      * @param {string} name - The name of the userscript
@@ -3988,6 +4048,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       this.templatePixelsCorrect = null;
       this.shouldFilterColor = /* @__PURE__ */ new Map();
       this.templatesLoadingPromise = null;
+      this.loadedTemplateKeys = /* @__PURE__ */ new Set();
     }
     /** Updates the stored instance of the main window.
      * @param {WindowMain} windowMain - The main window instance
@@ -4024,6 +4085,14 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
      */
     hasTemplates() {
       return this.templatesArray.length > 0;
+    }
+    /** Checks whether a storage template is loaded into the active renderer.
+     * @param {string} templateKey - Storage key for the template
+     * @returns {boolean}
+     * @since 0.92.11
+     */
+    hasLoadedTemplate(templateKey) {
+      return this.loadedTemplateKeys.has(templateKey);
     }
     /** Creates the JSON object to store templates in
      * @returns {{ whoami: string, scriptVersion: string, schemaVersion: string, templates: Object }} The JSON object
@@ -4542,6 +4611,15 @@ There are ${pixelsCorrectTotal} correct pixels.`);
     }
     return changed;
   };
+  refreshVisibleTiles_fn = async function() {
+    if (!this.templatesArray.length) {
+      return;
+    }
+    const refreshed = await refreshWplaceTiles();
+    if (!refreshed) {
+      consoleWarn("Could not ask Wplace to refresh visible tiles after loading templates.");
+    }
+  };
   parseBlueMarble_fn = async function(json) {
     console.log(`Parsing BlueMarble...`);
     const templates = json.templates || {};
@@ -4560,15 +4638,18 @@ There are ${pixelsCorrectTotal} correct pixels.`);
       }
       const normalizedActiveTemplate = __privateMethod(this, _TemplateManager_instances, normalizeActiveTemplate_fn).call(this, templates);
       this.templatesArray = [];
+      this.loadedTemplateKeys = /* @__PURE__ */ new Set();
       this.templatesArray = await loadSchema({
         tileSize: this.tileSize,
         drawMult: this.drawMult,
-        templatesArray: this.templatesArray
+        templatesArray: this.templatesArray,
+        loadedTemplateKeys: this.loadedTemplateKeys
       });
       if (normalizedActiveTemplate) {
         await __privateMethod(this, _TemplateManager_instances, storeTemplates_fn).call(this);
       }
       this.windowMain?.refreshTemplateControls?.();
+      await __privateMethod(this, _TemplateManager_instances, refreshVisibleTiles_fn).call(this);
     } else if (schemaVersionArray[0] < schemaVersionBleedingEdge[0]) {
       const windowWizard = new WindowWizard(this.name, this.version, this.schemaVersion, this);
       windowWizard.buildWindow();
@@ -4579,7 +4660,8 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
     async function loadSchema({
       tileSize,
       drawMult,
-      templatesArray
+      templatesArray,
+      loadedTemplateKeys
     }) {
       if (Object.keys(templates).length > 0) {
         for (const template in templates) {
@@ -4627,6 +4709,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
             template2.chunked = templateTiles;
             template2.chunked32 = templateTiles32;
             templatesArray.push(template2);
+            loadedTemplateKeys.add(templateKey);
             console.log(templatesArray);
             console.log(`^^^ This ^^^`);
           }
