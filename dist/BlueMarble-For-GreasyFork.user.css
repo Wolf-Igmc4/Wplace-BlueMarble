@@ -652,6 +652,7 @@ input[type=file] {
 #bm-window-filter:not(.bm-windowed) .bm-filter-color-progress {
   align-items: flex-end;
   gap: 0.18rem;
+  min-width: max-content;
 }
 #bm-window-filter:not(.bm-windowed) .bm-filter-color .bm-filter-color-pxl-cnt {
   font-family: var(--bm-font-display);
@@ -792,6 +793,8 @@ input[type=file] {
 }
 #bm-window-filter .bm-filter-color .bm-filter-color-pxl-desc {
   margin: 0.1rem 0 0;
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 #bm-window-filter .bm-filter-color small {
   font-size: 0.75em;
