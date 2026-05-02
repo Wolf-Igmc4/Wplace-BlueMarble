@@ -363,6 +363,11 @@ input[type=file] {
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   box-sizing: border-box;
+  transition:
+    background 320ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    transform 0s;
 }
 #bm-window-filter:not(.bm-windowed) .bm-window-content {
   display: grid;
@@ -828,6 +833,9 @@ input[type=file] {
   opacity: 1;
   border-color: rgba(146, 221, 255, 0.36);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 8px 16px rgba(0, 0, 0, 0.16);
+}
+#bm-window-filter:has(.bm-resize-corner.bm-resizing) {
+  transition: none;
 }
 #bm-window-filter.bm-windowed {
   --bm-scrollable-max-height: 100%;
