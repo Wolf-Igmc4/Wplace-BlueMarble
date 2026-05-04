@@ -56,6 +56,7 @@ export default class WindowFilter extends Overlay {
     this.windowMinHeight = 220; // Minimum height for the windowed filter
     this.windowMaxWidth = 1000; // Maximum width for the windowed filter
     this.windowMaxHeight = 1400; // Maximum height for the windowed filter
+    this.filterViewSettingsVersion = 1; // Version for one-time default sort migrations
 
     /** The templateManager instance currently being used. @type {TemplateManager} */
     this.templateManager = executor.apiManager?.templateManager;
@@ -82,7 +83,7 @@ export default class WindowFilter extends Overlay {
     this.timeRemainingLocalized = ''; // The date & time the user will complete the templates in the date-time format of the user's device, as a string
 
     // Color list display settings
-    this.sortPrimary = 'total'; // The last used primary sort option
+    this.sortPrimary = 'bought'; // The last used primary sort option
     this.sortSecondary = 'descending'; // The last used secondary sort option
     this.showUnused = false; // Were unused colors shown the last time the user sorted the color list?
     this.showCompleted = true; // Were completed colors shown the last time the user sorted the color list?
@@ -188,6 +189,7 @@ export default class WindowFilter extends Overlay {
                   .addSelect({'id': 'bm-filter-sort-primary', 'name': 'sortPrimary', 'textContent': 'I want to view '})
                     .addOption({'value': 'id', 'textContent': 'color IDs'}).buildElement()
                     .addOption({'value': 'name', 'textContent': 'color names'}).buildElement()
+                    .addOption({'value': 'bought', 'textContent': 'bought colors'}).buildElement()
                     .addOption({'value': 'premium', 'textContent': 'premium colors'}).buildElement()
                     .addOption({'value': 'percent', 'textContent': 'percentage'}).buildElement()
                     .addOption({'value': 'correct', 'textContent': 'correct pixels'}).buildElement()
@@ -354,8 +356,17 @@ export default class WindowFilter extends Overlay {
     const filterView = this.settingsManager?.userSettings?.filterView;
     if (!filterView || typeof filterView != 'object') {return;}
 
-    const allowedPrimarySorts = new Set(['id', 'name', 'premium', 'percent', 'correct', 'incorrect', 'total']);
+    const allowedPrimarySorts = new Set(['id', 'name', 'bought', 'premium', 'percent', 'correct', 'incorrect', 'total']);
     const allowedSecondarySorts = new Set(['ascending', 'descending']);
+    const shouldMigrateDefaultSort = filterView.defaultSortVersion !== this.filterViewSettingsVersion
+      && filterView.sortPrimary == 'total'
+      && filterView.sortSecondary == 'descending';
+
+    if (shouldMigrateDefaultSort) {
+      filterView.sortPrimary = 'bought';
+      filterView.sortSecondary = 'descending';
+      filterView.defaultSortVersion = this.filterViewSettingsVersion;
+    }
 
     if (allowedPrimarySorts.has(filterView.sortPrimary)) {
       this.sortPrimary = filterView.sortPrimary;
@@ -383,7 +394,8 @@ export default class WindowFilter extends Overlay {
       showUnused: this.showUnused,
       showCompleted: this.showCompleted,
       showFree: this.showFree,
-      showPremium: this.showPremium
+      showPremium: this.showPremium,
+      defaultSortVersion: this.filterViewSettingsVersion
     };
 
     if (shouldSaveNow) {
@@ -898,8 +910,9 @@ export default class WindowFilter extends Overlay {
     }
 
     colors.sort((index, nextIndex) => {
-      const indexValue = index.getAttribute('data-' + sortPrimary);
-      const nextIndexValue = nextIndex.getAttribute('data-' + sortPrimary);
+      const dataKey = sortPrimary == 'bought' ? 'premium' : sortPrimary;
+      const indexValue = index.getAttribute('data-' + dataKey);
+      const nextIndexValue = nextIndex.getAttribute('data-' + dataKey);
 
       const indexValueNumber = parseFloat(indexValue);
       const nextIndexValueNumber = parseFloat(nextIndexValue);

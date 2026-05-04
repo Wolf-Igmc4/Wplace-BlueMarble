@@ -371,6 +371,15 @@ input[type=file] {
     box-shadow 220ms ease,
     transform 0s;
 }
+#bm-window-filter.bm-window-collapsed {
+  min-height: 0 !important;
+  height: fit-content !important;
+  max-height: fit-content !important;
+  grid-template-rows: auto;
+}
+#bm-window-filter.bm-window-collapsed .bm-window-content {
+  display: none !important;
+}
 #bm-window-filter:not(.bm-windowed) .bm-window-content {
   display: grid;
   grid-template-rows: auto auto auto auto minmax(0, 1fr);
@@ -966,13 +975,18 @@ input[type=file] {
   }
 }
 @media (max-width: 620px) {
+  #bm-window-filter {
+    top: 0.35rem;
+    left: 0.35rem;
+    right: auto;
+  }
   #bm-window-filter:not(.bm-windowed) {
-    width: min(24rem, calc(100vw - 2rem));
-    max-width: calc(100vw - 2rem) !important;
+    width: min(24rem, calc(100vw - 0.7rem));
+    max-width: calc(100vw - 0.7rem) !important;
   }
   #bm-window-filter.bm-windowed {
-    width: min(300px, calc(100vw - 2rem));
-    min-width: min(280px, calc(100vw - 2rem));
+    width: min(300px, calc(100vw - 0.7rem));
+    min-width: min(280px, calc(100vw - 0.7rem));
   }
   #bm-window-filter .bm-filter-stat-grid {
     grid-template-columns: 1fr;

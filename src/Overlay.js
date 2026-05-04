@@ -1270,6 +1270,7 @@ export default class Overlay {
     // If window content is open...
     if (button.dataset['buttonStatus'] == 'expanded') {
       // ...we want to close it
+      window.classList.add('bm-window-collapsed');
       
       // Logic for the transition animation to collapse the window
       window.dataset['widthBeforeMinimize'] = window.style.width;
@@ -1299,6 +1300,7 @@ export default class Overlay {
       button.ariaLabel = `Unminimize window "${dragbarHeader1Text}"`; // Screen reader label
     } else {
       // Else, the window is closed, and we want to open it
+      window.classList.remove('bm-window-collapsed');
 
       // Deletes the h1 element inside the dragbar
       const dragbarHeader1 = dragbar.querySelector('h1');

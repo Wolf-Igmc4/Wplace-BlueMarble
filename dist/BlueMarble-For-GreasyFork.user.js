@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.13
+// @version         0.92.14
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -22,7 +22,7 @@
 // @grant           GM.download
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.13
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.14
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -1545,6 +1545,7 @@
       };
       window2.parentElement.append(window2);
       if (button.dataset["buttonStatus"] == "expanded") {
+        window2.classList.add("bm-window-collapsed");
         window2.dataset["widthBeforeMinimize"] = window2.style.width;
         window2.dataset["heightBeforeMinimize"] = window2.style.height;
         window2.dataset["minHeightBeforeMinimize"] = window2.style.minHeight;
@@ -1568,6 +1569,7 @@
         button.dataset["buttonStatus"] = "collapsed";
         button.ariaLabel = `Unminimize window "${dragbarHeader1Text}"`;
       } else {
+        window2.classList.remove("bm-window-collapsed");
         const dragbarHeader1 = dragbar.querySelector("h1");
         const dragbarHeader1Text = dragbarHeader1.textContent;
         dragbarHeader1.remove();
@@ -2630,6 +2632,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       this.windowMinHeight = 220;
       this.windowMaxWidth = 1e3;
       this.windowMaxHeight = 1400;
+      this.filterViewSettingsVersion = 1;
       this.templateManager = executor.apiManager?.templateManager;
       this.eyeOpen = '<svg class="bm-filter-eye-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.8 12s3.1-5 8.2-5 8.2 5 8.2 5-3.1 5-8.2 5-8.2-5-8.2-5Z"/><circle cx="12" cy="12" r="2.5"/></svg>';
       this.eyeClosed = '<svg class="bm-filter-eye-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.6 9.8C6.1 8.3 8.6 7 12 7c5.1 0 8.2 5 8.2 5a15.2 15.2 0 0 1-2.2 2.7"/><path d="M14.1 16.7a8.3 8.3 0 0 1-2.1.3c-5.1 0-8.2-5-8.2-5a14.9 14.9 0 0 1 1.8-2.3"/><path d="M5 5l14 14"/><path d="M10.4 10.7a2.5 2.5 0 0 0 2.9 2.9"/></svg>';
@@ -2644,7 +2647,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       this.allPixelsTotal = 0;
       this.timeRemaining = 0;
       this.timeRemainingLocalized = "";
-      this.sortPrimary = "total";
+      this.sortPrimary = "bought";
       this.sortSecondary = "descending";
       this.showUnused = false;
       this.showCompleted = true;
@@ -2696,7 +2699,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         button.onclick = () => __privateMethod(this, _WindowFilter_instances, selectColorList_fn).call(this, false);
       }).buildElement().addButton({ "class": "bm-button-secondary", "textContent": "Show All Colors" }, (instance, button) => {
         button.onclick = () => __privateMethod(this, _WindowFilter_instances, selectColorList_fn).call(this, true);
-      }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container bm-scrollable bm-filter-scrollable" }).addDiv({ "class": "bm-container bm-filter-insights" }).addDiv({ "class": "bm-filter-stat-grid" }).addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Chunks" }).buildElement().addSpan({ "id": "bm-filter-tile-load", "class": "bm-filter-stat-value", "textContent": "0 / ???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Total" }).buildElement().addSpan({ "id": "bm-filter-tot-total", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Correct" }).buildElement().addSpan({ "id": "bm-filter-tot-correct", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Remaining" }).buildElement().addSpan({ "id": "bm-filter-tot-remaining", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card bm-filter-stat-card-wide" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Finished At" }).buildElement().addSpan({ "id": "bm-filter-tot-completed", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().buildElement().addHr().buildElement().addForm({ "class": "bm-container bm-filter-sort-panel" }).addFieldset().addLegend({ "textContent": "Sort Options:", "style": "font-weight: 700;" }).buildElement().addDiv({ "class": "bm-container bm-filter-sort-row" }).addSelect({ "id": "bm-filter-sort-primary", "name": "sortPrimary", "textContent": "I want to view " }).addOption({ "value": "id", "textContent": "color IDs" }).buildElement().addOption({ "value": "name", "textContent": "color names" }).buildElement().addOption({ "value": "premium", "textContent": "premium colors" }).buildElement().addOption({ "value": "percent", "textContent": "percentage" }).buildElement().addOption({ "value": "correct", "textContent": "correct pixels" }).buildElement().addOption({ "value": "incorrect", "textContent": "incorrect pixels" }).buildElement().addOption({ "value": "total", "textContent": "total pixels" }).buildElement().buildElement().addSelect({ "id": "bm-filter-sort-secondary", "name": "sortSecondary", "textContent": " in " }).addOption({ "value": "ascending", "textContent": "ascending" }).buildElement().addOption({ "value": "descending", "textContent": "descending" }).buildElement().buildElement().addSpan({ "textContent": " order." }).buildElement().buildElement().addDiv({ "class": "bm-container bm-filter-show-row" }).addSpan({ "class": "bm-filter-show-label", "textContent": "Show:" }).buildElement().addCheckbox({ "id": "bm-filter-show-unused", "name": "showUnused", "textContent": "Unused" }).buildElement().addCheckbox({ "id": "bm-filter-show-completed", "name": "showCompleted", "textContent": "Completed" }).buildElement().addCheckbox({ "id": "bm-filter-show-free", "name": "showFree", "textContent": "Free" }).buildElement().addCheckbox({ "id": "bm-filter-show-premium", "name": "showPremium", "textContent": "Premium" }).buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().addDiv({
+      }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container bm-scrollable bm-filter-scrollable" }).addDiv({ "class": "bm-container bm-filter-insights" }).addDiv({ "class": "bm-filter-stat-grid" }).addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Chunks" }).buildElement().addSpan({ "id": "bm-filter-tile-load", "class": "bm-filter-stat-value", "textContent": "0 / ???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Total" }).buildElement().addSpan({ "id": "bm-filter-tot-total", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Correct" }).buildElement().addSpan({ "id": "bm-filter-tot-correct", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Remaining" }).buildElement().addSpan({ "id": "bm-filter-tot-remaining", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card bm-filter-stat-card-wide" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Finished At" }).buildElement().addSpan({ "id": "bm-filter-tot-completed", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().buildElement().addHr().buildElement().addForm({ "class": "bm-container bm-filter-sort-panel" }).addFieldset().addLegend({ "textContent": "Sort Options:", "style": "font-weight: 700;" }).buildElement().addDiv({ "class": "bm-container bm-filter-sort-row" }).addSelect({ "id": "bm-filter-sort-primary", "name": "sortPrimary", "textContent": "I want to view " }).addOption({ "value": "id", "textContent": "color IDs" }).buildElement().addOption({ "value": "name", "textContent": "color names" }).buildElement().addOption({ "value": "bought", "textContent": "bought colors" }).buildElement().addOption({ "value": "premium", "textContent": "premium colors" }).buildElement().addOption({ "value": "percent", "textContent": "percentage" }).buildElement().addOption({ "value": "correct", "textContent": "correct pixels" }).buildElement().addOption({ "value": "incorrect", "textContent": "incorrect pixels" }).buildElement().addOption({ "value": "total", "textContent": "total pixels" }).buildElement().buildElement().addSelect({ "id": "bm-filter-sort-secondary", "name": "sortSecondary", "textContent": " in " }).addOption({ "value": "ascending", "textContent": "ascending" }).buildElement().addOption({ "value": "descending", "textContent": "descending" }).buildElement().buildElement().addSpan({ "textContent": " order." }).buildElement().buildElement().addDiv({ "class": "bm-container bm-filter-show-row" }).addSpan({ "class": "bm-filter-show-label", "textContent": "Show:" }).buildElement().addCheckbox({ "id": "bm-filter-show-unused", "name": "showUnused", "textContent": "Unused" }).buildElement().addCheckbox({ "id": "bm-filter-show-completed", "name": "showCompleted", "textContent": "Completed" }).buildElement().addCheckbox({ "id": "bm-filter-show-free", "name": "showFree", "textContent": "Free" }).buildElement().addCheckbox({ "id": "bm-filter-show-premium", "name": "showPremium", "textContent": "Premium" }).buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().addDiv({
         "class": "bm-resize-corner",
         "title": "Resize Color Filter window",
         "aria-label": "Resize Color Filter window",
@@ -2898,8 +2901,14 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     if (!filterView || typeof filterView != "object") {
       return;
     }
-    const allowedPrimarySorts = /* @__PURE__ */ new Set(["id", "name", "premium", "percent", "correct", "incorrect", "total"]);
+    const allowedPrimarySorts = /* @__PURE__ */ new Set(["id", "name", "bought", "premium", "percent", "correct", "incorrect", "total"]);
     const allowedSecondarySorts = /* @__PURE__ */ new Set(["ascending", "descending"]);
+    const shouldMigrateDefaultSort = filterView.defaultSortVersion !== this.filterViewSettingsVersion && filterView.sortPrimary == "total" && filterView.sortSecondary == "descending";
+    if (shouldMigrateDefaultSort) {
+      filterView.sortPrimary = "bought";
+      filterView.sortSecondary = "descending";
+      filterView.defaultSortVersion = this.filterViewSettingsVersion;
+    }
     if (allowedPrimarySorts.has(filterView.sortPrimary)) {
       this.sortPrimary = filterView.sortPrimary;
     }
@@ -2933,7 +2942,8 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       showUnused: this.showUnused,
       showCompleted: this.showCompleted,
       showFree: this.showFree,
-      showPremium: this.showPremium
+      showPremium: this.showPremium,
+      defaultSortVersion: this.filterViewSettingsVersion
     };
     if (shouldSaveNow) {
       void this.settingsManager.saveUserStorageNow();
@@ -3357,8 +3367,9 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       color.classList.toggle("bm-color-hide", shouldHideColor);
     }
     colors.sort((index, nextIndex) => {
-      const indexValue = index.getAttribute("data-" + sortPrimary);
-      const nextIndexValue = nextIndex.getAttribute("data-" + sortPrimary);
+      const dataKey = sortPrimary == "bought" ? "premium" : sortPrimary;
+      const indexValue = index.getAttribute("data-" + dataKey);
+      const nextIndexValue = nextIndex.getAttribute("data-" + dataKey);
       const indexValueNumber = parseFloat(indexValue);
       const nextIndexValueNumber = parseFloat(nextIndexValue);
       const indexValueNumberIsNumber = !isNaN(indexValueNumber);
