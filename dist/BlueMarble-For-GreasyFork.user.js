@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.14
+// @version         0.92.15
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -22,7 +22,7 @@
 // @grant           GM.download
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.14
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.15
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -2606,7 +2606,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     return `${day}/${month}/${year} ${hour}:${minute}${period}`;
   }
-  var _WindowFilter_instances, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, buildColorList_fn, sortColorList_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
+  var _WindowFilter_instances, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, isColorBought_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
   var WindowFilter = class extends Overlay {
     /** Constructor for the color filter window
      * @param {*} executor - The executing class
@@ -3234,6 +3234,24 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     this.windowViewportResizeHandler = () => __privateMethod(this, _WindowFilter_instances, scheduleWindowStateSave_fn).call(this, windowElement, 0);
     window.addEventListener("resize", this.windowViewportResizeHandler);
   };
+  /** Checks whether a premium color appears usable in Wplace's own palette.
+   * @param {{id: number, premium: boolean}} color - Palette color metadata
+   * @returns {boolean}
+   * @since 0.92.15
+   */
+  isColorBought_fn = function(color) {
+    if (!color?.premium) {
+      return false;
+    }
+    const colorElement = document.querySelector(`#color-${color.id}`);
+    if (!colorElement) {
+      return false;
+    }
+    const control = colorElement.matches('button, input, [role="button"]') ? colorElement : colorElement.querySelector('button, input, [role="button"]');
+    const classText = `${colorElement.className || ""} ${control?.className || ""}`;
+    const isDisabled = colorElement.matches(":disabled, [disabled]") || control?.matches?.(":disabled, [disabled]") || colorElement.getAttribute("aria-disabled") == "true" || control?.getAttribute?.("aria-disabled") == "true" || colorElement.dataset["disabled"] == "true" || colorElement.dataset["locked"] == "true" || /\b(disabled|locked|unavailable)\b/i.test(classText);
+    return !isDisabled;
+  };
   /** Creates the color list container.
    * @param {HTMLElement} parentElement - Parent element to add the color list to as a child
    * @since 0.88.222
@@ -3265,6 +3283,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         colorCompleted
       } = colorStatistics[color.id];
       const isColorHidden = !!(this.templateManager.shouldFilterColor.get(color.id) || false);
+      const colorBought = __privateMethod(this, _WindowFilter_instances, isColorBought_fn).call(this, color);
       if (isWindowedMode) {
         const styleBackgroundStar = `background-size: auto 100%; background-repeat: repeat-x; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50,5L79,91L2,39L98,39L21,91' fill='${textColorForPaletteColorBackground}' fill-opacity='.1'/></svg>");`;
         colorList.addDiv({
@@ -3272,6 +3291,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
           // Dataset
           "data-id": color.id,
           "data-name": color.name,
+          "data-bought": +colorBought,
           "data-premium": +color.premium,
           "data-state": isColorHidden ? "hidden" : "shown",
           "data-correct": !Number.isNaN(parseInt(colorCorrect)) ? colorCorrect : "0",
@@ -3304,6 +3324,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
           "style": colorCardStyle,
           "data-id": color.id,
           "data-name": color.name,
+          "data-bought": +colorBought,
           "data-premium": +color.premium,
           "data-state": isColorHidden ? "hidden" : "shown",
           "data-correct": !Number.isNaN(parseInt(colorCorrect)) ? colorCorrect : "0",
@@ -3360,6 +3381,8 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     const colorList = document.querySelector(`#${this.colorListID}`);
     const colors = Array.from(colorList.children);
     for (const color of colors) {
+      const paletteColor = this.palette.find((paletteColor2) => paletteColor2.id == color.dataset["id"]);
+      color.dataset["bought"] = +__privateMethod(this, _WindowFilter_instances, isColorBought_fn).call(this, paletteColor);
       const isUnused = !Number(color.getAttribute("data-total"));
       const isCompleted = color.getAttribute("data-completed") == "1";
       const isPremium = color.getAttribute("data-premium") == "1";
@@ -3368,6 +3391,21 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     colors.sort((index, nextIndex) => {
       const dataKey = sortPrimary == "bought" ? "premium" : sortPrimary;
+      if (sortPrimary == "bought") {
+        const boughtCompare = __privateMethod(this, _WindowFilter_instances, compareColorDataset_fn).call(this, index, nextIndex, "bought", sortSecondary);
+        if (boughtCompare) {
+          return boughtCompare;
+        }
+        const premiumCompare = __privateMethod(this, _WindowFilter_instances, compareColorDataset_fn).call(this, index, nextIndex, "premium", "descending");
+        if (premiumCompare) {
+          return premiumCompare;
+        }
+        const totalCompare = __privateMethod(this, _WindowFilter_instances, compareColorDataset_fn).call(this, index, nextIndex, "total", "descending");
+        if (totalCompare) {
+          return totalCompare;
+        }
+        return __privateMethod(this, _WindowFilter_instances, compareColorDataset_fn).call(this, index, nextIndex, "name", "ascending");
+      }
       const indexValue = index.getAttribute("data-" + dataKey);
       const nextIndexValue = nextIndex.getAttribute("data-" + dataKey);
       const indexValueNumber = parseFloat(indexValue);
@@ -3385,6 +3423,30 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       }
     });
     colors.forEach((color) => colorList.appendChild(color));
+  };
+  /** Compares two color cards by a dataset key.
+   * @param {HTMLElement} index - Current color card
+   * @param {HTMLElement} nextIndex - Next color card
+   * @param {string} dataKey - Dataset key to compare
+   * @param {'ascending' | 'descending'} sortDirection - Sort direction
+   * @returns {number}
+   * @since 0.92.15
+   */
+  compareColorDataset_fn = function(index, nextIndex, dataKey, sortDirection) {
+    const indexValue = index.getAttribute("data-" + dataKey) ?? "";
+    const nextIndexValue = nextIndex.getAttribute("data-" + dataKey) ?? "";
+    const indexValueNumber = parseFloat(indexValue);
+    const nextIndexValueNumber = parseFloat(nextIndexValue);
+    const indexValueNumberIsNumber = !isNaN(indexValueNumber);
+    const nextIndexValueNumberIsNumber = !isNaN(nextIndexValueNumber);
+    if (indexValueNumberIsNumber && nextIndexValueNumberIsNumber) {
+      return sortDirection === "ascending" ? indexValueNumber - nextIndexValueNumber : nextIndexValueNumber - indexValueNumber;
+    }
+    const indexValueString = indexValue.toLowerCase();
+    const nextIndexValueString = nextIndexValue.toLowerCase();
+    if (indexValueString < nextIndexValueString) return sortDirection === "ascending" ? -1 : 1;
+    if (indexValueString > nextIndexValueString) return sortDirection === "ascending" ? 1 : -1;
+    return 0;
   };
   /** (Un)selects all colors in the color list that are visible to the user.
    * @param {boolean} userWantsUnselect - Does the user want to unselect colors?

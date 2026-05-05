@@ -705,6 +705,32 @@ export default class WindowFilter extends Overlay {
     window.addEventListener('resize', this.windowViewportResizeHandler);
   }
 
+  /** Checks whether a premium color appears usable in Wplace's own palette.
+   * @param {{id: number, premium: boolean}} color - Palette color metadata
+   * @returns {boolean}
+   * @since 0.92.15
+   */
+  #isColorBought(color) {
+    if (!color?.premium) {return false;}
+
+    const colorElement = document.querySelector(`#color-${color.id}`);
+    if (!colorElement) {return false;}
+
+    const control = colorElement.matches('button, input, [role="button"]')
+      ? colorElement
+      : colorElement.querySelector('button, input, [role="button"]');
+    const classText = `${colorElement.className || ''} ${control?.className || ''}`;
+    const isDisabled = colorElement.matches(':disabled, [disabled]')
+      || control?.matches?.(':disabled, [disabled]')
+      || colorElement.getAttribute('aria-disabled') == 'true'
+      || control?.getAttribute?.('aria-disabled') == 'true'
+      || colorElement.dataset['disabled'] == 'true'
+      || colorElement.dataset['locked'] == 'true'
+      || /\b(disabled|locked|unavailable)\b/i.test(classText);
+
+    return !isDisabled;
+  }
+
   /** Creates the color list container.
    * @param {HTMLElement} parentElement - Parent element to add the color list to as a child
    * @since 0.88.222
@@ -763,6 +789,7 @@ export default class WindowFilter extends Overlay {
       } = colorStatistics[color.id];
 
       const isColorHidden = !!(this.templateManager.shouldFilterColor.get(color.id) || false);
+      const colorBought = this.#isColorBought(color);
 
       // Add the color to the color list DOM
       if (isWindowedMode) {
@@ -775,6 +802,7 @@ export default class WindowFilter extends Overlay {
           // Dataset
           'data-id': color.id,
           'data-name': color.name,
+          'data-bought': +colorBought,
           'data-premium': +color.premium,
           'data-state': isColorHidden ? 'hidden' : 'shown',
           'data-correct': !Number.isNaN(parseInt(colorCorrect)) ? colorCorrect : '0',
@@ -816,6 +844,7 @@ export default class WindowFilter extends Overlay {
           'style': colorCardStyle,
           'data-id': color.id,
           'data-name': color.name,
+          'data-bought': +colorBought,
           'data-premium': +color.premium,
           'data-state': isColorHidden ? 'hidden' : 'shown',
           'data-correct': !Number.isNaN(parseInt(colorCorrect)) ? colorCorrect : '0',
@@ -898,6 +927,9 @@ export default class WindowFilter extends Overlay {
     const colors = Array.from(colorList.children);
 
     for (const color of colors) {
+      const paletteColor = this.palette.find(paletteColor => paletteColor.id == color.dataset['id']);
+      color.dataset['bought'] = +this.#isColorBought(paletteColor);
+
       const isUnused = !Number(color.getAttribute('data-total'));
       const isCompleted = color.getAttribute('data-completed') == '1';
       const isPremium = color.getAttribute('data-premium') == '1';
@@ -911,6 +943,19 @@ export default class WindowFilter extends Overlay {
 
     colors.sort((index, nextIndex) => {
       const dataKey = sortPrimary == 'bought' ? 'premium' : sortPrimary;
+      if (sortPrimary == 'bought') {
+        const boughtCompare = this.#compareColorDataset(index, nextIndex, 'bought', sortSecondary);
+        if (boughtCompare) {return boughtCompare;}
+
+        const premiumCompare = this.#compareColorDataset(index, nextIndex, 'premium', 'descending');
+        if (premiumCompare) {return premiumCompare;}
+
+        const totalCompare = this.#compareColorDataset(index, nextIndex, 'total', 'descending');
+        if (totalCompare) {return totalCompare;}
+
+        return this.#compareColorDataset(index, nextIndex, 'name', 'ascending');
+      }
+
       const indexValue = index.getAttribute('data-' + dataKey);
       const nextIndexValue = nextIndex.getAttribute('data-' + dataKey);
 
@@ -935,6 +980,36 @@ export default class WindowFilter extends Overlay {
     });
 
     colors.forEach(color => colorList.appendChild(color));
+  }
+
+  /** Compares two color cards by a dataset key.
+   * @param {HTMLElement} index - Current color card
+   * @param {HTMLElement} nextIndex - Next color card
+   * @param {string} dataKey - Dataset key to compare
+   * @param {'ascending' | 'descending'} sortDirection - Sort direction
+   * @returns {number}
+   * @since 0.92.15
+   */
+  #compareColorDataset(index, nextIndex, dataKey, sortDirection) {
+    const indexValue = index.getAttribute('data-' + dataKey) ?? '';
+    const nextIndexValue = nextIndex.getAttribute('data-' + dataKey) ?? '';
+
+    const indexValueNumber = parseFloat(indexValue);
+    const nextIndexValueNumber = parseFloat(nextIndexValue);
+    const indexValueNumberIsNumber = !isNaN(indexValueNumber);
+    const nextIndexValueNumberIsNumber = !isNaN(nextIndexValueNumber);
+
+    if (indexValueNumberIsNumber && nextIndexValueNumberIsNumber) {
+      return sortDirection === 'ascending'
+        ? indexValueNumber - nextIndexValueNumber
+        : nextIndexValueNumber - indexValueNumber;
+    }
+
+    const indexValueString = indexValue.toLowerCase();
+    const nextIndexValueString = nextIndexValue.toLowerCase();
+    if (indexValueString < nextIndexValueString) return sortDirection === 'ascending' ? -1 : 1;
+    if (indexValueString > nextIndexValueString) return sortDirection === 'ascending' ? 1 : -1;
+    return 0;
   }
 
   /** (Un)selects all colors in the color list that are visible to the user.
