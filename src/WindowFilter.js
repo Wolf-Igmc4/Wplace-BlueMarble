@@ -1315,7 +1315,7 @@ export default class WindowFilter extends Overlay {
     return 0;
   }
 
-  /** (Un)selects all colors in the color list that are visible to the user.
+  /** (Un)selects all colors in the color list.
    * @param {boolean} userWantsUnselect - Does the user want to unselect colors?
    * @since 0.88.222
    */
@@ -1327,9 +1327,6 @@ export default class WindowFilter extends Overlay {
 
     // For each color...
     for (const color of colors) {
-
-      // Skip this color if it is hidden
-      if (color.classList?.contains('bm-color-hide')) {continue;}
 
       // Gets the button to click
       const button = color.querySelector('.bm-filter-color-visibility');

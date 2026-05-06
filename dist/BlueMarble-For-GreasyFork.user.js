@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.23
+// @version         0.92.24
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.23
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.24
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -3833,7 +3833,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     if (indexValueString > nextIndexValueString) return sortDirection === "ascending" ? 1 : -1;
     return 0;
   };
-  /** (Un)selects all colors in the color list that are visible to the user.
+  /** (Un)selects all colors in the color list.
    * @param {boolean} userWantsUnselect - Does the user want to unselect colors?
    * @since 0.88.222
    */
@@ -3841,9 +3841,6 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     const colorList = document.querySelector(`#${this.colorListID}`);
     const colors = Array.from(colorList.children);
     for (const color of colors) {
-      if (color.classList?.contains("bm-color-hide")) {
-        continue;
-      }
       const button = color.querySelector(".bm-filter-color-visibility");
       if (button.dataset["state"] == "hidden" && !userWantsUnselect) {
         continue;
