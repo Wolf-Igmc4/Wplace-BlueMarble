@@ -21,6 +21,7 @@ export default class ApiManager {
     this.templateCoordsTilePixel = []; // Contains the last "enabled" template coords
     this.userData = null; // Last received Wplace user data payload
     this.userDataPromise = null; // In-flight Wplace user data request
+    this.boughtColorIDsFromDOM = null; // Last bought premium color IDs detected from Wplace's color picker
     this.jsonResponses = new Map(); // Recent JSON responses indexed by endpoint name
   }
 

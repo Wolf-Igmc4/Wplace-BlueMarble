@@ -828,7 +828,7 @@ export default class WindowFilter extends Overlay {
    * @returns {boolean}
    * @since 0.92.15
    */
-  #isColorBought(color, boughtColorIDs = this.#getBoughtColorIDsFromUserData()) {
+  #isColorBought(color, boughtColorIDs = this.#getBoughtColorIDs()) {
     if (!color?.premium) {return false;}
 
     if (boughtColorIDs) {return boughtColorIDs.has(Number(color.id));}
@@ -851,14 +851,38 @@ export default class WindowFilter extends Overlay {
     return isBought;
   }
 
-  /** Checks whether Wplace's own color picker is currently present.
-   * @returns {boolean}
+  /** Finds bought premium color IDs from the live Wplace color picker.
+   * @returns {Set<number> | null}
    * @since 0.92.21
    */
-  #hasWplacePremiumColorButtons() {
-    return this.palette
-      .filter(color => color?.premium)
-      .some(color => document.querySelector(`#color-${color.id}`));
+  #getBoughtColorIDsFromDOM() {
+    const ids = new Set();
+    let foundPremiumButton = false;
+
+    for (const color of this.palette.filter(color => color?.premium)) {
+      const colorElement = document.querySelector(`#color-${color.id}`);
+      if (!colorElement) {continue;}
+      foundPremiumButton = true;
+      if (!colorElement.querySelector('svg')) {ids.add(Number(color.id));}
+    }
+
+    if (!foundPremiumButton) {return null;}
+    if (this.apiManager) {this.apiManager.boughtColorIDsFromDOM = ids;}
+    return ids;
+  }
+
+  /** Finds bought premium color IDs from the best available source.
+   * @returns {Set<number> | null}
+   * @since 0.92.22
+   */
+  #getBoughtColorIDs() {
+    const userDataIDs = this.#getBoughtColorIDsFromUserData();
+    if (userDataIDs) {return userDataIDs;}
+
+    const domIDs = this.#getBoughtColorIDsFromDOM();
+    if (domIDs) {return domIDs;}
+
+    return this.apiManager?.boughtColorIDsFromDOM ?? null;
   }
 
   /** Finds purchased premium color IDs from Wplace user data, when the payload exposes them.
@@ -874,6 +898,13 @@ export default class WindowFilter extends Overlay {
     if (!payloads.length) {return null;}
 
     const ids = new Set();
+    for (const {payload, isUserData} of payloads) {
+      if (isUserData && Array.isArray(payload?.unlocked_colors)) {
+        this.#collectBoughtColorIDs(payload, ids, isUserData);
+        return ids;
+      }
+    }
+
     for (const {payload, isUserData} of payloads) {
       this.#collectBoughtColorIDs(payload, ids, isUserData);
     }
@@ -1185,8 +1216,8 @@ export default class WindowFilter extends Overlay {
     if (!allowedPrimarySorts.has(sortPrimary)) {sortPrimary = this.sortPrimary;}
     if (!allowedSecondarySorts.has(sortSecondary)) {sortSecondary = this.sortSecondary;}
     sortBought = !!sortBought;
-    const boughtColorIDs = this.#getBoughtColorIDsFromUserData();
-    const boughtColorStateKnown = !!boughtColorIDs || this.#hasWplacePremiumColorButtons();
+    const boughtColorIDs = this.#getBoughtColorIDs();
+    const boughtColorStateKnown = !!boughtColorIDs;
     const shouldOnlyShowBoughtColors = sortBought && showPremium && boughtColorStateKnown;
 
     // Update memorised sort settings

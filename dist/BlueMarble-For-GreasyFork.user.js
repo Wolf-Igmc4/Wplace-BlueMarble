@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.21
+// @version         0.92.22
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.21
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.22
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -2674,7 +2674,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     return `${day}/${month}/${year} ${hour}:${minute}${period}`;
   }
-  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, startColorPickerObserver_fn, stopColorPickerObserver_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, isColorBought_fn, hasWplacePremiumColorButtons_fn, getBoughtColorIDsFromUserData_fn, collectBoughtColorIDs_fn, findBoughtColorPayloadCandidates_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
+  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, startColorPickerObserver_fn, stopColorPickerObserver_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, isColorBought_fn, getBoughtColorIDsFromDOM_fn, getBoughtColorIDs_fn, getBoughtColorIDsFromUserData_fn, collectBoughtColorIDs_fn, findBoughtColorPayloadCandidates_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
   var WindowFilter = class extends Overlay {
     /** Constructor for the color filter window
      * @param {*} executor - The executing class
@@ -3427,7 +3427,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
    * @returns {boolean}
    * @since 0.92.15
    */
-  isColorBought_fn = function(color, boughtColorIDs = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDsFromUserData_fn).call(this)) {
+  isColorBought_fn = function(color, boughtColorIDs = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDs_fn).call(this)) {
     if (!color?.premium) {
       return false;
     }
@@ -3450,12 +3450,45 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     return isBought;
   };
-  /** Checks whether Wplace's own color picker is currently present.
-   * @returns {boolean}
+  /** Finds bought premium color IDs from the live Wplace color picker.
+   * @returns {Set<number> | null}
    * @since 0.92.21
    */
-  hasWplacePremiumColorButtons_fn = function() {
-    return this.palette.filter((color) => color?.premium).some((color) => document.querySelector(`#color-${color.id}`));
+  getBoughtColorIDsFromDOM_fn = function() {
+    const ids = /* @__PURE__ */ new Set();
+    let foundPremiumButton = false;
+    for (const color of this.palette.filter((color2) => color2?.premium)) {
+      const colorElement = document.querySelector(`#color-${color.id}`);
+      if (!colorElement) {
+        continue;
+      }
+      foundPremiumButton = true;
+      if (!colorElement.querySelector("svg")) {
+        ids.add(Number(color.id));
+      }
+    }
+    if (!foundPremiumButton) {
+      return null;
+    }
+    if (this.apiManager) {
+      this.apiManager.boughtColorIDsFromDOM = ids;
+    }
+    return ids;
+  };
+  /** Finds bought premium color IDs from the best available source.
+   * @returns {Set<number> | null}
+   * @since 0.92.22
+   */
+  getBoughtColorIDs_fn = function() {
+    const userDataIDs = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDsFromUserData_fn).call(this);
+    if (userDataIDs) {
+      return userDataIDs;
+    }
+    const domIDs = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDsFromDOM_fn).call(this);
+    if (domIDs) {
+      return domIDs;
+    }
+    return this.apiManager?.boughtColorIDsFromDOM ?? null;
   };
   /** Finds purchased premium color IDs from Wplace user data, when the payload exposes them.
    * @returns {Set<number> | null}
@@ -3470,6 +3503,12 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       return null;
     }
     const ids = /* @__PURE__ */ new Set();
+    for (const { payload, isUserData } of payloads) {
+      if (isUserData && Array.isArray(payload?.unlocked_colors)) {
+        __privateMethod(this, _WindowFilter_instances, collectBoughtColorIDs_fn).call(this, payload, ids, isUserData);
+        return ids;
+      }
+    }
     for (const { payload, isUserData } of payloads) {
       __privateMethod(this, _WindowFilter_instances, collectBoughtColorIDs_fn).call(this, payload, ids, isUserData);
     }
@@ -3720,8 +3759,8 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       sortSecondary = this.sortSecondary;
     }
     sortBought = !!sortBought;
-    const boughtColorIDs = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDsFromUserData_fn).call(this);
-    const boughtColorStateKnown = !!boughtColorIDs || __privateMethod(this, _WindowFilter_instances, hasWplacePremiumColorButtons_fn).call(this);
+    const boughtColorIDs = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDs_fn).call(this);
+    const boughtColorStateKnown = !!boughtColorIDs;
     const shouldOnlyShowBoughtColors = sortBought && showPremium && boughtColorStateKnown;
     this.sortPrimary = sortPrimary;
     this.sortSecondary = sortSecondary;
@@ -5282,6 +5321,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.templateCoordsTilePixel = [];
       this.userData = null;
       this.userDataPromise = null;
+      this.boughtColorIDsFromDOM = null;
       this.jsonResponses = /* @__PURE__ */ new Map();
     }
     /** Fetches Wplace user data when the page has not already requested it.
