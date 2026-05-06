@@ -119,9 +119,15 @@ inject(() => {
         fetchedBlobQueue.set(blobUUID, (blobProcessed) => {
           // The response that triggers when the blob is finished processing
 
+          const responseHeaders = new Headers(cloned.headers);
+          if (blobProcessed?.type) {
+            responseHeaders.set('content-type', blobProcessed.type);
+            responseHeaders.delete('content-length');
+          }
+
           // Creates a new response
           resolve(new Response(blobProcessed, {
-            headers: cloned.headers,
+            headers: responseHeaders,
             status: cloned.status,
             statusText: cloned.statusText
           }));

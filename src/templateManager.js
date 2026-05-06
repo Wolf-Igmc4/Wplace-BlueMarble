@@ -122,6 +122,8 @@ export default class TemplateManager {
     this.renderPerfDebug = true; // Temporary render performance logs while optimizing large blueprints
     this.tileRenderCache = new Map(); // Reuses processed tile blobs while tile image + render state are unchanged
     this.tileRenderCacheMaxEntries = 48; // Small LRU cache for visible map churn
+    this.tileRenderOutputType = 'image/webp'; // WebP encodes large transparent overlay tiles much faster than PNG
+    this.tileRenderOutputQuality = 0.98; // High visual quality for pixel-art overlays
   }
 
   /** Updates the stored instance of the main window.
@@ -653,6 +655,24 @@ export default class TemplateManager {
     console.log(`[BM PERF] ${eventName} ${JSON.stringify(details)}`);
   }
 
+  /** Converts a rendered tile canvas to an image blob.
+   * @param {OffscreenCanvas} canvas - Rendered tile canvas
+   * @returns {Promise<Blob>} Encoded image blob
+   * @since 0.92.29
+   */
+  async #convertCanvasToTileBlob(canvas) {
+    if (this.tileRenderOutputType) {
+      const preferredBlob = await canvas.convertToBlob({
+        type: this.tileRenderOutputType,
+        quality: this.tileRenderOutputQuality
+      });
+
+      if (preferredBlob?.type == this.tileRenderOutputType) {return preferredBlob;}
+    }
+
+    return await canvas.convertToBlob({ type: 'image/png' });
+  }
+
   /** Clears cached rendered tile blobs.
    * @since 0.92.27
    */
@@ -809,9 +829,9 @@ export default class TemplateManager {
 
     this.templateTileIndex = index;
     this.#debugRenderPerf('index-built', {
-      templates: this.templatesArray.length,
-      indexedTiles: index.size,
-      chunks: chunkCount
+      'templates': this.templatesArray.length,
+      'indexedTiles': index.size,
+      'chunks': chunkCount
     });
 
     return this.templateTileIndex;
@@ -905,11 +925,11 @@ export default class TemplateManager {
 
     const indexStart = performance.now();
     const templatesForTile = this.#getTemplateTileIndex().get(tileCoords) ?? [];
-    timings.indexMs = Number((performance.now() - indexStart).toFixed(2));
+    timings['indexMs'] = Number((performance.now() - indexStart).toFixed(2));
 
     const visibleFilterStart = performance.now();
     const templatesToDraw = templatesForTile.filter(templateChunk => this.#templateChunkHasVisibleColor(templateChunk));
-    timings.visibleFilterMs = Number((performance.now() - visibleFilterStart).toFixed(2));
+    timings['visibleFilterMs'] = Number((performance.now() - visibleFilterStart).toFixed(2));
     const templateCount = templatesToDraw.length; // Number of templates to draw on this tile
 
     if (templateCount > 0) {
@@ -931,13 +951,13 @@ export default class TemplateManager {
       //this.overlay.handleDisplayStatus(`Displaying ${templateCount} templates.`);
       this.windowMain.handleDisplayStatus(`Sleeping\nVersion: ${this.version}`);
       this.#debugRenderPerf('tile-skip', {
-        tileCoords: tileCoords,
-        reason: templatesForTile.length ? 'all-colors-hidden' : 'no-template-chunks',
-        chunksOnTile: templatesForTile.length,
-        filterCount: this.shouldFilterColor.size,
-        renderStateVersion: this.renderStateVersion,
-        totalMs: Number((performance.now() - renderStart).toFixed(2)),
-        timings: timings
+        'tileCoords': tileCoords,
+        'reason': templatesForTile.length ? 'all-colors-hidden' : 'no-template-chunks',
+        'chunksOnTile': templatesForTile.length,
+        'filterCount': this.shouldFilterColor.size,
+        'renderStateVersion': this.renderStateVersion,
+        'totalMs': Number((performance.now() - renderStart).toFixed(2)),
+        'timings': timings
       });
       return tileBlob; // No templates are on this tile. Return the original tile early
     }
@@ -970,25 +990,27 @@ export default class TemplateManager {
       renderStateAtStart,
       filterKeyAtStart
     );
-    timings.tileHashMs = hashMs;
+    timings['tileHashMs'] = hashMs;
 
     const cachedBlob = this.#getTileRenderCache(cacheKey);
     if (cachedBlob) {
       this.#debugRenderPerf('tile-cache-hit', {
-        tileCoords: tileCoords,
-        chunksOnTile: templatesForTile.length,
-        chunksDrawn: templateCount,
-        filterCount: this.shouldFilterColor.size,
-        renderStateVersion: this.renderStateVersion,
-        totalMs: Number((performance.now() - renderStart).toFixed(2)),
-        timings: timings
+        'tileCoords': tileCoords,
+        'chunksOnTile': templatesForTile.length,
+        'chunksDrawn': templateCount,
+        'filterCount': this.shouldFilterColor.size,
+        'renderStateVersion': this.renderStateVersion,
+        'blobType': cachedBlob?.type || 'unknown',
+        'blobSize': cachedBlob?.size || 0,
+        'totalMs': Number((performance.now() - renderStart).toFixed(2)),
+        'timings': timings
       });
       return cachedBlob;
     }
 
     const bitmapStart = performance.now();
     const tileBitmap = await createImageBitmap(tileBlob);
-    timings.tileBitmapMs = Number((performance.now() - bitmapStart).toFixed(2));
+    timings['tileBitmapMs'] = Number((performance.now() - bitmapStart).toFixed(2));
 
     const canvasStart = performance.now();
     const canvas = new OffscreenCanvas(drawSize, drawSize);
@@ -1006,7 +1028,7 @@ export default class TemplateManager {
 
     const tileBeforeTemplates = context.getImageData(0, 0, drawSize, drawSize);
     const tileBeforeTemplates32 = new Uint32Array(tileBeforeTemplates.data.buffer);
-    timings.canvasSetupMs = Number((performance.now() - canvasStart).toFixed(2));
+    timings['canvasSetupMs'] = Number((performance.now() - canvasStart).toFixed(2));
     
     let mutationCount = 0;
     let directDrawCount = 0;
@@ -1089,21 +1111,23 @@ export default class TemplateManager {
       }));
     }
 
-    timings.scanMs = Number(scanMs.toFixed(2));
-    timings.mutationDrawMs = Number(mutationDrawMs.toFixed(2));
+    timings['scanMs'] = Number(scanMs.toFixed(2));
+    timings['mutationDrawMs'] = Number(mutationDrawMs.toFixed(2));
 
     const blobStart = performance.now();
-    const outputBlob = await canvas.convertToBlob({ type: 'image/png' });
-    timings.blobMs = Number((performance.now() - blobStart).toFixed(2));
+    const outputBlob = await this.#convertCanvasToTileBlob(canvas);
+    timings['blobMs'] = Number((performance.now() - blobStart).toFixed(2));
 
     if (this.renderStateVersion != renderStateAtStart) {
       this.#debugRenderPerf('tile-stale-discard', {
-        tileCoords: tileCoords,
-        startedRenderStateVersion: renderStateAtStart,
-        currentRenderStateVersion: this.renderStateVersion,
-        filterCount: this.shouldFilterColor.size,
-        totalMs: Number((performance.now() - renderStart).toFixed(2)),
-        timings: timings
+        'tileCoords': tileCoords,
+        'startedRenderStateVersion': renderStateAtStart,
+        'currentRenderStateVersion': this.renderStateVersion,
+        'filterCount': this.shouldFilterColor.size,
+        'blobType': outputBlob?.type || 'unknown',
+        'blobSize': outputBlob?.size || 0,
+        'totalMs': Number((performance.now() - renderStart).toFixed(2)),
+        'timings': timings
       });
       return tileBlob;
     }
@@ -1111,16 +1135,18 @@ export default class TemplateManager {
     this.#setTileRenderCache(cacheKey, outputBlob);
 
     this.#debugRenderPerf('tile-render', {
-      tileCoords: tileCoords,
-      chunksOnTile: templatesForTile.length,
-      chunksDrawn: templateCount,
-      chunksHidden: templatesForTile.length - templateCount,
-      directDrawCount: directDrawCount,
-      mutationCount: mutationCount,
-      filterCount: this.shouldFilterColor.size,
-      renderStateVersion: this.renderStateVersion,
-      totalMs: Number((performance.now() - renderStart).toFixed(2)),
-      timings: timings
+      'tileCoords': tileCoords,
+      'chunksOnTile': templatesForTile.length,
+      'chunksDrawn': templateCount,
+      'chunksHidden': templatesForTile.length - templateCount,
+      'directDrawCount': directDrawCount,
+      'mutationCount': mutationCount,
+      'filterCount': this.shouldFilterColor.size,
+      'renderStateVersion': this.renderStateVersion,
+      'blobType': outputBlob?.type || 'unknown',
+      'blobSize': outputBlob?.size || 0,
+      'totalMs': Number((performance.now() - renderStart).toFixed(2)),
+      'timings': timings
     });
 
     return outputBlob;

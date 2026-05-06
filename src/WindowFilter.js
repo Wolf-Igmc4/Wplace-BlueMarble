@@ -1379,10 +1379,10 @@ export default class WindowFilter extends Overlay {
 
     this.templateManager.setColorFilters(changedColorIDs, targetIsHidden);
     console.log(`[BM PERF] bulk-filter ${JSON.stringify({
-      hidden: targetIsHidden,
-      colorsChanged: changedColorIDs.length,
-      visibleCards: colors.length,
-      paletteColors: this.palette.length
+      'hidden': targetIsHidden,
+      'colorsChanged': changedColorIDs.length,
+      'visibleCards': colors.length,
+      'paletteColors': this.palette.length
     })}`);
   }
 

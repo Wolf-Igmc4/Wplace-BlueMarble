@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.28
+// @version         0.92.29
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.28
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.29
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -3894,10 +3894,10 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     this.templateManager.setColorFilters(changedColorIDs, targetIsHidden);
     console.log(`[BM PERF] bulk-filter ${JSON.stringify({
-      hidden: targetIsHidden,
-      colorsChanged: changedColorIDs.length,
-      visibleCards: colors.length,
-      paletteColors: this.palette.length
+      "hidden": targetIsHidden,
+      "colorsChanged": changedColorIDs.length,
+      "visibleCards": colors.length,
+      "paletteColors": this.palette.length
     })}`);
   };
   /** Updates the color toggle labels on the icon and the clickable color block.
@@ -4525,7 +4525,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
   };
 
   // src/templateManager.js
-  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, loadTemplate_fn, storeTemplates_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, invalidateTemplateRenderCaches_fn, debugRenderPerf_fn, clearTileRenderCache_fn, setTileRenderCache_fn, getTileRenderCache_fn, getColorFilterKey_fn, createTileRenderCacheKey_fn, getSortedTemplates_fn, getTemplateChunkColorIDs_fn, getTemplateTileIndex_fn, ensureTemplateChunkColorIDs_fn, templateChunkHasVisibleColor_fn, templateChunkNeedsMutation_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
+  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, loadTemplate_fn, storeTemplates_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, invalidateTemplateRenderCaches_fn, debugRenderPerf_fn, convertCanvasToTileBlob_fn, clearTileRenderCache_fn, setTileRenderCache_fn, getTileRenderCache_fn, getColorFilterKey_fn, createTileRenderCacheKey_fn, getSortedTemplates_fn, getTemplateChunkColorIDs_fn, getTemplateTileIndex_fn, ensureTemplateChunkColorIDs_fn, templateChunkHasVisibleColor_fn, templateChunkNeedsMutation_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
   var TemplateManager = class {
     /** The constructor for the {@link TemplateManager} class.
      * @param {string} name - The name of the userscript
@@ -4560,6 +4560,8 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       this.renderPerfDebug = true;
       this.tileRenderCache = /* @__PURE__ */ new Map();
       this.tileRenderCacheMaxEntries = 48;
+      this.tileRenderOutputType = "image/webp";
+      this.tileRenderOutputQuality = 0.98;
     }
     /** Updates the stored instance of the main window.
      * @param {WindowMain} windowMain - The main window instance
@@ -4897,10 +4899,10 @@ Canvas Height: ${canvasHeight}`);
       tileCoords = tileCoords[0].toString().padStart(4, "0") + "," + tileCoords[1].toString().padStart(4, "0");
       const indexStart = performance.now();
       const templatesForTile = __privateMethod(this, _TemplateManager_instances, getTemplateTileIndex_fn).call(this).get(tileCoords) ?? [];
-      timings.indexMs = Number((performance.now() - indexStart).toFixed(2));
+      timings["indexMs"] = Number((performance.now() - indexStart).toFixed(2));
       const visibleFilterStart = performance.now();
       const templatesToDraw = templatesForTile.filter((templateChunk) => __privateMethod(this, _TemplateManager_instances, templateChunkHasVisibleColor_fn).call(this, templateChunk));
-      timings.visibleFilterMs = Number((performance.now() - visibleFilterStart).toFixed(2));
+      timings["visibleFilterMs"] = Number((performance.now() - visibleFilterStart).toFixed(2));
       const templateCount = templatesToDraw.length;
       if (templateCount > 0) {
         const templatesDisplayed = new Set(templatesToDraw.map((template) => template.instance));
@@ -4914,13 +4916,13 @@ Total pixels: ${pixelCountFormatted}`
         this.windowMain.handleDisplayStatus(`Sleeping
 Version: ${this.version}`);
         __privateMethod(this, _TemplateManager_instances, debugRenderPerf_fn).call(this, "tile-skip", {
-          tileCoords,
-          reason: templatesForTile.length ? "all-colors-hidden" : "no-template-chunks",
-          chunksOnTile: templatesForTile.length,
-          filterCount: this.shouldFilterColor.size,
-          renderStateVersion: this.renderStateVersion,
-          totalMs: Number((performance.now() - renderStart).toFixed(2)),
-          timings
+          "tileCoords": tileCoords,
+          "reason": templatesForTile.length ? "all-colors-hidden" : "no-template-chunks",
+          "chunksOnTile": templatesForTile.length,
+          "filterCount": this.shouldFilterColor.size,
+          "renderStateVersion": this.renderStateVersion,
+          "totalMs": Number((performance.now() - renderStart).toFixed(2)),
+          "timings": timings
         });
         return tileBlob;
       }
@@ -4928,23 +4930,25 @@ Version: ${this.version}`);
       const highlightPatternIndexZero = highlightPattern?.[0];
       const highlightDisabled = highlightPattern?.length == 1 && highlightPatternIndexZero?.[0] == 2 && highlightPatternIndexZero?.[1] == 0 && highlightPatternIndexZero?.[2] == 0;
       const { cacheKey, hashMs } = await __privateMethod(this, _TemplateManager_instances, createTileRenderCacheKey_fn).call(this, tileBlob, tileCoords, highlightDisabled, highlightPattern, renderStateAtStart, filterKeyAtStart);
-      timings.tileHashMs = hashMs;
+      timings["tileHashMs"] = hashMs;
       const cachedBlob = __privateMethod(this, _TemplateManager_instances, getTileRenderCache_fn).call(this, cacheKey);
       if (cachedBlob) {
         __privateMethod(this, _TemplateManager_instances, debugRenderPerf_fn).call(this, "tile-cache-hit", {
-          tileCoords,
-          chunksOnTile: templatesForTile.length,
-          chunksDrawn: templateCount,
-          filterCount: this.shouldFilterColor.size,
-          renderStateVersion: this.renderStateVersion,
-          totalMs: Number((performance.now() - renderStart).toFixed(2)),
-          timings
+          "tileCoords": tileCoords,
+          "chunksOnTile": templatesForTile.length,
+          "chunksDrawn": templateCount,
+          "filterCount": this.shouldFilterColor.size,
+          "renderStateVersion": this.renderStateVersion,
+          "blobType": cachedBlob?.type || "unknown",
+          "blobSize": cachedBlob?.size || 0,
+          "totalMs": Number((performance.now() - renderStart).toFixed(2)),
+          "timings": timings
         });
         return cachedBlob;
       }
       const bitmapStart = performance.now();
       const tileBitmap = await createImageBitmap(tileBlob);
-      timings.tileBitmapMs = Number((performance.now() - bitmapStart).toFixed(2));
+      timings["tileBitmapMs"] = Number((performance.now() - bitmapStart).toFixed(2));
       const canvasStart = performance.now();
       const canvas = new OffscreenCanvas(drawSize, drawSize);
       const context = canvas.getContext("2d");
@@ -4956,7 +4960,7 @@ Version: ${this.version}`);
       context.drawImage(tileBitmap, 0, 0, drawSize, drawSize);
       const tileBeforeTemplates = context.getImageData(0, 0, drawSize, drawSize);
       const tileBeforeTemplates32 = new Uint32Array(tileBeforeTemplates.data.buffer);
-      timings.canvasSetupMs = Number((performance.now() - canvasStart).toFixed(2));
+      timings["canvasSetupMs"] = Number((performance.now() - canvasStart).toFixed(2));
       let mutationCount = 0;
       let directDrawCount = 0;
       let scanMs = 0;
@@ -5014,34 +5018,38 @@ Version: ${this.version}`);
           samples: pixel.samples
         }));
       }
-      timings.scanMs = Number(scanMs.toFixed(2));
-      timings.mutationDrawMs = Number(mutationDrawMs.toFixed(2));
+      timings["scanMs"] = Number(scanMs.toFixed(2));
+      timings["mutationDrawMs"] = Number(mutationDrawMs.toFixed(2));
       const blobStart = performance.now();
-      const outputBlob = await canvas.convertToBlob({ type: "image/png" });
-      timings.blobMs = Number((performance.now() - blobStart).toFixed(2));
+      const outputBlob = await __privateMethod(this, _TemplateManager_instances, convertCanvasToTileBlob_fn).call(this, canvas);
+      timings["blobMs"] = Number((performance.now() - blobStart).toFixed(2));
       if (this.renderStateVersion != renderStateAtStart) {
         __privateMethod(this, _TemplateManager_instances, debugRenderPerf_fn).call(this, "tile-stale-discard", {
-          tileCoords,
-          startedRenderStateVersion: renderStateAtStart,
-          currentRenderStateVersion: this.renderStateVersion,
-          filterCount: this.shouldFilterColor.size,
-          totalMs: Number((performance.now() - renderStart).toFixed(2)),
-          timings
+          "tileCoords": tileCoords,
+          "startedRenderStateVersion": renderStateAtStart,
+          "currentRenderStateVersion": this.renderStateVersion,
+          "filterCount": this.shouldFilterColor.size,
+          "blobType": outputBlob?.type || "unknown",
+          "blobSize": outputBlob?.size || 0,
+          "totalMs": Number((performance.now() - renderStart).toFixed(2)),
+          "timings": timings
         });
         return tileBlob;
       }
       __privateMethod(this, _TemplateManager_instances, setTileRenderCache_fn).call(this, cacheKey, outputBlob);
       __privateMethod(this, _TemplateManager_instances, debugRenderPerf_fn).call(this, "tile-render", {
-        tileCoords,
-        chunksOnTile: templatesForTile.length,
-        chunksDrawn: templateCount,
-        chunksHidden: templatesForTile.length - templateCount,
-        directDrawCount,
-        mutationCount,
-        filterCount: this.shouldFilterColor.size,
-        renderStateVersion: this.renderStateVersion,
-        totalMs: Number((performance.now() - renderStart).toFixed(2)),
-        timings
+        "tileCoords": tileCoords,
+        "chunksOnTile": templatesForTile.length,
+        "chunksDrawn": templateCount,
+        "chunksHidden": templatesForTile.length - templateCount,
+        "directDrawCount": directDrawCount,
+        "mutationCount": mutationCount,
+        "filterCount": this.shouldFilterColor.size,
+        "renderStateVersion": this.renderStateVersion,
+        "blobType": outputBlob?.type || "unknown",
+        "blobSize": outputBlob?.size || 0,
+        "totalMs": Number((performance.now() - renderStart).toFixed(2)),
+        "timings": timings
       });
       return outputBlob;
     }
@@ -5223,6 +5231,18 @@ Version: ${this.version}`);
     }
     console.log(`[BM PERF] ${eventName} ${JSON.stringify(details)}`);
   };
+  convertCanvasToTileBlob_fn = async function(canvas) {
+    if (this.tileRenderOutputType) {
+      const preferredBlob = await canvas.convertToBlob({
+        type: this.tileRenderOutputType,
+        quality: this.tileRenderOutputQuality
+      });
+      if (preferredBlob?.type == this.tileRenderOutputType) {
+        return preferredBlob;
+      }
+    }
+    return await canvas.convertToBlob({ type: "image/png" });
+  };
   /** Clears cached rendered tile blobs.
    * @since 0.92.27
    */
@@ -5363,9 +5383,9 @@ Version: ${this.version}`);
     }
     this.templateTileIndex = index;
     __privateMethod(this, _TemplateManager_instances, debugRenderPerf_fn).call(this, "index-built", {
-      templates: this.templatesArray.length,
-      indexedTiles: index.size,
-      chunks: chunkCount
+      "templates": this.templatesArray.length,
+      "indexedTiles": index.size,
+      "chunks": chunkCount
     });
     return this.templateTileIndex;
   };
@@ -6076,8 +6096,13 @@ Did you try clicking the canvas first?`);
         return new Promise((resolve) => {
           const blobUUID = crypto.randomUUID();
           fetchedBlobQueue.set(blobUUID, (blobProcessed) => {
+            const responseHeaders = new Headers(cloned.headers);
+            if (blobProcessed?.type) {
+              responseHeaders.set("content-type", blobProcessed.type);
+              responseHeaders.delete("content-length");
+            }
             resolve(new Response(blobProcessed, {
-              headers: cloned.headers,
+              headers: responseHeaders,
               status: cloned.status,
               statusText: cloned.statusText
             }));
