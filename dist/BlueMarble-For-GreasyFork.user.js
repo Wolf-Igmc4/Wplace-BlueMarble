@@ -2665,7 +2665,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     return `${day}/${month}/${year} ${hour}:${minute}${period}`;
   }
-  var _WindowFilter_instances, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, isColorBought_fn, getBoughtColorIDsFromUserData_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
+  var _WindowFilter_instances, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, isColorBought_fn, getBoughtColorIDsFromUserData_fn, collectBoughtColorIDs_fn, findBoughtColorPayloadCandidates_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
   var WindowFilter = class extends Overlay {
     /** Constructor for the color filter window
      * @param {*} executor - The executing class
@@ -3363,11 +3363,26 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
    * @since 0.92.16
    */
   getBoughtColorIDsFromUserData_fn = function() {
-    const payloads = [this.apiManager?.userData, ...Array.from(this.apiManager?.jsonResponses?.values?.() || [])].filter((payload) => payload && typeof payload == "object");
+    const payloads = [
+      { payload: this.apiManager?.userData, isUserData: true },
+      ...Array.from(this.apiManager?.jsonResponses?.values?.() || []).map((payload) => ({ payload, isUserData: false }))
+    ].filter(({ payload }) => payload && typeof payload == "object");
     if (!payloads.length) {
       return null;
     }
     const ids = /* @__PURE__ */ new Set();
+    for (const { payload, isUserData } of payloads) {
+      __privateMethod(this, _WindowFilter_instances, collectBoughtColorIDs_fn).call(this, payload, ids, isUserData);
+    }
+    return ids.size ? ids : null;
+  };
+  /** Collects purchased color IDs from a Wplace JSON payload.
+   * @param {Object} payload - JSON payload to scan
+   * @param {Set<number>} ids - Destination set for color IDs
+   * @param {boolean} isUserData - Whether the payload came from /me
+   * @since 0.92.16
+   */
+  collectBoughtColorIDs_fn = function(payload, ids, isUserData) {
     const visited = /* @__PURE__ */ new WeakSet();
     const visit = (value, path = "", depth = 0) => {
       if (depth > 5 || value == null) {
@@ -3381,8 +3396,9 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       }
       visited.add(value);
       if (Array.isArray(value)) {
-        const pathLooksRelevant = /\b(color|colour|palette|premium).*(own|purchase|unlock|bought|available)|\b(own|purchase|unlock|bought|available).*(color|colour|palette|premium)/i.test(path);
-        if (pathLooksRelevant) {
+        const pathLooksPurchased = /\b(color|colour|palette|premium).*(own|purchase|unlock|bought|available)|\b(own|purchase|unlock|bought|available).*(color|colour|palette|premium)/i.test(path);
+        const pathLooksLikeUserColors = isUserData && /(^|\.)((colors?|colours?|palette|premiumColors?))$/i.test(path);
+        if (pathLooksPurchased || pathLooksLikeUserColors) {
           for (const entry of value) {
             const id = typeof entry == "object" ? Number(entry?.id ?? entry?.color ?? entry?.colorId ?? entry?.colourId) : Number(entry);
             if (Number.isInteger(id) && id >= 32 && id <= 63) {
@@ -3392,13 +3408,54 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         }
       }
       for (const [key, child] of Object.entries(value)) {
+        const id = Number(child);
+        const keyLooksLikeColorID = isUserData && /\b(color|colour|palette|premium).*(id)?$/i.test(key);
+        if (keyLooksLikeColorID && Number.isInteger(id) && id >= 32 && id <= 63) {
+          ids.add(id);
+        }
         visit(child, path ? `${path}.${key}` : key, depth + 1);
       }
     };
-    for (const payload of payloads) {
-      visit(payload);
+    visit(payload);
+  };
+  /** Finds possible premium color ID arrays in Wplace JSON payloads for debugging.
+   * @returns {Array<Object>}
+   * @since 0.92.16
+   */
+  findBoughtColorPayloadCandidates_fn = function() {
+    const payloads = [
+      { name: "me", payload: this.apiManager?.userData, isUserData: true },
+      ...Array.from(this.apiManager?.jsonResponses?.entries?.() || []).map(([name2, payload]) => ({ name: name2, payload, isUserData: false }))
+    ].filter((payload) => payload && typeof payload == "object");
+    const candidates = [];
+    const visited = /* @__PURE__ */ new WeakSet();
+    const visit = (sourceName, value, path = "", depth = 0) => {
+      if (depth > 5 || value == null) {
+        return;
+      }
+      if (typeof value != "object") {
+        return;
+      }
+      if (visited.has(value)) {
+        return;
+      }
+      visited.add(value);
+      if (Array.isArray(value)) {
+        const ids = value.map(
+          (entry) => typeof entry == "object" ? Number(entry?.id ?? entry?.color ?? entry?.colorId ?? entry?.colourId) : Number(entry)
+        ).filter((id) => Number.isInteger(id) && id >= 32 && id <= 63);
+        if (ids.length) {
+          candidates.push({ source: sourceName, path, ids: ids.join(", ") });
+        }
+      }
+      for (const [key, child] of Object.entries(value)) {
+        visit(sourceName, child, path ? `${path}.${key}` : key, depth + 1);
+      }
+    };
+    for (const { name: name2, payload } of payloads) {
+      visit(name2, payload);
     }
-    return ids.size ? ids : null;
+    return candidates;
   };
   /** Dumps premium color purchase detection details to the console.
    * @since 0.92.16
@@ -3418,7 +3475,9 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         disabled: colorElement?.matches?.(":disabled, [disabled]") || false
       };
     });
+    const candidates = __privateMethod(this, _WindowFilter_instances, findBoughtColorPayloadCandidates_fn).call(this);
     console.table(rows);
+    console.table(candidates);
     return rows;
   };
   /** Creates the color list container.

@@ -790,11 +790,27 @@ export default class WindowFilter extends Overlay {
    * @since 0.92.16
    */
   #getBoughtColorIDsFromUserData() {
-    const payloads = [this.apiManager?.userData, ...Array.from(this.apiManager?.jsonResponses?.values?.() || [])]
-      .filter(payload => payload && typeof payload == 'object');
+    const payloads = [
+      {payload: this.apiManager?.userData, isUserData: true},
+      ...Array.from(this.apiManager?.jsonResponses?.values?.() || []).map(payload => ({payload: payload, isUserData: false}))
+    ]
+      .filter(({payload}) => payload && typeof payload == 'object');
     if (!payloads.length) {return null;}
 
     const ids = new Set();
+    for (const {payload, isUserData} of payloads) {
+      this.#collectBoughtColorIDs(payload, ids, isUserData);
+    }
+    return ids.size ? ids : null;
+  }
+
+  /** Collects purchased color IDs from a Wplace JSON payload.
+   * @param {Object} payload - JSON payload to scan
+   * @param {Set<number>} ids - Destination set for color IDs
+   * @param {boolean} isUserData - Whether the payload came from /me
+   * @since 0.92.16
+   */
+  #collectBoughtColorIDs(payload, ids, isUserData) {
     const visited = new WeakSet();
     const visit = (value, path = '', depth = 0) => {
       if (depth > 5 || value == null) {return;}
@@ -803,8 +819,9 @@ export default class WindowFilter extends Overlay {
       visited.add(value);
 
       if (Array.isArray(value)) {
-        const pathLooksRelevant = /\b(color|colour|palette|premium).*(own|purchase|unlock|bought|available)|\b(own|purchase|unlock|bought|available).*(color|colour|palette|premium)/i.test(path);
-        if (pathLooksRelevant) {
+        const pathLooksPurchased = /\b(color|colour|palette|premium).*(own|purchase|unlock|bought|available)|\b(own|purchase|unlock|bought|available).*(color|colour|palette|premium)/i.test(path);
+        const pathLooksLikeUserColors = isUserData && /(^|\.)((colors?|colours?|palette|premiumColors?))$/i.test(path);
+        if (pathLooksPurchased || pathLooksLikeUserColors) {
           for (const entry of value) {
             const id = typeof entry == 'object'
               ? Number(entry?.id ?? entry?.color ?? entry?.colorId ?? entry?.colourId)
@@ -815,14 +832,56 @@ export default class WindowFilter extends Overlay {
       }
 
       for (const [key, child] of Object.entries(value)) {
+        const id = Number(child);
+        const keyLooksLikeColorID = isUserData && /\b(color|colour|palette|premium).*(id)?$/i.test(key);
+        if (keyLooksLikeColorID && Number.isInteger(id) && id >= 32 && id <= 63) {
+          ids.add(id);
+        }
         visit(child, path ? `${path}.${key}` : key, depth + 1);
       }
     };
 
-    for (const payload of payloads) {
-      visit(payload);
+    visit(payload);
+  }
+
+  /** Finds possible premium color ID arrays in Wplace JSON payloads for debugging.
+   * @returns {Array<Object>}
+   * @since 0.92.16
+   */
+  #findBoughtColorPayloadCandidates() {
+    const payloads = [
+      {name: 'me', payload: this.apiManager?.userData, isUserData: true},
+      ...Array.from(this.apiManager?.jsonResponses?.entries?.() || []).map(([name, payload]) => ({name: name, payload: payload, isUserData: false}))
+    ]
+      .filter(payload => payload && typeof payload == 'object');
+    const candidates = [];
+    const visited = new WeakSet();
+
+    const visit = (sourceName, value, path = '', depth = 0) => {
+      if (depth > 5 || value == null) {return;}
+      if (typeof value != 'object') {return;}
+      if (visited.has(value)) {return;}
+      visited.add(value);
+
+      if (Array.isArray(value)) {
+        const ids = value.map(entry => typeof entry == 'object'
+          ? Number(entry?.id ?? entry?.color ?? entry?.colorId ?? entry?.colourId)
+          : Number(entry)
+        ).filter(id => Number.isInteger(id) && id >= 32 && id <= 63);
+        if (ids.length) {
+          candidates.push({source: sourceName, path: path, ids: ids.join(', ')});
+        }
+      }
+
+      for (const [key, child] of Object.entries(value)) {
+        visit(sourceName, child, path ? `${path}.${key}` : key, depth + 1);
+      }
+    };
+
+    for (const {name, payload} of payloads) {
+      visit(name, payload);
     }
-    return ids.size ? ids : null;
+    return candidates;
   }
 
   /** Dumps premium color purchase detection details to the console.
@@ -844,8 +903,10 @@ export default class WindowFilter extends Overlay {
           title: colorElement?.getAttribute?.('title') || '',
           disabled: colorElement?.matches?.(':disabled, [disabled]') || false
         };
-      });
+    });
+    const candidates = this.#findBoughtColorPayloadCandidates();
     console.table(rows);
+    console.table(candidates);
     return rows;
   }
 
