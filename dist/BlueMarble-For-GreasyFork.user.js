@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.24
+// @version         0.92.25
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.24
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.25
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -2674,7 +2674,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     return `${day}/${month}/${year} ${hour}:${minute}${period}`;
   }
-  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, startColorPickerObserver_fn, stopColorPickerObserver_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, isColorBought_fn, getBoughtColorIDsFromDOM_fn, getBoughtColorIDs_fn, getBoughtColorIDsFromUserData_fn, collectBoughtColorIDs_fn, findBoughtColorPayloadCandidates_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
+  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, shouldDefaultToWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, startColorPickerObserver_fn, stopColorPickerObserver_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, isColorBought_fn, getBoughtColorIDsFromDOM_fn, getBoughtColorIDs_fn, getBoughtColorIDsFromUserData_fn, collectBoughtColorIDs_fn, findBoughtColorPayloadCandidates_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
   var WindowFilter = class extends Overlay {
     /** Constructor for the color filter window
      * @param {*} executor - The executing class
@@ -2758,7 +2758,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         button.onclick = () => {
           __privateMethod(this, _WindowFilter_instances, setWindowModePreference_fn).call(this, true);
           __privateMethod(this, _WindowFilter_instances, closeWindow_fn).call(this);
-          this.buildWindowed();
+          this.buildWindowed({ forceDefaultPosition: true });
         };
         button.ontouchend = () => {
           button.click();
@@ -2805,7 +2805,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
      * Parent/child relationships in the DOM structure below are indicated by indentation.
      * @since 0.90.35
      */
-    buildWindowed() {
+    buildWindowed(options = {}) {
       if (document.querySelector(`#${this.windowID}`)) {
         __privateMethod(this, _WindowFilter_instances, closeWindow_fn).call(this);
         return;
@@ -2850,7 +2850,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         "role": "presentation",
         "textContent": "\u25E2"
       }).buildElement().buildElement().buildOverlay(this.windowParent);
-      __privateMethod(this, _WindowFilter_instances, initializeWindowedPersistence_fn).call(this);
+      __privateMethod(this, _WindowFilter_instances, initializeWindowedPersistence_fn).call(this, options);
       void __privateMethod(this, _WindowFilter_instances, refreshBoughtColorData_fn).call(this);
       const scrollableContainer = document.querySelector(`#${this.windowID} .bm-container.bm-scrollable`);
       __privateMethod(this, _WindowFilter_instances, buildColorList_fn).call(this, scrollableContainer);
@@ -3049,6 +3049,9 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
    * @since 0.92.1
    */
   prefersWindowedMode_fn = function() {
+    if (!__privateMethod(this, _WindowFilter_instances, shouldDefaultToWindowedMode_fn).call(this)) {
+      return false;
+    }
     const windowState = __privateMethod(this, _WindowFilter_instances, getWindowState_fn).call(this);
     if (windowState?.mode == "windowed") {
       return true;
@@ -3057,6 +3060,13 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       return false;
     }
     return !!this.settingsManager?.userSettings?.flags?.includes(this.windowModeFlag);
+  };
+  /** Returns whether this device should default to the compact filter window.
+   * @returns {boolean}
+   * @since 0.92.25
+   */
+  shouldDefaultToWindowedMode_fn = function() {
+    return window.matchMedia?.("(max-width: 768px), (pointer: coarse)")?.matches ?? window.innerWidth <= 768;
   };
   /** Updates the preferred window mode setting.
    * @param {boolean} shouldBeWindowed
@@ -3275,12 +3285,12 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
    * @param {HTMLElement} windowElement
    * @since 0.92.0
    */
-  restoreWindowState_fn = function(windowElement) {
+  restoreWindowState_fn = function(windowElement, options = {}) {
     const windowState = __privateMethod(this, _WindowFilter_instances, getWindowState_fn).call(this);
     if (!windowState || !windowElement) {
       return;
     }
-    __privateMethod(this, _WindowFilter_instances, applyDefaultWindowPosition_fn).call(this, windowElement, windowState);
+    __privateMethod(this, _WindowFilter_instances, applyDefaultWindowPosition_fn).call(this, windowElement, windowState, options);
     const width = Number(windowState.width);
     const height = Number(windowState.height);
     const hasWidth = Number.isFinite(width);
@@ -3363,13 +3373,13 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
   /** Enables persistence and resize handling for the windowed filter.
    * @since 0.92.0
    */
-  initializeWindowedPersistence_fn = function() {
+  initializeWindowedPersistence_fn = function(options = {}) {
     const windowElement = document.querySelector(`#${this.windowID}.bm-window`);
     if (!windowElement) {
       return;
     }
     __privateMethod(this, _WindowFilter_instances, cleanupWindowPersistence_fn).call(this);
-    __privateMethod(this, _WindowFilter_instances, restoreWindowState_fn).call(this, windowElement);
+    __privateMethod(this, _WindowFilter_instances, restoreWindowState_fn).call(this, windowElement, options);
     this.handleDrag(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-dragbar`, {
       onEnd: ({ element }) => __privateMethod(this, _WindowFilter_instances, saveWindowState_fn).call(this, element)
     });
@@ -3392,10 +3402,10 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
    * @param {Object} windowState
    * @since 0.92.19
    */
-  applyDefaultWindowPosition_fn = function(windowElement, windowState) {
+  applyDefaultWindowPosition_fn = function(windowElement, windowState, options = {}) {
     const hasSavedPosition = Number.isFinite(Number(windowState.x)) && Number.isFinite(Number(windowState.y));
     const hasLegacyDefaultPosition = hasSavedPosition && Number(windowState.x) <= 8 && Number(windowState.y) <= 8;
-    if (hasSavedPosition && !hasLegacyDefaultPosition) {
+    if (hasSavedPosition && !hasLegacyDefaultPosition && !options.forceDefaultPosition) {
       return;
     }
     const mainWindow = document.querySelector("#bm-window-main.bm-window");

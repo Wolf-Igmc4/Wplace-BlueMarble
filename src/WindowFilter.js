@@ -138,7 +138,7 @@ export default class WindowFilter extends Overlay {
             button.onclick = () => {
               this.#setWindowModePreference(true);
               this.#closeWindow();
-              this.buildWindowed();
+              this.buildWindowed({forceDefaultPosition: true});
             };
             button.ontouchend = () => {button.click();}; // Needed only to negate weird interaction with dragbar
           }).buildElement()
@@ -264,7 +264,7 @@ export default class WindowFilter extends Overlay {
    * Parent/child relationships in the DOM structure below are indicated by indentation.
    * @since 0.90.35
    */
-  buildWindowed() {
+  buildWindowed(options = {}) {
 
     // If a color filter wizard window already exists, close it
     if (document.querySelector(`#${this.windowID}`)) {
@@ -335,7 +335,7 @@ export default class WindowFilter extends Overlay {
       }).buildElement()
     .buildElement().buildOverlay(this.windowParent);
 
-    this.#initializeWindowedPersistence();
+    this.#initializeWindowedPersistence(options);
     void this.#refreshBoughtColorData();
 
     // Obtains the scrollable container to put the color filter in
@@ -436,10 +436,20 @@ export default class WindowFilter extends Overlay {
    * @since 0.92.1
    */
   #prefersWindowedMode() {
+    if (!this.#shouldDefaultToWindowedMode()) {return false;}
+
     const windowState = this.#getWindowState();
     if (windowState?.mode == 'windowed') {return true;}
     if (windowState?.mode == 'fullscreen') {return false;}
     return !!this.settingsManager?.userSettings?.flags?.includes(this.windowModeFlag);
+  }
+
+  /** Returns whether this device should default to the compact filter window.
+   * @returns {boolean}
+   * @since 0.92.25
+   */
+  #shouldDefaultToWindowedMode() {
+    return window.matchMedia?.('(max-width: 768px), (pointer: coarse)')?.matches ?? window.innerWidth <= 768;
   }
 
   /** Updates the preferred window mode setting.
@@ -665,11 +675,11 @@ export default class WindowFilter extends Overlay {
    * @param {HTMLElement} windowElement
    * @since 0.92.0
    */
-  #restoreWindowState(windowElement) {
+  #restoreWindowState(windowElement, options = {}) {
     const windowState = this.#getWindowState();
     if (!windowState || !windowElement) {return;}
 
-    this.#applyDefaultWindowPosition(windowElement, windowState);
+    this.#applyDefaultWindowPosition(windowElement, windowState, options);
 
     const width = Number(windowState.width);
     const height = Number(windowState.height);
@@ -758,12 +768,12 @@ export default class WindowFilter extends Overlay {
   /** Enables persistence and resize handling for the windowed filter.
    * @since 0.92.0
    */
-  #initializeWindowedPersistence() {
+  #initializeWindowedPersistence(options = {}) {
     const windowElement = document.querySelector(`#${this.windowID}.bm-window`);
     if (!windowElement) {return;}
 
     this.#cleanupWindowPersistence();
-    this.#restoreWindowState(windowElement);
+    this.#restoreWindowState(windowElement, options);
 
     this.handleDrag(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-dragbar`, {
       onEnd: ({element}) => this.#saveWindowState(element)
@@ -790,10 +800,10 @@ export default class WindowFilter extends Overlay {
    * @param {Object} windowState
    * @since 0.92.19
    */
-  #applyDefaultWindowPosition(windowElement, windowState) {
+  #applyDefaultWindowPosition(windowElement, windowState, options = {}) {
     const hasSavedPosition = Number.isFinite(Number(windowState.x)) && Number.isFinite(Number(windowState.y));
     const hasLegacyDefaultPosition = hasSavedPosition && Number(windowState.x) <= 8 && Number(windowState.y) <= 8;
-    if (hasSavedPosition && !hasLegacyDefaultPosition) {return;}
+    if (hasSavedPosition && !hasLegacyDefaultPosition && !options.forceDefaultPosition) {return;}
 
     const mainWindow = document.querySelector('#bm-window-main.bm-window');
     if (!mainWindow) {
