@@ -867,7 +867,7 @@ export default class WindowFilter extends Overlay {
     }
 
     if (!foundPremiumButton) {return null;}
-    if (this.apiManager) {this.apiManager.boughtColorIDsFromDOM = ids;}
+    this.apiManager?.saveBoughtColorIDs?.(ids, 'color-picker');
     return ids;
   }
 
@@ -882,7 +882,7 @@ export default class WindowFilter extends Overlay {
     const domIDs = this.#getBoughtColorIDsFromDOM();
     if (domIDs) {return domIDs;}
 
-    return this.apiManager?.boughtColorIDsFromDOM ?? null;
+    return this.apiManager?.boughtColorIDsCache ?? null;
   }
 
   /** Finds purchased premium color IDs from Wplace user data, when the payload exposes them.

@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.22
+// @version         0.92.23
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.22
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.23
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -3470,9 +3470,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     if (!foundPremiumButton) {
       return null;
     }
-    if (this.apiManager) {
-      this.apiManager.boughtColorIDsFromDOM = ids;
-    }
+    this.apiManager?.saveBoughtColorIDs?.(ids, "color-picker");
     return ids;
   };
   /** Finds bought premium color IDs from the best available source.
@@ -3488,7 +3486,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     if (domIDs) {
       return domIDs;
     }
-    return this.apiManager?.boughtColorIDsFromDOM ?? null;
+    return this.apiManager?.boughtColorIDsCache ?? null;
   };
   /** Finds purchased premium color IDs from Wplace user data, when the payload exposes them.
    * @returns {Set<number> | null}
@@ -5321,8 +5319,39 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.templateCoordsTilePixel = [];
       this.userData = null;
       this.userDataPromise = null;
-      this.boughtColorIDsFromDOM = null;
+      this.boughtColorStorageKey = "bmBoughtColorIDs";
+      this.boughtColorIDsCache = this.loadBoughtColorIDs();
       this.jsonResponses = /* @__PURE__ */ new Map();
+    }
+    /** Loads bought premium color IDs from userscript storage.
+     * @returns {Set<number> | null}
+     * @since 0.92.23
+     */
+    loadBoughtColorIDs() {
+      try {
+        const payload = JSON.parse(GM_getValue(this.boughtColorStorageKey, "null"));
+        if (!payload || !Array.isArray(payload.ids)) {
+          return null;
+        }
+        return new Set(payload.ids.map(Number).filter((id) => Number.isInteger(id) && id >= 32 && id <= 63));
+      } catch (error) {
+        console.warn(`Blue Marble: Could not load bought color cache: ${error?.message || error}`);
+        return null;
+      }
+    }
+    /** Saves bought premium color IDs to userscript storage.
+     * @param {Set<number>|number[]} ids - Bought premium color IDs
+     * @param {string} source - Where the color list came from
+     * @since 0.92.23
+     */
+    saveBoughtColorIDs(ids, source = "unknown") {
+      const cleanIDs = Array.from(ids || []).map(Number).filter((id) => Number.isInteger(id) && id >= 32 && id <= 63).sort((left, right) => left - right);
+      this.boughtColorIDsCache = new Set(cleanIDs);
+      void GM.setValue(this.boughtColorStorageKey, JSON.stringify({
+        ids: cleanIDs,
+        source,
+        updatedAt: Date.now()
+      }));
     }
     /** Fetches Wplace user data when the page has not already requested it.
      * @returns {Promise<Object | null>}
@@ -5352,6 +5381,9 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
               }
               this.userData = dataJSON;
               this.jsonResponses.set("me", dataJSON);
+              if (Array.isArray(dataJSON.unlocked_colors)) {
+                this.saveBoughtColorIDs(dataJSON.unlocked_colors, "me");
+              }
               return resolve(this.userData);
             } catch (error) {
               console.warn(`Blue Marble: Could not parse user data for bought colors: ${error?.message || error}`);
@@ -5396,6 +5428,9 @@ Could not fetch userdata.`);
               return;
             }
             this.userData = dataJSON;
+            if (Array.isArray(dataJSON.unlocked_colors)) {
+              this.saveBoughtColorIDs(dataJSON.unlocked_colors, "me");
+            }
             const nextLevelPixels = Math.ceil(Math.pow(Math.floor(dataJSON["level"]) * Math.pow(30, 0.65), 1 / 0.65) - dataJSON["pixelsPainted"]);
             console.log(dataJSON["id"]);
             if (!!dataJSON["id"] || dataJSON["id"] === 0) {

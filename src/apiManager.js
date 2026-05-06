@@ -21,8 +21,42 @@ export default class ApiManager {
     this.templateCoordsTilePixel = []; // Contains the last "enabled" template coords
     this.userData = null; // Last received Wplace user data payload
     this.userDataPromise = null; // In-flight Wplace user data request
-    this.boughtColorIDsFromDOM = null; // Last bought premium color IDs detected from Wplace's color picker
+    this.boughtColorStorageKey = 'bmBoughtColorIDs'; // Persistent bought premium color cache
+    this.boughtColorIDsCache = this.loadBoughtColorIDs(); // Last known bought premium color IDs
     this.jsonResponses = new Map(); // Recent JSON responses indexed by endpoint name
+  }
+
+  /** Loads bought premium color IDs from userscript storage.
+   * @returns {Set<number> | null}
+   * @since 0.92.23
+   */
+  loadBoughtColorIDs() {
+    try {
+      const payload = JSON.parse(GM_getValue(this.boughtColorStorageKey, 'null'));
+      if (!payload || !Array.isArray(payload.ids)) {return null;}
+      return new Set(payload.ids.map(Number).filter(id => Number.isInteger(id) && id >= 32 && id <= 63));
+    } catch (error) {
+      console.warn(`Blue Marble: Could not load bought color cache: ${error?.message || error}`);
+      return null;
+    }
+  }
+
+  /** Saves bought premium color IDs to userscript storage.
+   * @param {Set<number>|number[]} ids - Bought premium color IDs
+   * @param {string} source - Where the color list came from
+   * @since 0.92.23
+   */
+  saveBoughtColorIDs(ids, source = 'unknown') {
+    const cleanIDs = Array.from(ids || [])
+      .map(Number)
+      .filter(id => Number.isInteger(id) && id >= 32 && id <= 63)
+      .sort((left, right) => left - right);
+    this.boughtColorIDsCache = new Set(cleanIDs);
+    void GM.setValue(this.boughtColorStorageKey, JSON.stringify({
+      ids: cleanIDs,
+      source: source,
+      updatedAt: Date.now()
+    }));
   }
 
   /** Fetches Wplace user data when the page has not already requested it.
@@ -47,6 +81,7 @@ export default class ApiManager {
             if (dataJSON?.status && dataJSON.status?.toString()[0] != '2') {return resolve(null);}
             this.userData = dataJSON;
             this.jsonResponses.set('me', dataJSON);
+            if (Array.isArray(dataJSON.unlocked_colors)) {this.saveBoughtColorIDs(dataJSON.unlocked_colors, 'me');}
             return resolve(this.userData);
           } catch (error) {
             console.warn(`Blue Marble: Could not parse user data for bought colors: ${error?.message || error}`);
@@ -109,6 +144,7 @@ export default class ApiManager {
           }
 
           this.userData = dataJSON;
+          if (Array.isArray(dataJSON.unlocked_colors)) {this.saveBoughtColorIDs(dataJSON.unlocked_colors, 'me');}
 
           const nextLevelPixels = Math.ceil(Math.pow(Math.floor(dataJSON['level']) * Math.pow(30, 0.65), (1/0.65)) - dataJSON['pixelsPainted']); // Calculates pixels to the next level
 
