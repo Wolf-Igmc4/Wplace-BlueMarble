@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.19
+// @version         0.92.20
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -22,7 +22,8 @@
 // @grant           GM.download
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.19
+// @connect         backend.wplace.live
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.20
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -5220,19 +5221,33 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       if (this.userData) {
         return this.userData;
       }
-      try {
-        const response = await fetch("https://backend.wplace.live/me", { credentials: "include" });
-        const dataJSON = await response.json();
-        if (dataJSON?.status && dataJSON.status?.toString()[0] != "2") {
-          return null;
-        }
-        this.userData = dataJSON;
-        this.jsonResponses.set("me", dataJSON);
-        return this.userData;
-      } catch (error) {
-        console.warn(`Blue Marble: Could not fetch user data for bought colors: ${error?.message || error}`);
+      if (typeof GM_xmlhttpRequest != "function") {
         return null;
       }
+      return await new Promise((resolve) => {
+        GM_xmlhttpRequest({
+          method: "GET",
+          url: "https://backend.wplace.live/me",
+          withCredentials: true,
+          responseType: "json",
+          onload: (response) => {
+            try {
+              const dataJSON = response.response || JSON.parse(response.responseText || "{}");
+              if (dataJSON?.status && dataJSON.status?.toString()[0] != "2") {
+                return resolve(null);
+              }
+              this.userData = dataJSON;
+              this.jsonResponses.set("me", dataJSON);
+              return resolve(this.userData);
+            } catch (error) {
+              console.warn(`Blue Marble: Could not parse user data for bought colors: ${error?.message || error}`);
+              return resolve(null);
+            }
+          },
+          onerror: () => resolve(null),
+          ontimeout: () => resolve(null)
+        });
+      });
     }
     /** Determines if the spontaneously received response is something we want.
      * Otherwise, we can ignore it.

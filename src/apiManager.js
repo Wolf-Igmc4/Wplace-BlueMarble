@@ -30,17 +30,30 @@ export default class ApiManager {
   async ensureUserData() {
     if (this.userData) {return this.userData;}
 
-    try {
-      const response = await fetch('https://backend.wplace.live/me', {credentials: 'include'});
-      const dataJSON = await response.json();
-      if (dataJSON?.status && dataJSON.status?.toString()[0] != '2') {return null;}
-      this.userData = dataJSON;
-      this.jsonResponses.set('me', dataJSON);
-      return this.userData;
-    } catch (error) {
-      console.warn(`Blue Marble: Could not fetch user data for bought colors: ${error?.message || error}`);
-      return null;
-    }
+    if (typeof GM_xmlhttpRequest != 'function') {return null;}
+
+    return await new Promise((resolve) => {
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: 'https://backend.wplace.live/me',
+        withCredentials: true,
+        responseType: 'json',
+        onload: (response) => {
+          try {
+            const dataJSON = response.response || JSON.parse(response.responseText || '{}');
+            if (dataJSON?.status && dataJSON.status?.toString()[0] != '2') {return resolve(null);}
+            this.userData = dataJSON;
+            this.jsonResponses.set('me', dataJSON);
+            return resolve(this.userData);
+          } catch (error) {
+            console.warn(`Blue Marble: Could not parse user data for bought colors: ${error?.message || error}`);
+            return resolve(null);
+          }
+        },
+        onerror: () => resolve(null),
+        ontimeout: () => resolve(null)
+      });
+    });
   }
 
   /** Determines if the spontaneously received response is something we want.
