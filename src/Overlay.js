@@ -69,6 +69,10 @@ export default class Overlay {
       if (target instanceof Element) {return target.closest('.bm-window');}
       return target?.parentElement?.closest?.('.bm-window') || null;
     };
+    const closestMapSurface = target => {
+      if (!(target instanceof Element)) {return null;}
+      return target.closest('canvas, .maplibregl-canvas, .maplibregl-canvas-container, .maplibregl-map, .mapboxgl-canvas, .mapboxgl-canvas-container, .mapboxgl-map');
+    };
 
     const resetPointerStart = () => {
       pointerStart = null;
@@ -80,7 +84,8 @@ export default class Overlay {
         pointerId: event.pointerId,
         clientX: event.clientX,
         clientY: event.clientY,
-        startedInBlueMarble: !!closestBlueMarbleWindow(event.target)
+        startedInBlueMarble: !!closestBlueMarbleWindow(event.target),
+        startedOnMap: !!closestMapSurface(event.target)
       };
     }, true);
 
@@ -91,7 +96,8 @@ export default class Overlay {
       const movedY = Math.abs(event.clientY - pointerStart.clientY);
       const wasDrag = movedX > clickMoveTolerance || movedY > clickMoveTolerance;
       const endedInBlueMarble = !!closestBlueMarbleWindow(event.target);
-      const shouldCollapse = !wasDrag && !pointerStart.startedInBlueMarble && !endedInBlueMarble;
+      const endedOnMap = !!closestMapSurface(event.target);
+      const shouldCollapse = !wasDrag && pointerStart.startedOnMap && endedOnMap && !pointerStart.startedInBlueMarble && !endedInBlueMarble;
       resetPointerStart();
 
       if (!shouldCollapse) {return;}

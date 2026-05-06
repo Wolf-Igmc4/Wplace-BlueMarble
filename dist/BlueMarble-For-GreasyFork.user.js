@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.20
+// @version         0.92.21
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.20
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.21
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -1868,6 +1868,12 @@
       }
       return target?.parentElement?.closest?.(".bm-window") || null;
     };
+    const closestMapSurface = (target) => {
+      if (!(target instanceof Element)) {
+        return null;
+      }
+      return target.closest("canvas, .maplibregl-canvas, .maplibregl-canvas-container, .maplibregl-map, .mapboxgl-canvas, .mapboxgl-canvas-container, .mapboxgl-map");
+    };
     const resetPointerStart = () => {
       pointerStart = null;
     };
@@ -1879,7 +1885,8 @@
         pointerId: event.pointerId,
         clientX: event.clientX,
         clientY: event.clientY,
-        startedInBlueMarble: !!closestBlueMarbleWindow(event.target)
+        startedInBlueMarble: !!closestBlueMarbleWindow(event.target),
+        startedOnMap: !!closestMapSurface(event.target)
       };
     }, true);
     document.addEventListener("pointerup", (event) => {
@@ -1890,7 +1897,8 @@
       const movedY = Math.abs(event.clientY - pointerStart.clientY);
       const wasDrag = movedX > clickMoveTolerance || movedY > clickMoveTolerance;
       const endedInBlueMarble = !!closestBlueMarbleWindow(event.target);
-      const shouldCollapse = !wasDrag && !pointerStart.startedInBlueMarble && !endedInBlueMarble;
+      const endedOnMap = !!closestMapSurface(event.target);
+      const shouldCollapse = !wasDrag && pointerStart.startedOnMap && endedOnMap && !pointerStart.startedInBlueMarble && !endedInBlueMarble;
       resetPointerStart();
       if (!shouldCollapse) {
         return;
@@ -2666,7 +2674,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     return `${day}/${month}/${year} ${hour}:${minute}${period}`;
   }
-  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, isColorBought_fn, getBoughtColorIDsFromUserData_fn, collectBoughtColorIDs_fn, findBoughtColorPayloadCandidates_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
+  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, startColorPickerObserver_fn, stopColorPickerObserver_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, isColorBought_fn, hasWplacePremiumColorButtons_fn, getBoughtColorIDsFromUserData_fn, collectBoughtColorIDs_fn, findBoughtColorPayloadCandidates_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
   var WindowFilter = class extends Overlay {
     /** Constructor for the color filter window
      * @param {*} executor - The executing class
@@ -2686,6 +2694,8 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       this.windowResizeObserver = null;
       this.windowViewportResizeHandler = null;
       this.windowSaveTimeout = null;
+      this.colorPickerObserver = null;
+      this.colorPickerRefreshTimeout = null;
       this.colorRefreshInterval = null;
       this.colorRefreshIntervalMS = 1e4;
       this.windowMinWidth = 320;
@@ -2787,6 +2797,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       this.updateInnerHTML("#bm-filter-tot-correct", `${localizeNumber(this.allPixelsCorrectTotal)} (${localizePercent(this.allPixelsCorrectTotal / (this.allPixelsTotal || 1))})`);
       this.updateInnerHTML("#bm-filter-tot-remaining", `${localizeNumber((this.allPixelsTotal || 0) - (this.allPixelsCorrectTotal || 0))} (${localizePercent(((this.allPixelsTotal || 0) - (this.allPixelsCorrectTotal || 0)) / (this.allPixelsTotal || 1))})`);
       this.updateInnerHTML("#bm-filter-tot-completed", `<time datetime="${this.timeRemaining.toISOString().replace(/\.\d{3}Z$/, "Z")}">${this.timeRemainingLocalized}</time>`);
+      __privateMethod(this, _WindowFilter_instances, startColorPickerObserver_fn).call(this);
       __privateMethod(this, _WindowFilter_instances, startAutoRefresh_fn).call(this);
     }
     /** Spawns a windowed Color Filter window.
@@ -2845,6 +2856,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       __privateMethod(this, _WindowFilter_instances, buildColorList_fn).call(this, scrollableContainer);
       __privateMethod(this, _WindowFilter_instances, syncSortFormControls_fn).call(this);
       __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium, this.sortBought);
+      __privateMethod(this, _WindowFilter_instances, startColorPickerObserver_fn).call(this);
       __privateMethod(this, _WindowFilter_instances, startAutoRefresh_fn).call(this);
     }
     /** The information about a specific color on the palette.
@@ -3139,6 +3151,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     __privateMethod(this, _WindowFilter_instances, stopAutoRefresh_fn).call(this);
     __privateMethod(this, _WindowFilter_instances, cleanupWindowPersistence_fn).call(this);
+    __privateMethod(this, _WindowFilter_instances, stopColorPickerObserver_fn).call(this);
     windowElement?.remove();
   };
   /** Starts the automatic Color Filter statistics refresh loop.
@@ -3163,6 +3176,55 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     clearInterval(this.colorRefreshInterval);
     this.colorRefreshInterval = null;
+  };
+  /** Starts watching Wplace's color picker for bought color lock changes.
+   * @since 0.92.21
+   */
+  startColorPickerObserver_fn = function() {
+    __privateMethod(this, _WindowFilter_instances, stopColorPickerObserver_fn).call(this);
+    const nodeTouchesColorPicker = (node) => {
+      if (!(node instanceof Element)) {
+        return false;
+      }
+      if (node.id?.startsWith?.("color-")) {
+        return true;
+      }
+      if (node.closest?.('[id^="color-"]')) {
+        return true;
+      }
+      return !!node.querySelector?.('[id^="color-"]');
+    };
+    this.colorPickerObserver = new MutationObserver((mutations) => {
+      const shouldRefresh = mutations.some((mutation) => nodeTouchesColorPicker(mutation.target) || Array.from(mutation.addedNodes).some(nodeTouchesColorPicker) || Array.from(mutation.removedNodes).some(nodeTouchesColorPicker));
+      if (!shouldRefresh) {
+        return;
+      }
+      if (this.colorPickerRefreshTimeout) {
+        clearTimeout(this.colorPickerRefreshTimeout);
+      }
+      this.colorPickerRefreshTimeout = setTimeout(() => {
+        this.colorPickerRefreshTimeout = null;
+        __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium, this.sortBought);
+      }, 100);
+    });
+    this.colorPickerObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  };
+  /** Stops watching Wplace's color picker.
+   * @since 0.92.21
+   */
+  stopColorPickerObserver_fn = function() {
+    if (!this.colorPickerObserver) {
+      return;
+    }
+    this.colorPickerObserver.disconnect();
+    this.colorPickerObserver = null;
+    if (this.colorPickerRefreshTimeout) {
+      clearTimeout(this.colorPickerRefreshTimeout);
+      this.colorPickerRefreshTimeout = null;
+    }
   };
   /** Disconnects live observers used for window persistence.
    * @since 0.92.0
@@ -3365,11 +3427,10 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
    * @returns {boolean}
    * @since 0.92.15
    */
-  isColorBought_fn = function(color) {
+  isColorBought_fn = function(color, boughtColorIDs = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDsFromUserData_fn).call(this)) {
     if (!color?.premium) {
       return false;
     }
-    const boughtColorIDs = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDsFromUserData_fn).call(this);
     if (boughtColorIDs) {
       return boughtColorIDs.has(Number(color.id));
     }
@@ -3388,6 +3449,13 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       });
     }
     return isBought;
+  };
+  /** Checks whether Wplace's own color picker is currently present.
+   * @returns {boolean}
+   * @since 0.92.21
+   */
+  hasWplacePremiumColorButtons_fn = function() {
+    return this.palette.filter((color) => color?.premium).some((color) => document.querySelector(`#color-${color.id}`));
   };
   /** Finds purchased premium color IDs from Wplace user data, when the payload exposes them.
    * @returns {Set<number> | null}
@@ -3652,7 +3720,9 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       sortSecondary = this.sortSecondary;
     }
     sortBought = !!sortBought;
-    const shouldOnlyShowBoughtColors = sortBought && showPremium;
+    const boughtColorIDs = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDsFromUserData_fn).call(this);
+    const boughtColorStateKnown = !!boughtColorIDs || __privateMethod(this, _WindowFilter_instances, hasWplacePremiumColorButtons_fn).call(this);
+    const shouldOnlyShowBoughtColors = sortBought && showPremium && boughtColorStateKnown;
     this.sortPrimary = sortPrimary;
     this.sortSecondary = sortSecondary;
     this.sortBought = sortBought;
@@ -3668,7 +3738,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     const colors = Array.from(colorList.children);
     for (const color of colors) {
       const paletteColor = this.palette.find((paletteColor2) => paletteColor2.id == color.dataset["id"]);
-      color.dataset["bought"] = +__privateMethod(this, _WindowFilter_instances, isColorBought_fn).call(this, paletteColor);
+      color.dataset["bought"] = +__privateMethod(this, _WindowFilter_instances, isColorBought_fn).call(this, paletteColor, boughtColorIDs);
       const isUnused = !Number(color.getAttribute("data-total"));
       const isCompleted = color.getAttribute("data-completed") == "1";
       const isPremium = color.getAttribute("data-premium") == "1";
@@ -5211,6 +5281,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.coordsTilePixel = [];
       this.templateCoordsTilePixel = [];
       this.userData = null;
+      this.userDataPromise = null;
       this.jsonResponses = /* @__PURE__ */ new Map();
     }
     /** Fetches Wplace user data when the page has not already requested it.
@@ -5221,10 +5292,13 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       if (this.userData) {
         return this.userData;
       }
+      if (this.userDataPromise) {
+        return await this.userDataPromise;
+      }
       if (typeof GM_xmlhttpRequest != "function") {
         return null;
       }
-      return await new Promise((resolve) => {
+      this.userDataPromise = new Promise((resolve) => {
         GM_xmlhttpRequest({
           method: "GET",
           url: "https://backend.wplace.live/me",
@@ -5248,6 +5322,9 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           ontimeout: () => resolve(null)
         });
       });
+      const userData = await this.userDataPromise;
+      this.userDataPromise = null;
+      return userData;
     }
     /** Determines if the spontaneously received response is something we want.
      * Otherwise, we can ignore it.

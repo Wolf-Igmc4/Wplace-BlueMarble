@@ -20,6 +20,7 @@ export default class ApiManager {
     this.coordsTilePixel = []; // Contains the last detected tile/pixel coordinate pair requested
     this.templateCoordsTilePixel = []; // Contains the last "enabled" template coords
     this.userData = null; // Last received Wplace user data payload
+    this.userDataPromise = null; // In-flight Wplace user data request
     this.jsonResponses = new Map(); // Recent JSON responses indexed by endpoint name
   }
 
@@ -29,10 +30,11 @@ export default class ApiManager {
    */
   async ensureUserData() {
     if (this.userData) {return this.userData;}
+    if (this.userDataPromise) {return await this.userDataPromise;}
 
     if (typeof GM_xmlhttpRequest != 'function') {return null;}
 
-    return await new Promise((resolve) => {
+    this.userDataPromise = new Promise((resolve) => {
       GM_xmlhttpRequest({
         method: 'GET',
         url: 'https://backend.wplace.live/me',
@@ -54,6 +56,10 @@ export default class ApiManager {
         ontimeout: () => resolve(null)
       });
     });
+
+    const userData = await this.userDataPromise;
+    this.userDataPromise = null;
+    return userData;
   }
 
   /** Determines if the spontaneously received response is something we want.

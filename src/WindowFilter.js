@@ -50,6 +50,8 @@ export default class WindowFilter extends Overlay {
     this.windowResizeObserver = null; // Resize observer for the windowed mode
     this.windowViewportResizeHandler = null; // Resize handler for viewport changes
     this.windowSaveTimeout = null; // Debounce timer for resize persistence
+    this.colorPickerObserver = null; // Watches Wplace's palette while bought color state is DOM-only
+    this.colorPickerRefreshTimeout = null; // Debounce timer for Wplace palette changes
     this.colorRefreshInterval = null; // Auto-refresh timer for live color statistics
     this.colorRefreshIntervalMS = 10000; // Refresh Color Filter statistics every 10 seconds
     this.windowMinWidth = 320; // Minimum width for the windowed filter
@@ -253,6 +255,7 @@ export default class WindowFilter extends Overlay {
     this.updateInnerHTML('#bm-filter-tot-correct', `${localizeNumber(this.allPixelsCorrectTotal)} (${localizePercent(this.allPixelsCorrectTotal / (this.allPixelsTotal || 1))})`);
     this.updateInnerHTML('#bm-filter-tot-remaining', `${localizeNumber((this.allPixelsTotal || 0) - (this.allPixelsCorrectTotal || 0))} (${localizePercent(((this.allPixelsTotal || 0) - (this.allPixelsCorrectTotal || 0)) / (this.allPixelsTotal || 1))})`);
     this.updateInnerHTML('#bm-filter-tot-completed', `<time datetime="${this.timeRemaining.toISOString().replace(/\.\d{3}Z$/, 'Z')}">${this.timeRemainingLocalized}</time>`);
+    this.#startColorPickerObserver();
     this.#startAutoRefresh();
   }
 
@@ -342,6 +345,7 @@ export default class WindowFilter extends Overlay {
     this.#buildColorList(scrollableContainer);
     this.#syncSortFormControls();
     this.#sortColorList(this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium, this.sortBought);
+    this.#startColorPickerObserver();
     this.#startAutoRefresh();
   }
 
@@ -541,6 +545,7 @@ export default class WindowFilter extends Overlay {
     }
     this.#stopAutoRefresh();
     this.#cleanupWindowPersistence();
+    this.#stopColorPickerObserver();
     windowElement?.remove();
   }
 
@@ -565,6 +570,47 @@ export default class WindowFilter extends Overlay {
     if (!this.colorRefreshInterval) {return;}
     clearInterval(this.colorRefreshInterval);
     this.colorRefreshInterval = null;
+  }
+
+  /** Starts watching Wplace's color picker for bought color lock changes.
+   * @since 0.92.21
+   */
+  #startColorPickerObserver() {
+    this.#stopColorPickerObserver();
+    const nodeTouchesColorPicker = node => {
+      if (!(node instanceof Element)) {return false;}
+      if (node.id?.startsWith?.('color-')) {return true;}
+      if (node.closest?.('[id^="color-"]')) {return true;}
+      return !!node.querySelector?.('[id^="color-"]');
+    };
+    this.colorPickerObserver = new MutationObserver((mutations) => {
+      const shouldRefresh = mutations.some(mutation => nodeTouchesColorPicker(mutation.target)
+        || Array.from(mutation.addedNodes).some(nodeTouchesColorPicker)
+        || Array.from(mutation.removedNodes).some(nodeTouchesColorPicker));
+      if (!shouldRefresh) {return;}
+      if (this.colorPickerRefreshTimeout) {clearTimeout(this.colorPickerRefreshTimeout);}
+      this.colorPickerRefreshTimeout = setTimeout(() => {
+        this.colorPickerRefreshTimeout = null;
+        this.#sortColorList(this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium, this.sortBought);
+      }, 100);
+    });
+    this.colorPickerObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  /** Stops watching Wplace's color picker.
+   * @since 0.92.21
+   */
+  #stopColorPickerObserver() {
+    if (!this.colorPickerObserver) {return;}
+    this.colorPickerObserver.disconnect();
+    this.colorPickerObserver = null;
+    if (this.colorPickerRefreshTimeout) {
+      clearTimeout(this.colorPickerRefreshTimeout);
+      this.colorPickerRefreshTimeout = null;
+    }
   }
 
   /** Disconnects live observers used for window persistence.
@@ -782,10 +828,9 @@ export default class WindowFilter extends Overlay {
    * @returns {boolean}
    * @since 0.92.15
    */
-  #isColorBought(color) {
+  #isColorBought(color, boughtColorIDs = this.#getBoughtColorIDsFromUserData()) {
     if (!color?.premium) {return false;}
 
-    const boughtColorIDs = this.#getBoughtColorIDsFromUserData();
     if (boughtColorIDs) {return boughtColorIDs.has(Number(color.id));}
 
     const colorElement = document.querySelector(`#color-${color.id}`);
@@ -804,6 +849,16 @@ export default class WindowFilter extends Overlay {
     }
 
     return isBought;
+  }
+
+  /** Checks whether Wplace's own color picker is currently present.
+   * @returns {boolean}
+   * @since 0.92.21
+   */
+  #hasWplacePremiumColorButtons() {
+    return this.palette
+      .filter(color => color?.premium)
+      .some(color => document.querySelector(`#color-${color.id}`));
   }
 
   /** Finds purchased premium color IDs from Wplace user data, when the payload exposes them.
@@ -1130,7 +1185,9 @@ export default class WindowFilter extends Overlay {
     if (!allowedPrimarySorts.has(sortPrimary)) {sortPrimary = this.sortPrimary;}
     if (!allowedSecondarySorts.has(sortSecondary)) {sortSecondary = this.sortSecondary;}
     sortBought = !!sortBought;
-    const shouldOnlyShowBoughtColors = sortBought && showPremium;
+    const boughtColorIDs = this.#getBoughtColorIDsFromUserData();
+    const boughtColorStateKnown = !!boughtColorIDs || this.#hasWplacePremiumColorButtons();
+    const shouldOnlyShowBoughtColors = sortBought && showPremium && boughtColorStateKnown;
 
     // Update memorised sort settings
     this.sortPrimary = sortPrimary;
@@ -1149,7 +1206,7 @@ export default class WindowFilter extends Overlay {
 
     for (const color of colors) {
       const paletteColor = this.palette.find(paletteColor => paletteColor.id == color.dataset['id']);
-      color.dataset['bought'] = +this.#isColorBought(paletteColor);
+      color.dataset['bought'] = +this.#isColorBought(paletteColor, boughtColorIDs);
 
       const isUnused = !Number(color.getAttribute('data-total'));
       const isCompleted = color.getAttribute('data-completed') == '1';
