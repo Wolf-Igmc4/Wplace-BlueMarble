@@ -261,7 +261,7 @@ input[type=file] {
 }
 .bm-window-content {
   overflow: hidden;
-  transition: height 140ms cubic-bezier(.4, 0, .2, 1);
+  transition: height 1ms linear;
 }
 .bm-window textarea {
   font-size: small;
