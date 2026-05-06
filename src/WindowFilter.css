@@ -52,7 +52,7 @@
 #bm-window-filter:not(.bm-windowed) {
   top: 10px;
   width: min(70vw, calc(100vw - 0.55rem));
-  height: min(80vh, calc(100vh - 0.55rem));
+  height: min(70vh, calc(100vh - 0.55rem));
   min-width: min(320px, calc(100vw - 0.55rem));
   min-height: 220px;
   max-width: calc(100vw - 0.55rem) !important;
