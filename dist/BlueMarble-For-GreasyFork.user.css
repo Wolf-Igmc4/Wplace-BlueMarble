@@ -41,7 +41,11 @@ confetti-piece {
   padding: 10px;
   border-radius: 8px;
   z-index: 9000;
-  transition: all 0.3s ease, transform 0s;
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    box-shadow 0.3s ease,
+    transform 0s;
   top: 75px;
   left: 60px;
   width: auto;
@@ -257,7 +261,7 @@ input[type=file] {
 }
 .bm-window-content {
   overflow: hidden;
-  transition: height 300ms cubic-bezier(.4, 0, .2, 1);
+  transition: height 140ms cubic-bezier(.4, 0, .2, 1);
 }
 .bm-window textarea {
   font-size: small;

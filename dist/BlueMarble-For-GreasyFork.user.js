@@ -1732,7 +1732,7 @@
           finish();
         };
         windowContent.addEventListener("transitionend", handler);
-        fallbackTimer = setTimeout(finish, 360);
+        fallbackTimer = setTimeout(finish, 200);
       };
       const getCollapsedHeight = () => {
         const windowStyle = getComputedStyle(window2);

@@ -121,7 +121,7 @@
     <li>Autofilling template coordinates from filenames that start with <code>tileX-tileY-pixelX-pixelY</code></li>
     <li>Allowing you to move the color palette to the top of the screen when placing pixels</li>
     <li>Allowing you to use the eyedropper on the template image, provided the colors are correct</li>
-    <li>Minimizing or maximizing the menu to switch between compact and full views</li>
+    <li>Minimizing or maximizing the menu to switch between compact and full views with a quicker collapse/expand response</li>
     <li>Filtering overlay colors with a refreshed Color Filter UI, live progress stats, reactive free/premium/completed color filters, a fullscreen-only button to show only the colors currently visible in the sorted filter list, an only-bought-colors premium filter based on Wplace unlock data, persisted sort/visibility settings, adaptive fullscreen color columns, top-aligned fullscreen/windowed placement beside the main Blue Marble window, responsive small-screen placement, outside-click auto-minimization, and resizable fullscreen/windowed layouts</li>
     <li>Rendering unfiltered templates through an experimental MapLibre image-layer overlay so large templates can stay responsive without recomposing every fetched map tile, while bypassing internal <code>data:</code> and <code>blob:</code> overlay images in the fetch proxy and keeping verbose fetch/render diagnostics hidden unless the internal <code>bm-debug</code> flag is enabled</li>
     <li>Keeping Template Wizard template details compact on small mobile screens so saved template slots stay readable, with per-template active controls for saved templates</li>

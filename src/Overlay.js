@@ -1310,7 +1310,7 @@ export default class Overlay {
       };
 
       windowContent.addEventListener('transitionend', handler);
-      fallbackTimer = setTimeout(finish, 360);
+      fallbackTimer = setTimeout(finish, 200);
     };
 
     const getCollapsedHeight = () => {
