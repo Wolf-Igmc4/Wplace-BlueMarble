@@ -20,6 +20,7 @@ export default class ApiManager {
     this.coordsTilePixel = []; // Contains the last detected tile/pixel coordinate pair requested
     this.templateCoordsTilePixel = []; // Contains the last "enabled" template coords
     this.userData = null; // Last received Wplace user data payload
+    this.jsonResponses = new Map(); // Recent JSON responses indexed by endpoint name
   }
 
   /** Determines if the spontaneously received response is something we want.
@@ -47,6 +48,9 @@ export default class ApiManager {
       // E.g. "wplace.live/api/pixel/0/0?payload" -> "pixel"
       // E.g. "wplace.live/api/files/s0/tiles/0/0/0.png" -> "tiles"
       const endpointText = data['endpoint']?.split('?')[0].split('/').filter(s => s && isNaN(Number(s))).filter(s => s && !s.includes('.')).pop();
+      if (dataJSON && typeof dataJSON == 'object') {
+        this.jsonResponses.set(endpointText, dataJSON);
+      }
 
       console.log(`%cBlue Marble%c: Recieved message about "%s"`, 'color: cornflowerblue;', '', endpointText);
 

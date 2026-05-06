@@ -2665,7 +2665,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     return `${day}/${month}/${year} ${hour}:${minute}${period}`;
   }
-  var _WindowFilter_instances, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, isColorBought_fn, getBoughtColorIDsFromUserData_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
+  var _WindowFilter_instances, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, isColorBought_fn, getBoughtColorIDsFromUserData_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
   var WindowFilter = class extends Overlay {
     /** Constructor for the color filter window
      * @param {*} executor - The executing class
@@ -2715,6 +2715,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       this.showFree = true;
       this.showPremium = true;
       __privateMethod(this, _WindowFilter_instances, loadFilterViewSettings_fn).call(this);
+      window.blueMarbleDumpBoughtColors = () => __privateMethod(this, _WindowFilter_instances, dumpBoughtColorDetection_fn).call(this);
     }
     /** Builds the preferred filter window mode for the user.
      * @since 0.92.0
@@ -3362,8 +3363,8 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
    * @since 0.92.16
    */
   getBoughtColorIDsFromUserData_fn = function() {
-    const userData = this.apiManager?.userData;
-    if (!userData || typeof userData != "object") {
+    const payloads = [this.apiManager?.userData, ...Array.from(this.apiManager?.jsonResponses?.values?.() || [])].filter((payload) => payload && typeof payload == "object");
+    if (!payloads.length) {
       return null;
     }
     const ids = /* @__PURE__ */ new Set();
@@ -3394,8 +3395,31 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         visit(child, path ? `${path}.${key}` : key, depth + 1);
       }
     };
-    visit(userData);
+    for (const payload of payloads) {
+      visit(payload);
+    }
     return ids.size ? ids : null;
+  };
+  /** Dumps premium color purchase detection details to the console.
+   * @since 0.92.16
+   */
+  dumpBoughtColorDetection_fn = function() {
+    const rows = this.palette.filter((color) => color?.premium).map((color) => {
+      const colorElement = document.querySelector(`#color-${color.id}`);
+      return {
+        id: color.id,
+        name: color.name,
+        bought: __privateMethod(this, _WindowFilter_instances, isColorBought_fn).call(this, color),
+        exists: !!colorElement,
+        text: colorElement?.textContent?.trim()?.replace(/\s+/g, " ").slice(0, 120) || "",
+        className: colorElement?.className || "",
+        ariaLabel: colorElement?.getAttribute?.("aria-label") || "",
+        title: colorElement?.getAttribute?.("title") || "",
+        disabled: colorElement?.matches?.(":disabled, [disabled]") || false
+      };
+    });
+    console.table(rows);
+    return rows;
   };
   /** Creates the color list container.
    * @param {HTMLElement} parentElement - Parent element to add the color list to as a child
@@ -5088,6 +5112,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.coordsTilePixel = [];
       this.templateCoordsTilePixel = [];
       this.userData = null;
+      this.jsonResponses = /* @__PURE__ */ new Map();
     }
     /** Determines if the spontaneously received response is something we want.
      * Otherwise, we can ignore it.
@@ -5107,6 +5132,9 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           return;
         }
         const endpointText = data["endpoint"]?.split("?")[0].split("/").filter((s) => s && isNaN(Number(s))).filter((s) => s && !s.includes(".")).pop();
+        if (dataJSON && typeof dataJSON == "object") {
+          this.jsonResponses.set(endpointText, dataJSON);
+        }
         console.log(`%cBlue Marble%c: Recieved message about "%s"`, "color: cornflowerblue;", "", endpointText);
         switch (endpointText) {
           case "me":

@@ -92,6 +92,7 @@ export default class WindowFilter extends Overlay {
     this.showFree = true; // Were free colors shown the last time the user sorted the color list?
     this.showPremium = true; // Were premium colors shown the last time the user sorted the color list?
     this.#loadFilterViewSettings();
+    window.blueMarbleDumpBoughtColors = () => this.#dumpBoughtColorDetection();
   }
 
   /** Builds the preferred filter window mode for the user.
@@ -789,8 +790,9 @@ export default class WindowFilter extends Overlay {
    * @since 0.92.16
    */
   #getBoughtColorIDsFromUserData() {
-    const userData = this.apiManager?.userData;
-    if (!userData || typeof userData != 'object') {return null;}
+    const payloads = [this.apiManager?.userData, ...Array.from(this.apiManager?.jsonResponses?.values?.() || [])]
+      .filter(payload => payload && typeof payload == 'object');
+    if (!payloads.length) {return null;}
 
     const ids = new Set();
     const visited = new WeakSet();
@@ -817,8 +819,34 @@ export default class WindowFilter extends Overlay {
       }
     };
 
-    visit(userData);
+    for (const payload of payloads) {
+      visit(payload);
+    }
     return ids.size ? ids : null;
+  }
+
+  /** Dumps premium color purchase detection details to the console.
+   * @since 0.92.16
+   */
+  #dumpBoughtColorDetection() {
+    const rows = this.palette
+      .filter(color => color?.premium)
+      .map(color => {
+        const colorElement = document.querySelector(`#color-${color.id}`);
+        return {
+          id: color.id,
+          name: color.name,
+          bought: this.#isColorBought(color),
+          exists: !!colorElement,
+          text: colorElement?.textContent?.trim()?.replace(/\s+/g, ' ').slice(0, 120) || '',
+          className: colorElement?.className || '',
+          ariaLabel: colorElement?.getAttribute?.('aria-label') || '',
+          title: colorElement?.getAttribute?.('title') || '',
+          disabled: colorElement?.matches?.(':disabled, [disabled]') || false
+        };
+      });
+    console.table(rows);
+    return rows;
   }
 
   /** Creates the color list container.
