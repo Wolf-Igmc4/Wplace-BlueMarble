@@ -1062,7 +1062,7 @@ export default class WindowFilter extends Overlay {
    * @param {boolean} showCompleted - Should completed colors be displayed in the list to the user?
    * @param {boolean} showFree - Should free colors be displayed in the list to the user?
    * @param {boolean} showPremium - Should premium colors be displayed in the list to the user?
-   * @param {boolean} sortBought - Should bought colors be grouped before other colors?
+   * @param {boolean} sortBought - Should premium colors be limited to bought colors?
    * @since 0.88.222
    */
   #sortColorList(sortPrimary, sortSecondary, showUnused, showCompleted = this.showCompleted, showFree = this.showFree, showPremium = this.showPremium, sortBought = this.sortBought) {
@@ -1076,7 +1076,7 @@ export default class WindowFilter extends Overlay {
     if (!allowedPrimarySorts.has(sortPrimary)) {sortPrimary = this.sortPrimary;}
     if (!allowedSecondarySorts.has(sortSecondary)) {sortSecondary = this.sortSecondary;}
     sortBought = !!sortBought;
-    const shouldGroupBoughtColors = sortBought && showPremium;
+    const shouldOnlyShowBoughtColors = sortBought && showPremium;
 
     // Update memorised sort settings
     this.sortPrimary = sortPrimary;
@@ -1100,17 +1100,19 @@ export default class WindowFilter extends Overlay {
       const isUnused = !Number(color.getAttribute('data-total'));
       const isCompleted = color.getAttribute('data-completed') == '1';
       const isPremium = color.getAttribute('data-premium') == '1';
+      const isBought = color.getAttribute('data-bought') == '1';
       const shouldHideColor = (!showUnused && isUnused)
         || (!showCompleted && isCompleted)
         || (!showFree && !isPremium)
-        || (!showPremium && isPremium);
+        || (!showPremium && isPremium)
+        || (shouldOnlyShowBoughtColors && isPremium && !isBought);
 
       color.classList.toggle('bm-color-hide', shouldHideColor);
     }
 
     colors.sort((index, nextIndex) => {
       const dataKey = sortPrimary;
-      if (shouldGroupBoughtColors) {
+      if (shouldOnlyShowBoughtColors) {
         const boughtCompare = this.#compareColorDataset(index, nextIndex, 'bought', 'descending');
         if (boughtCompare) {return boughtCompare;}
       }

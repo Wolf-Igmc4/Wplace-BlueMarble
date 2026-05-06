@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.17
+// @version         0.92.18
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -22,7 +22,7 @@
 // @grant           GM.download
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.17
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.18
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -3587,7 +3587,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
    * @param {boolean} showCompleted - Should completed colors be displayed in the list to the user?
    * @param {boolean} showFree - Should free colors be displayed in the list to the user?
    * @param {boolean} showPremium - Should premium colors be displayed in the list to the user?
-   * @param {boolean} sortBought - Should bought colors be grouped before other colors?
+   * @param {boolean} sortBought - Should premium colors be limited to bought colors?
    * @since 0.88.222
    */
   sortColorList_fn = function(sortPrimary, sortSecondary, showUnused, showCompleted = this.showCompleted, showFree = this.showFree, showPremium = this.showPremium, sortBought = this.sortBought) {
@@ -3604,7 +3604,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       sortSecondary = this.sortSecondary;
     }
     sortBought = !!sortBought;
-    const shouldGroupBoughtColors = sortBought && showPremium;
+    const shouldOnlyShowBoughtColors = sortBought && showPremium;
     this.sortPrimary = sortPrimary;
     this.sortSecondary = sortSecondary;
     this.sortBought = sortBought;
@@ -3624,12 +3624,13 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       const isUnused = !Number(color.getAttribute("data-total"));
       const isCompleted = color.getAttribute("data-completed") == "1";
       const isPremium = color.getAttribute("data-premium") == "1";
-      const shouldHideColor = !showUnused && isUnused || !showCompleted && isCompleted || !showFree && !isPremium || !showPremium && isPremium;
+      const isBought = color.getAttribute("data-bought") == "1";
+      const shouldHideColor = !showUnused && isUnused || !showCompleted && isCompleted || !showFree && !isPremium || !showPremium && isPremium || shouldOnlyShowBoughtColors && isPremium && !isBought;
       color.classList.toggle("bm-color-hide", shouldHideColor);
     }
     colors.sort((index, nextIndex) => {
       const dataKey = sortPrimary;
-      if (shouldGroupBoughtColors) {
+      if (shouldOnlyShowBoughtColors) {
         const boughtCompare = __privateMethod(this, _WindowFilter_instances, compareColorDataset_fn).call(this, index, nextIndex, "bought", "descending");
         if (boughtCompare) {
           return boughtCompare;
