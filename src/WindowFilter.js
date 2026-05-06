@@ -1356,19 +1356,34 @@ export default class WindowFilter extends Overlay {
     // Gets the colors
     const colorList = document.querySelector(`#${this.colorListID}`);
     const colors = Array.from(colorList.children);
+    const targetState = userWantsUnselect ? 'shown' : 'hidden';
+    const targetIsHidden = targetState == 'hidden';
+    const renderedColors = new Map(colors.map(color => [Number(color.dataset.id), color]));
+    const changedColorIDs = [];
 
-    // For each color...
-    for (const color of colors) {
+    // Apply the bulk action to the full palette, not just the currently visible cards.
+    for (const paletteColor of this.palette) {
+      if (!paletteColor?.id) {continue;}
 
-      // Gets the button to click
-      const button = color.querySelector('.bm-filter-color-visibility');
-      
-      // Exits early if the button is in its proper state
-      if ((button.dataset['state'] == 'hidden') && !userWantsUnselect) {continue;} // If the button is selected, and the user wants to select all buttons, then skip this one
-      if ((button.dataset['state'] == 'shown') && userWantsUnselect) {continue;} // If the button is not selected, and the user wants to unselect all buttons, then skip this one
-      
-      button.click(); // If the button is not in its proper state, then we click it
+      const colorIsHidden = !!this.templateManager.shouldFilterColor.get(paletteColor.id);
+      if (colorIsHidden != targetIsHidden) {changedColorIDs.push(paletteColor.id);}
+
+      const colorElement = renderedColors.get(paletteColor.id);
+      const button = colorElement?.querySelector('.bm-filter-color-visibility');
+      if (!button || button.disabled) {continue;}
+
+      button.dataset['state'] = targetState;
+      button.innerHTML = targetIsHidden ? this.eyeClosed : this.eyeOpen;
+      this.#syncColorToggleLabel(button, paletteColor);
     }
+
+    this.templateManager.setColorFilters(changedColorIDs, targetIsHidden);
+    console.log('[BM PERF] bulk-filter', {
+      hidden: targetIsHidden,
+      colorsChanged: changedColorIDs.length,
+      visibleCards: colors.length,
+      paletteColors: this.palette.length
+    });
   }
 
   /** Updates the color toggle labels on the icon and the clickable color block.
@@ -1406,6 +1421,7 @@ export default class WindowFilter extends Overlay {
       this.templateManager.setColorFiltered(color.id, true);
       this.#animateColorToggleIcon(button, 'hide');
     } else {
+      button.innerHTML = this.eyeOpen;
       button.dataset['state'] = 'shown';
       this.templateManager.setColorFiltered(color.id, false);
       this.#animateColorToggleIcon(button, 'show');

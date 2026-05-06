@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.26
+// @version         0.92.27
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.26
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.27
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -3871,16 +3871,34 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
   selectColorList_fn = function(userWantsUnselect) {
     const colorList = document.querySelector(`#${this.colorListID}`);
     const colors = Array.from(colorList.children);
-    for (const color of colors) {
-      const button = color.querySelector(".bm-filter-color-visibility");
-      if (button.dataset["state"] == "hidden" && !userWantsUnselect) {
+    const targetState = userWantsUnselect ? "shown" : "hidden";
+    const targetIsHidden = targetState == "hidden";
+    const renderedColors = new Map(colors.map((color) => [Number(color.dataset.id), color]));
+    const changedColorIDs = [];
+    for (const paletteColor of this.palette) {
+      if (!paletteColor?.id) {
         continue;
       }
-      if (button.dataset["state"] == "shown" && userWantsUnselect) {
+      const colorIsHidden = !!this.templateManager.shouldFilterColor.get(paletteColor.id);
+      if (colorIsHidden != targetIsHidden) {
+        changedColorIDs.push(paletteColor.id);
+      }
+      const colorElement = renderedColors.get(paletteColor.id);
+      const button = colorElement?.querySelector(".bm-filter-color-visibility");
+      if (!button || button.disabled) {
         continue;
       }
-      button.click();
+      button.dataset["state"] = targetState;
+      button.innerHTML = targetIsHidden ? this.eyeClosed : this.eyeOpen;
+      __privateMethod(this, _WindowFilter_instances, syncColorToggleLabel_fn).call(this, button, paletteColor);
     }
+    this.templateManager.setColorFilters(changedColorIDs, targetIsHidden);
+    console.log("[BM PERF] bulk-filter", {
+      hidden: targetIsHidden,
+      colorsChanged: changedColorIDs.length,
+      visibleCards: colors.length,
+      paletteColors: this.palette.length
+    });
   };
   /** Updates the color toggle labels on the icon and the clickable color block.
    * @param {HTMLButtonElement} button - The color visibility button
@@ -3911,6 +3929,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       this.templateManager.setColorFiltered(color.id, true);
       __privateMethod(this, _WindowFilter_instances, animateColorToggleIcon_fn).call(this, button, "hide");
     } else {
+      button.innerHTML = this.eyeOpen;
       button.dataset["state"] = "shown";
       this.templateManager.setColorFiltered(color.id, false);
       __privateMethod(this, _WindowFilter_instances, animateColorToggleIcon_fn).call(this, button, "show");
@@ -4506,7 +4525,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
   };
 
   // src/templateManager.js
-  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, loadTemplate_fn, storeTemplates_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
+  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, loadTemplate_fn, storeTemplates_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, invalidateTemplateRenderCaches_fn, debugRenderPerf_fn, getSortedTemplates_fn, getTemplateChunkColorIDs_fn, getTemplateTileIndex_fn, ensureTemplateChunkColorIDs_fn, templateChunkHasVisibleColor_fn, templateChunkNeedsMutation_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
   var TemplateManager = class {
     /** The constructor for the {@link TemplateManager} class.
      * @param {string} name - The name of the userscript
@@ -4535,6 +4554,10 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       this.shouldFilterColor = /* @__PURE__ */ new Map();
       this.templatesLoadingPromise = null;
       this.loadedTemplateKeys = /* @__PURE__ */ new Set();
+      this.sortedTemplatesArray = null;
+      this.templateTileIndex = null;
+      this.renderStateVersion = 0;
+      this.renderPerfDebug = true;
     }
     /** Updates the stored instance of the main window.
      * @param {WindowMain} windowMain - The main window instance
@@ -4559,10 +4582,43 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
     setColorFiltered(colorID, shouldBeFiltered) {
       if (shouldBeFiltered) {
         this.shouldFilterColor.set(colorID, true);
+        this.renderStateVersion++;
         __privateMethod(this, _TemplateManager_instances, persistColorFilterSettings_fn).call(this);
         return;
       }
       this.shouldFilterColor.delete(colorID);
+      this.renderStateVersion++;
+      __privateMethod(this, _TemplateManager_instances, persistColorFilterSettings_fn).call(this);
+    }
+    /** Sets several hidden color filters in one persistence pass.
+     * @param {number[]} colorIDs - Blue Marble palette color IDs
+     * @param {boolean} shouldBeFiltered - Whether the colors should be hidden
+     * @since 0.92.27
+     */
+    setColorFilters(colorIDs, shouldBeFiltered) {
+      let didChange = false;
+      for (const colorID of colorIDs) {
+        const numericColorID = Number(colorID);
+        if (!Number.isFinite(numericColorID)) {
+          continue;
+        }
+        if (shouldBeFiltered) {
+          if (this.shouldFilterColor.get(numericColorID)) {
+            continue;
+          }
+          this.shouldFilterColor.set(numericColorID, true);
+          didChange = true;
+          continue;
+        }
+        if (!this.shouldFilterColor.delete(numericColorID)) {
+          continue;
+        }
+        didChange = true;
+      }
+      if (!didChange) {
+        return;
+      }
+      this.renderStateVersion++;
       __privateMethod(this, _TemplateManager_instances, persistColorFilterSettings_fn).call(this);
     }
     /** Checks whether any template is currently loaded.
@@ -4635,6 +4691,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       };
       this.templatesArray = [];
       this.templatesArray.push(template);
+      __privateMethod(this, _TemplateManager_instances, invalidateTemplateRenderCaches_fn).call(this);
       this.windowMain.handleDisplayStatus(`Template created at ${coords2.join(", ")}!`);
       this.windowMain.refreshTemplateControls();
       console.log(Object.keys(this.templatesJSON.templates).length);
@@ -4827,39 +4884,20 @@ Canvas Height: ${canvasHeight}`);
           return tileBlob;
         }
       }
+      const renderStart = performance.now();
+      const timings = {};
       const drawSize = this.tileSize * this.drawMult;
       tileCoords = tileCoords[0].toString().padStart(4, "0") + "," + tileCoords[1].toString().padStart(4, "0");
-      const templateArray = this.templatesArray;
-      templateArray.sort((a, b) => {
-        return a.sortID - b.sortID;
-      });
-      const templatesToDraw = templateArray.map((template) => {
-        const matchingTiles = Object.keys(template.chunked).filter(
-          (tile) => tile.startsWith(tileCoords)
-        );
-        if (matchingTiles.length === 0) {
-          return null;
-        }
-        const matchingTileBlobs = matchingTiles.map((tile) => {
-          const coords2 = tile.split(",");
-          return {
-            instance: template,
-            bitmap: template.chunked[tile],
-            chunked32: template.chunked32?.[tile],
-            tileCoords: [coords2[0], coords2[1]],
-            pixelCoords: [coords2[2], coords2[3]]
-          };
-        });
-        return matchingTileBlobs?.[0];
-      }).filter(Boolean);
-      const templateCount = templatesToDraw?.length || 0;
+      const indexStart = performance.now();
+      const templatesForTile = __privateMethod(this, _TemplateManager_instances, getTemplateTileIndex_fn).call(this).get(tileCoords) ?? [];
+      timings.indexMs = Number((performance.now() - indexStart).toFixed(2));
+      const visibleFilterStart = performance.now();
+      const templatesToDraw = templatesForTile.filter((templateChunk) => __privateMethod(this, _TemplateManager_instances, templateChunkHasVisibleColor_fn).call(this, templateChunk));
+      timings.visibleFilterMs = Number((performance.now() - visibleFilterStart).toFixed(2));
+      const templateCount = templatesToDraw.length;
       if (templateCount > 0) {
-        const totalPixels = templateArray.filter((template) => {
-          const matchingTiles = Object.keys(template.chunked).filter(
-            (tile) => tile.startsWith(tileCoords)
-          );
-          return matchingTiles.length > 0;
-        }).reduce((sum, template) => sum + (template.pixelCount.total || 0), 0);
+        const templatesDisplayed = new Set(templatesToDraw.map((template) => template.instance));
+        const totalPixels = Array.from(templatesDisplayed).reduce((sum, template) => sum + (template.pixelCount.total || 0), 0);
         const pixelCountFormatted = localizeNumber(totalPixels);
         this.windowMain.handleDisplayStatus(
           `Displaying ${templateCount} template${templateCount == 1 ? "" : "s"}.
@@ -4868,9 +4906,21 @@ Total pixels: ${pixelCountFormatted}`
       } else {
         this.windowMain.handleDisplayStatus(`Sleeping
 Version: ${this.version}`);
+        __privateMethod(this, _TemplateManager_instances, debugRenderPerf_fn).call(this, "tile-skip", {
+          tileCoords,
+          reason: templatesForTile.length ? "all-colors-hidden" : "no-template-chunks",
+          chunksOnTile: templatesForTile.length,
+          filterCount: this.shouldFilterColor.size,
+          renderStateVersion: this.renderStateVersion,
+          totalMs: Number((performance.now() - renderStart).toFixed(2)),
+          timings
+        });
         return tileBlob;
       }
+      const bitmapStart = performance.now();
       const tileBitmap = await createImageBitmap(tileBlob);
+      timings.tileBitmapMs = Number((performance.now() - bitmapStart).toFixed(2));
+      const canvasStart = performance.now();
       const canvas = new OffscreenCanvas(drawSize, drawSize);
       const context = canvas.getContext("2d");
       context.imageSmoothingEnabled = false;
@@ -4881,21 +4931,32 @@ Version: ${this.version}`);
       context.drawImage(tileBitmap, 0, 0, drawSize, drawSize);
       const tileBeforeTemplates = context.getImageData(0, 0, drawSize, drawSize);
       const tileBeforeTemplates32 = new Uint32Array(tileBeforeTemplates.data.buffer);
+      timings.canvasSetupMs = Number((performance.now() - canvasStart).toFixed(2));
       const highlightPattern = this.settingsManager?.userSettings?.highlight || [[2, 0, 0]];
       const highlightPatternIndexZero = highlightPattern?.[0];
       const highlightDisabled = highlightPattern?.length == 1 && highlightPatternIndexZero?.[0] == 2 && highlightPatternIndexZero?.[1] == 0 && highlightPatternIndexZero?.[2] == 0;
+      let mutationCount = 0;
+      let directDrawCount = 0;
+      let scanMs = 0;
+      let mutationDrawMs = 0;
       for (const template of templatesToDraw) {
-        const templateHasErased = !!template.instance.pixelCount?.colors?.get(-1);
-        let templateBeforeFilter32 = template.chunked32?.slice();
+        const templateNeedsMutation = __privateMethod(this, _TemplateManager_instances, templateChunkNeedsMutation_fn).call(this, template, highlightDisabled);
+        if (templateNeedsMutation) {
+          mutationCount++;
+        } else {
+          directDrawCount++;
+        }
+        let templateBeforeFilter32 = templateNeedsMutation ? template.chunked32?.slice() : template.chunked32;
         const coordXtoDrawAt = Number(template.pixelCoords[0]) * this.drawMult;
         const coordYtoDrawAt = Number(template.pixelCoords[1]) * this.drawMult;
-        if (this.shouldFilterColor.size == 0 && !templateHasErased) {
+        if (!templateNeedsMutation) {
           context.drawImage(template.bitmap, coordXtoDrawAt, coordYtoDrawAt);
         }
         if (!templateBeforeFilter32) {
           const templateBeforeFilter = context.getImageData(coordXtoDrawAt, coordYtoDrawAt, template.bitmap.width, template.bitmap.height);
           templateBeforeFilter32 = new Uint32Array(templateBeforeFilter.data.buffer);
         }
+        const scanStart = performance.now();
         const {
           correctPixels: pixelsCorrect,
           filteredTemplate: templateAfterFilter,
@@ -4907,8 +4968,11 @@ Version: ${this.version}`);
           highlightPattern,
           highlightDisabled
         });
-        if (this.shouldFilterColor.size != 0 || templateHasErased || !highlightDisabled) {
+        scanMs += performance.now() - scanStart;
+        if (templateNeedsMutation) {
+          const mutationDrawStart = performance.now();
           context.drawImage(await createImageBitmap(new ImageData(new Uint8ClampedArray(templateAfterFilter.buffer), template.bitmap.width, template.bitmap.height)), coordXtoDrawAt, coordYtoDrawAt);
+          mutationDrawMs += performance.now() - mutationDrawStart;
         }
         if (typeof template.instance.pixelCount["correct"] == "undefined") {
           template.instance.pixelCount["correct"] = {};
@@ -4928,7 +4992,24 @@ Version: ${this.version}`);
           samples: pixel.samples
         }));
       }
-      return await canvas.convertToBlob({ type: "image/png" });
+      timings.scanMs = Number(scanMs.toFixed(2));
+      timings.mutationDrawMs = Number(mutationDrawMs.toFixed(2));
+      const blobStart = performance.now();
+      const outputBlob = await canvas.convertToBlob({ type: "image/png" });
+      timings.blobMs = Number((performance.now() - blobStart).toFixed(2));
+      __privateMethod(this, _TemplateManager_instances, debugRenderPerf_fn).call(this, "tile-render", {
+        tileCoords,
+        chunksOnTile: templatesForTile.length,
+        chunksDrawn: templateCount,
+        chunksHidden: templatesForTile.length - templateCount,
+        directDrawCount,
+        mutationCount,
+        filterCount: this.shouldFilterColor.size,
+        renderStateVersion: this.renderStateVersion,
+        totalMs: Number((performance.now() - renderStart).toFixed(2)),
+        timings
+      });
+      return outputBlob;
     }
     /** Returns a random pending pixel from currently loaded template tiles.
      * @param {number | undefined} colorID - If set, only pending pixels for this color are considered.
@@ -5030,6 +5111,7 @@ Version: ${this.version}`);
     });
     template.calculateCoordsFromChunked();
     this.templatesArray.push(template);
+    __privateMethod(this, _TemplateManager_instances, invalidateTemplateRenderCaches_fn).call(this);
   };
   storeTemplates_fn = async function() {
     await GM.setValue("bmTemplates", JSON.stringify(this.templatesJSON));
@@ -5087,6 +5169,164 @@ Version: ${this.version}`);
       consoleWarn("Could not ask Wplace to refresh visible tiles after loading templates.");
     }
   };
+  /** Invalidates cached render lookups after template data changes.
+   * @since 0.92.27
+   */
+  invalidateTemplateRenderCaches_fn = function() {
+    this.sortedTemplatesArray = null;
+    this.templateTileIndex = null;
+    this.renderStateVersion++;
+  };
+  /** Emits temporary render timing logs.
+   * @param {string} eventName - Short event name
+   * @param {Object} details - Event details
+   * @since 0.92.27
+   */
+  debugRenderPerf_fn = function(eventName, details = {}) {
+    if (!this.renderPerfDebug) {
+      return;
+    }
+    console.log(`[BM PERF] ${eventName}`, details);
+  };
+  /** Returns templates in draw order without re-sorting on every tile.
+   * @returns {Template[]} Sorted templates
+   * @since 0.92.27
+   */
+  getSortedTemplates_fn = function() {
+    if (!this.sortedTemplatesArray || this.sortedTemplatesArray.length != this.templatesArray.length) {
+      this.sortedTemplatesArray = [...this.templatesArray].sort((a, b) => a.sortID - b.sortID);
+    }
+    return this.sortedTemplatesArray;
+  };
+  /** Extracts the visible palette IDs used by one rendered template chunk.
+   * @param {Uint32Array | undefined} template32 - Template pixels
+   * @param {number} width - Chunk width
+   * @param {number} height - Chunk height
+   * @returns {Set<number> | null} Color IDs, or null when unavailable
+   * @since 0.92.27
+   */
+  getTemplateChunkColorIDs_fn = function(template32, width, height) {
+    if (!template32 || !width || !height) {
+      return null;
+    }
+    const colorIDs = /* @__PURE__ */ new Set();
+    const { LUT: lookupTable } = this.paletteBM;
+    const pixelSize = this.drawMult;
+    const tolerance = this.paletteTolerance;
+    for (let templateRow = 1; templateRow < height; templateRow += pixelSize) {
+      const rowOffset = templateRow * width;
+      for (let templateColumn = 1; templateColumn < width; templateColumn += pixelSize) {
+        const templatePixel = template32[rowOffset + templateColumn];
+        const templatePixelAlpha = templatePixel >>> 24 & 255;
+        if (templatePixelAlpha <= tolerance) {
+          continue;
+        }
+        const colorID = lookupTable.get(templatePixel) ?? -2;
+        if (colorID == 0) {
+          continue;
+        }
+        colorIDs.add(colorID);
+      }
+    }
+    return colorIDs;
+  };
+  /** Builds an index from Wplace tile coords to the template chunks on that tile.
+   * @returns {Map<string, Object[]>} Template chunk index
+   * @since 0.92.27
+   */
+  getTemplateTileIndex_fn = function() {
+    if (this.templateTileIndex) {
+      return this.templateTileIndex;
+    }
+    const index = /* @__PURE__ */ new Map();
+    let chunkCount = 0;
+    for (const template of __privateMethod(this, _TemplateManager_instances, getSortedTemplates_fn).call(this)) {
+      for (const tileKey of Object.keys(template.chunked || {})) {
+        const coords2 = tileKey.split(",");
+        const tileCoords = `${coords2[0]},${coords2[1]}`;
+        const bitmap = template.chunked[tileKey];
+        const chunked32 = template.chunked32?.[tileKey];
+        const entry = {
+          instance: template,
+          key: tileKey,
+          bitmap,
+          chunked32,
+          tileCoords: [coords2[0], coords2[1]],
+          pixelCoords: [coords2[2], coords2[3]],
+          colorIDs: null,
+          colorIDsScanned: false,
+          hasErased: !!template.pixelCount?.colors?.get(-1)
+        };
+        if (!index.has(tileCoords)) {
+          index.set(tileCoords, []);
+        }
+        index.get(tileCoords).push(entry);
+        chunkCount++;
+      }
+    }
+    this.templateTileIndex = index;
+    __privateMethod(this, _TemplateManager_instances, debugRenderPerf_fn).call(this, "index-built", {
+      templates: this.templatesArray.length,
+      indexedTiles: index.size,
+      chunks: chunkCount
+    });
+    return this.templateTileIndex;
+  };
+  /** Ensures the chunk's palette ID cache has been built.
+   * @param {Object} templateChunk - Indexed template chunk
+   * @returns {Set<number> | null} Color IDs, or null when unavailable
+   * @since 0.92.27
+   */
+  ensureTemplateChunkColorIDs_fn = function(templateChunk) {
+    if (templateChunk.colorIDsScanned) {
+      return templateChunk.colorIDs;
+    }
+    templateChunk.colorIDs = __privateMethod(this, _TemplateManager_instances, getTemplateChunkColorIDs_fn).call(this, templateChunk.chunked32, templateChunk.bitmap?.width, templateChunk.bitmap?.height);
+    templateChunk.colorIDsScanned = true;
+    templateChunk.hasErased = templateChunk.colorIDs ? templateChunk.colorIDs.has(-1) : !!templateChunk.instance.pixelCount?.colors?.get(-1);
+    return templateChunk.colorIDs;
+  };
+  /** Checks whether a chunk has any colors that are currently visible.
+   * @param {Object} templateChunk - Indexed template chunk
+   * @returns {boolean} Whether any color should be visible
+   * @since 0.92.27
+   */
+  templateChunkHasVisibleColor_fn = function(templateChunk) {
+    const colorIDs = __privateMethod(this, _TemplateManager_instances, ensureTemplateChunkColorIDs_fn).call(this, templateChunk);
+    if (!colorIDs) {
+      return true;
+    }
+    for (const colorID of colorIDs) {
+      if (!this.shouldFilterColor.get(colorID)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  /** Checks whether a chunk needs a cloned/mutated ImageData pass before drawing.
+   * @param {Object} templateChunk - Indexed template chunk
+   * @param {boolean} highlightDisabled - Whether highlight rendering is disabled
+   * @returns {boolean} Whether a mutation pass is required
+   * @since 0.92.27
+   */
+  templateChunkNeedsMutation_fn = function(templateChunk, highlightDisabled) {
+    const colorIDs = __privateMethod(this, _TemplateManager_instances, ensureTemplateChunkColorIDs_fn).call(this, templateChunk);
+    if (!highlightDisabled) {
+      return true;
+    }
+    if (templateChunk.hasErased && !this.shouldFilterColor.get(-1)) {
+      return true;
+    }
+    if (!colorIDs) {
+      return this.shouldFilterColor.size != 0 || templateChunk.hasErased;
+    }
+    for (const colorID of colorIDs) {
+      if (this.shouldFilterColor.get(colorID)) {
+        return true;
+      }
+    }
+    return false;
+  };
   /** Checks whether a saved template payload belongs to Blue Marble.
    * Forked builds used names such as "BlueMarble X", so normalize the marker
    * instead of requiring one exact string.
@@ -5128,6 +5368,7 @@ Version: ${this.version}`);
         templatesArray: this.templatesArray,
         loadedTemplateKeys: this.loadedTemplateKeys
       });
+      __privateMethod(this, _TemplateManager_instances, invalidateTemplateRenderCaches_fn).call(this);
       if (normalizedActiveTemplate) {
         await __privateMethod(this, _TemplateManager_instances, storeTemplates_fn).call(this);
       }
@@ -5271,6 +5512,9 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         const tilePixelAbove = tile32[tileRow * tileWidth + tileColumn];
         const templatePixel = template32[templateRow * templateWidth + templateColumn];
         const templatePixelAlpha = templatePixel >>> 24 & 255;
+        if (templatePixelAlpha <= tolerance) {
+          continue;
+        }
         const tilePixelAlpha = tilePixelAbove >>> 24 & 255;
         const bestTemplateColorID = lookupTable.get(templatePixel) ?? -2;
         const bestTileColorID = lookupTable.get(tilePixelAbove) ?? -2;
