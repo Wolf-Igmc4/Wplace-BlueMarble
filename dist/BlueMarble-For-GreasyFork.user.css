@@ -483,9 +483,6 @@ input[type=file] {
   margin-top: 0.1rem;
   margin-bottom: 0.1rem;
 }
-#bm-window-filter .bm-filter-sort-label {
-  font-weight: 700;
-}
 #bm-window-filter .bm-filter-show-row {
   display: flex;
   align-items: center;

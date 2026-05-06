@@ -2691,7 +2691,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       this.windowMinHeight = 220;
       this.windowMaxWidth = 1e3;
       this.windowMaxHeight = 1400;
-      this.filterViewSettingsVersion = 1;
+      this.filterViewSettingsVersion = 2;
       this.templateManager = executor.apiManager?.templateManager;
       this.eyeOpen = '<svg class="bm-filter-eye-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.8 12s3.1-5 8.2-5 8.2 5 8.2 5-3.1 5-8.2 5-8.2-5-8.2-5Z"/><circle cx="12" cy="12" r="2.5"/></svg>';
       this.eyeClosed = '<svg class="bm-filter-eye-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.6 9.8C6.1 8.3 8.6 7 12 7c5.1 0 8.2 5 8.2 5a15.2 15.2 0 0 1-2.2 2.7"/><path d="M14.1 16.7a8.3 8.3 0 0 1-2.1.3c-5.1 0-8.2-5-8.2-5a14.9 14.9 0 0 1 1.8-2.3"/><path d="M5 5l14 14"/><path d="M10.4 10.7a2.5 2.5 0 0 0 2.9 2.9"/></svg>';
@@ -2706,8 +2706,9 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       this.allPixelsTotal = 0;
       this.timeRemaining = 0;
       this.timeRemainingLocalized = "";
-      this.sortPrimary = "bought";
+      this.sortPrimary = "total";
       this.sortSecondary = "descending";
+      this.sortBought = true;
       this.showUnused = false;
       this.showCompleted = true;
       this.showFree = true;
@@ -2758,7 +2759,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         button.onclick = () => __privateMethod(this, _WindowFilter_instances, selectColorList_fn).call(this, false);
       }).buildElement().addButton({ "class": "bm-button-secondary", "textContent": "Show All Colors" }, (instance, button) => {
         button.onclick = () => __privateMethod(this, _WindowFilter_instances, selectColorList_fn).call(this, true);
-      }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container bm-scrollable bm-filter-scrollable" }).addDiv({ "class": "bm-container bm-filter-insights" }).addDiv({ "class": "bm-filter-stat-grid" }).addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Chunks" }).buildElement().addSpan({ "id": "bm-filter-tile-load", "class": "bm-filter-stat-value", "textContent": "0 / ???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Total" }).buildElement().addSpan({ "id": "bm-filter-tot-total", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Correct" }).buildElement().addSpan({ "id": "bm-filter-tot-correct", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Remaining" }).buildElement().addSpan({ "id": "bm-filter-tot-remaining", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card bm-filter-stat-card-wide" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Finished At" }).buildElement().addSpan({ "id": "bm-filter-tot-completed", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().buildElement().addHr().buildElement().addForm({ "class": "bm-container bm-filter-sort-panel" }).addFieldset().addLegend({ "textContent": "Sort Options:", "style": "font-weight: 700;" }).buildElement().addDiv({ "class": "bm-container bm-filter-sort-row" }).addSpan({ "class": "bm-filter-sort-label", "textContent": "Sort:" }).buildElement().addSelect({ "id": "bm-filter-sort-primary", "name": "sortPrimary" }).addOption({ "value": "id", "textContent": "color IDs" }).buildElement().addOption({ "value": "name", "textContent": "color names" }).buildElement().addOption({ "value": "bought", "textContent": "bought colors" }).buildElement().addOption({ "value": "premium", "textContent": "premium colors" }).buildElement().addOption({ "value": "percent", "textContent": "percentage" }).buildElement().addOption({ "value": "correct", "textContent": "correct pixels" }).buildElement().addOption({ "value": "incorrect", "textContent": "incorrect pixels" }).buildElement().addOption({ "value": "total", "textContent": "total pixels" }).buildElement().buildElement().addSpan({ "class": "bm-filter-sort-label", "textContent": "Order:" }).buildElement().addSelect({ "id": "bm-filter-sort-secondary", "name": "sortSecondary" }).addOption({ "value": "ascending", "textContent": "ascending" }).buildElement().addOption({ "value": "descending", "textContent": "descending" }).buildElement().buildElement().buildElement().addDiv({ "class": "bm-container bm-filter-show-row" }).addSpan({ "class": "bm-filter-show-label", "textContent": "I want to see:" }).buildElement().addCheckbox({ "id": "bm-filter-show-unused", "name": "showUnused", "textContent": "Unused" }).buildElement().addCheckbox({ "id": "bm-filter-show-completed", "name": "showCompleted", "textContent": "Completed" }).buildElement().addCheckbox({ "id": "bm-filter-show-free", "name": "showFree", "textContent": "Free" }).buildElement().addCheckbox({ "id": "bm-filter-show-premium", "name": "showPremium", "textContent": "Premium" }).buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().addDiv({
+      }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container bm-scrollable bm-filter-scrollable" }).addDiv({ "class": "bm-container bm-filter-insights" }).addDiv({ "class": "bm-filter-stat-grid" }).addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Chunks" }).buildElement().addSpan({ "id": "bm-filter-tile-load", "class": "bm-filter-stat-value", "textContent": "0 / ???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Total" }).buildElement().addSpan({ "id": "bm-filter-tot-total", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Correct" }).buildElement().addSpan({ "id": "bm-filter-tot-correct", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Remaining" }).buildElement().addSpan({ "id": "bm-filter-tot-remaining", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card bm-filter-stat-card-wide" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Finished At" }).buildElement().addSpan({ "id": "bm-filter-tot-completed", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().buildElement().addHr().buildElement().addForm({ "class": "bm-container bm-filter-sort-panel" }).addFieldset().addLegend({ "textContent": "Sort Options:", "style": "font-weight: 700;" }).buildElement().addDiv({ "class": "bm-container bm-filter-sort-row" }).addSelect({ "id": "bm-filter-sort-primary", "name": "sortPrimary", "textContent": "I want to view " }).addOption({ "value": "id", "textContent": "color IDs" }).buildElement().addOption({ "value": "name", "textContent": "color names" }).buildElement().addOption({ "value": "premium", "textContent": "premium colors" }).buildElement().addOption({ "value": "percent", "textContent": "percentage" }).buildElement().addOption({ "value": "correct", "textContent": "correct pixels" }).buildElement().addOption({ "value": "incorrect", "textContent": "incorrect pixels" }).buildElement().addOption({ "value": "total", "textContent": "total pixels" }).buildElement().buildElement().addCheckbox({ "id": "bm-filter-sort-bought", "name": "sortBought", "textContent": "Bought colors" }).buildElement().addSelect({ "id": "bm-filter-sort-secondary", "name": "sortSecondary", "textContent": " in " }).addOption({ "value": "ascending", "textContent": "ascending" }).buildElement().addOption({ "value": "descending", "textContent": "descending" }).buildElement().buildElement().addSpan({ "textContent": " order." }).buildElement().buildElement().addDiv({ "class": "bm-container bm-filter-show-row" }).addSpan({ "class": "bm-filter-show-label", "textContent": "Show:" }).buildElement().addCheckbox({ "id": "bm-filter-show-unused", "name": "showUnused", "textContent": "Unused" }).buildElement().addCheckbox({ "id": "bm-filter-show-completed", "name": "showCompleted", "textContent": "Completed" }).buildElement().addCheckbox({ "id": "bm-filter-show-free", "name": "showFree", "textContent": "Free" }).buildElement().addCheckbox({ "id": "bm-filter-show-premium", "name": "showPremium", "textContent": "Premium" }).buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().addDiv({
         "class": "bm-resize-corner",
         "title": "Resize Color Filter window",
         "aria-label": "Resize Color Filter window",
@@ -2776,7 +2777,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       __privateMethod(this, _WindowFilter_instances, buildColorList_fn).call(this, scrollableContainer);
       __privateMethod(this, _WindowFilter_instances, syncSortFormControls_fn).call(this);
       __privateMethod(this, _WindowFilter_instances, bindSortFormControls_fn).call(this);
-      __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium);
+      __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium, this.sortBought);
       this.updateInnerHTML("#bm-filter-tile-load", `${localizeNumber(this.tilesLoadedTotal)} / ${localizeNumber(this.tilesTotal)}`);
       this.updateInnerHTML("#bm-filter-tot-total", localizeNumber(this.allPixelsTotal));
       this.updateInnerHTML("#bm-filter-tot-correct", `${localizeNumber(this.allPixelsCorrectTotal)} (${localizePercent(this.allPixelsCorrectTotal / (this.allPixelsTotal || 1))})`);
@@ -2838,7 +2839,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       const scrollableContainer = document.querySelector(`#${this.windowID} .bm-container.bm-scrollable`);
       __privateMethod(this, _WindowFilter_instances, buildColorList_fn).call(this, scrollableContainer);
       __privateMethod(this, _WindowFilter_instances, syncSortFormControls_fn).call(this);
-      __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium);
+      __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium, this.sortBought);
       __privateMethod(this, _WindowFilter_instances, startAutoRefresh_fn).call(this);
     }
     /** The information about a specific color on the palette.
@@ -2936,7 +2937,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
           locateButton.disabled = !Number(colorTotal);
         }
       }
-      __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium);
+      __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium, this.sortBought);
     }
   };
   _WindowFilter_instances = new WeakSet();
@@ -2960,12 +2961,14 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     if (!filterView || typeof filterView != "object") {
       return;
     }
-    const allowedPrimarySorts = /* @__PURE__ */ new Set(["id", "name", "bought", "premium", "percent", "correct", "incorrect", "total"]);
+    const allowedPrimarySorts = /* @__PURE__ */ new Set(["id", "name", "premium", "percent", "correct", "incorrect", "total"]);
     const allowedSecondarySorts = /* @__PURE__ */ new Set(["ascending", "descending"]);
-    const shouldMigrateDefaultSort = filterView.defaultSortVersion !== this.filterViewSettingsVersion && filterView.sortPrimary == "total" && filterView.sortSecondary == "descending";
-    if (shouldMigrateDefaultSort) {
-      filterView.sortPrimary = "bought";
+    const shouldMigrateBoughtSort = filterView.sortPrimary == "bought";
+    const shouldMigrateDefaultSort = filterView.defaultSortVersion !== this.filterViewSettingsVersion && (filterView.sortPrimary == "total" || shouldMigrateBoughtSort) && filterView.sortSecondary == "descending";
+    if (shouldMigrateBoughtSort || shouldMigrateDefaultSort) {
+      filterView.sortPrimary = "total";
       filterView.sortSecondary = "descending";
+      filterView.sortBought = true;
       filterView.defaultSortVersion = this.filterViewSettingsVersion;
     }
     if (allowedPrimarySorts.has(filterView.sortPrimary)) {
@@ -2973,6 +2976,11 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     if (allowedSecondarySorts.has(filterView.sortSecondary)) {
       this.sortSecondary = filterView.sortSecondary;
+    }
+    if (typeof filterView.sortBought == "boolean") {
+      this.sortBought = filterView.sortBought;
+    } else if (shouldMigrateBoughtSort) {
+      this.sortBought = true;
     }
     if (typeof filterView.showUnused == "boolean") {
       this.showUnused = filterView.showUnused;
@@ -2998,6 +3006,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     this.settingsManager.userSettings.filterView = {
       sortPrimary: this.sortPrimary,
       sortSecondary: this.sortSecondary,
+      sortBought: this.sortBought,
       showUnused: this.showUnused,
       showCompleted: this.showCompleted,
       showFree: this.showFree,
@@ -3044,6 +3053,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
   syncSortFormControls_fn = function() {
     const sortPrimaryInput = document.querySelector(`#${this.windowID} #bm-filter-sort-primary`);
     const sortSecondaryInput = document.querySelector(`#${this.windowID} #bm-filter-sort-secondary`);
+    const sortBoughtInput = document.querySelector(`#${this.windowID} #bm-filter-sort-bought`);
     const showUnusedInput = document.querySelector(`#${this.windowID} #bm-filter-show-unused`);
     const showCompletedInput = document.querySelector(`#${this.windowID} #bm-filter-show-completed`);
     const showFreeInput = document.querySelector(`#${this.windowID} #bm-filter-show-free`);
@@ -3053,6 +3063,9 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     if (sortSecondaryInput instanceof HTMLSelectElement) {
       sortSecondaryInput.value = this.sortSecondary;
+    }
+    if (sortBoughtInput instanceof HTMLInputElement) {
+      sortBoughtInput.checked = this.sortBought;
     }
     if (showUnusedInput instanceof HTMLInputElement) {
       showUnusedInput.checked = this.showUnused;
@@ -3080,7 +3093,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     for (const [input, value] of formData) {
       formValues[input] = value;
     }
-    __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, String(formValues["sortPrimary"] || this.sortPrimary), String(formValues["sortSecondary"] || this.sortSecondary), formValues["showUnused"] == "on", formValues["showCompleted"] == "on", formValues["showFree"] == "on", formValues["showPremium"] == "on");
+    __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, String(formValues["sortPrimary"] || this.sortPrimary), String(formValues["sortSecondary"] || this.sortSecondary), formValues["showUnused"] == "on", formValues["showCompleted"] == "on", formValues["showFree"] == "on", formValues["showPremium"] == "on", formValues["sortBought"] == "on");
     __privateMethod(this, _WindowFilter_instances, persistFilterViewSettings_fn).call(this, true);
   };
   /** Makes the sort form reactive, so the list updates as soon as a control changes.
@@ -3320,6 +3333,15 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       ].join(" ");
     }).join(" ");
     const isDisabled = colorElement.matches(":disabled, [disabled]") || control?.matches?.(":disabled, [disabled]") || colorElement.getAttribute("aria-disabled") == "true" || control?.getAttribute?.("aria-disabled") == "true" || colorElement.dataset["disabled"] == "true" || colorElement.dataset["locked"] == "true" || /\b(disabled|locked|unavailable|not[-\s]?owned|not[-\s]?available|not-allowed|btn-disabled)\b/i.test(stateText) || /\b(buy|purchase|unlock)\b/i.test(stateText) || stateText.includes("\u{1F512}");
+    if (window?.blueMarbleDebugBoughtColors) {
+      console.log("[Blue Marble] bought color state", {
+        id: color.id,
+        name: color.name,
+        bought: !isDisabled,
+        stateText: stateText.trim().replace(/\s+/g, " "),
+        outerHTML: colorElement.outerHTML.slice(0, 1e3)
+      });
+    }
     return !isDisabled;
   };
   /** Creates the color list container.
@@ -3438,19 +3460,26 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
    * @param {boolean} showCompleted - Should completed colors be displayed in the list to the user?
    * @param {boolean} showFree - Should free colors be displayed in the list to the user?
    * @param {boolean} showPremium - Should premium colors be displayed in the list to the user?
+   * @param {boolean} sortBought - Should bought colors be grouped before other colors?
    * @since 0.88.222
    */
-  sortColorList_fn = function(sortPrimary, sortSecondary, showUnused, showCompleted = this.showCompleted, showFree = this.showFree, showPremium = this.showPremium) {
-    const allowedPrimarySorts = /* @__PURE__ */ new Set(["id", "name", "bought", "premium", "percent", "correct", "incorrect", "total"]);
+  sortColorList_fn = function(sortPrimary, sortSecondary, showUnused, showCompleted = this.showCompleted, showFree = this.showFree, showPremium = this.showPremium, sortBought = this.sortBought) {
+    const allowedPrimarySorts = /* @__PURE__ */ new Set(["id", "name", "premium", "percent", "correct", "incorrect", "total"]);
     const allowedSecondarySorts = /* @__PURE__ */ new Set(["ascending", "descending"]);
+    if (sortPrimary == "bought") {
+      sortPrimary = "total";
+      sortBought = true;
+    }
     if (!allowedPrimarySorts.has(sortPrimary)) {
       sortPrimary = this.sortPrimary;
     }
     if (!allowedSecondarySorts.has(sortSecondary)) {
       sortSecondary = this.sortSecondary;
     }
+    sortBought = !!sortBought;
     this.sortPrimary = sortPrimary;
     this.sortSecondary = sortSecondary;
+    this.sortBought = sortBought;
     this.showUnused = showUnused;
     this.showCompleted = showCompleted;
     this.showFree = showFree;
@@ -3471,21 +3500,12 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       color.classList.toggle("bm-color-hide", shouldHideColor);
     }
     colors.sort((index, nextIndex) => {
-      const dataKey = sortPrimary == "bought" ? "premium" : sortPrimary;
-      if (sortPrimary == "bought") {
-        const boughtCompare = __privateMethod(this, _WindowFilter_instances, compareColorDataset_fn).call(this, index, nextIndex, "bought", sortSecondary);
+      const dataKey = sortPrimary;
+      if (sortBought) {
+        const boughtCompare = __privateMethod(this, _WindowFilter_instances, compareColorDataset_fn).call(this, index, nextIndex, "bought", "descending");
         if (boughtCompare) {
           return boughtCompare;
         }
-        const premiumCompare = __privateMethod(this, _WindowFilter_instances, compareColorDataset_fn).call(this, index, nextIndex, "premium", "descending");
-        if (premiumCompare) {
-          return premiumCompare;
-        }
-        const totalCompare = __privateMethod(this, _WindowFilter_instances, compareColorDataset_fn).call(this, index, nextIndex, "total", "descending");
-        if (totalCompare) {
-          return totalCompare;
-        }
-        return __privateMethod(this, _WindowFilter_instances, compareColorDataset_fn).call(this, index, nextIndex, "name", "ascending");
       }
       const indexValue = index.getAttribute("data-" + dataKey);
       const nextIndexValue = nextIndex.getAttribute("data-" + dataKey);
