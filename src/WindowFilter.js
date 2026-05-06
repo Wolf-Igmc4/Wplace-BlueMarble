@@ -227,6 +227,8 @@ export default class WindowFilter extends Overlay {
       }).buildElement()
     .buildElement().buildOverlay(this.windowParent);
 
+    void this.#refreshBoughtColorData();
+
     // Creates dragging capability on the drag bar for dragging the window
     this.handleDrag(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-dragbar`);
     this.handleResize(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-resize-corner`, {
@@ -331,6 +333,7 @@ export default class WindowFilter extends Overlay {
     .buildElement().buildOverlay(this.windowParent);
 
     this.#initializeWindowedPersistence();
+    void this.#refreshBoughtColorData();
 
     // Obtains the scrollable container to put the color filter in
     const scrollableContainer = document.querySelector(`#${this.windowID} .bm-container.bm-scrollable`);
@@ -340,6 +343,17 @@ export default class WindowFilter extends Overlay {
     this.#syncSortFormControls();
     this.#sortColorList(this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium, this.sortBought);
     this.#startAutoRefresh();
+  }
+
+  /** Ensures bought premium color data is available and refreshes the open filter list.
+   * @since 0.92.19
+   */
+  async #refreshBoughtColorData() {
+    const before = this.#getBoughtColorIDsFromUserData();
+    await this.apiManager?.ensureUserData?.();
+    const after = this.#getBoughtColorIDsFromUserData();
+    if (!after || before?.size == after.size) {return;}
+    this.#sortColorList(this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium, this.sortBought);
   }
 
   /** Retrieves the persisted window state object.
@@ -609,6 +623,8 @@ export default class WindowFilter extends Overlay {
     const windowState = this.#getWindowState();
     if (!windowState || !windowElement) {return;}
 
+    this.#applyDefaultWindowPosition(windowElement, windowState);
+
     const width = Number(windowState.width);
     const height = Number(windowState.height);
     const hasWidth = Number.isFinite(width);
@@ -721,6 +737,44 @@ export default class WindowFilter extends Overlay {
 
     this.windowViewportResizeHandler = () => this.#scheduleWindowStateSave(windowElement, 0);
     window.addEventListener('resize', this.windowViewportResizeHandler);
+  }
+
+  /** Applies the first-spawn windowed filter position beside the main Blue Marble window.
+   * @param {HTMLElement} windowElement
+   * @param {Object} windowState
+   * @since 0.92.19
+   */
+  #applyDefaultWindowPosition(windowElement, windowState) {
+    const hasSavedPosition = Number.isFinite(Number(windowState.x)) && Number.isFinite(Number(windowState.y));
+    const hasLegacyDefaultPosition = hasSavedPosition && Number(windowState.x) <= 8 && Number(windowState.y) <= 8;
+    if (hasSavedPosition && !hasLegacyDefaultPosition) {return;}
+
+    const mainWindow = document.querySelector('#bm-window-main.bm-window');
+    if (!mainWindow) {
+      windowState.x = 8;
+      windowState.y = 10;
+      windowState.windowedPositionVersion = 1;
+      return;
+    }
+
+    const mainRect = mainWindow.getBoundingClientRect();
+    const gap = 10;
+    const preferredX = mainRect.left - windowElement.offsetWidth - gap;
+    const preferredY = mainRect.top;
+    const fallbackX = mainRect.left + mainRect.width + gap;
+    const clampedPreferred = this.#clampWindowPosition(windowElement, preferredX, preferredY);
+
+    if (Math.abs(clampedPreferred.x - preferredX) <= 2) {
+      windowState.x = clampedPreferred.x;
+      windowState.y = clampedPreferred.y;
+      windowState.windowedPositionVersion = 1;
+      return;
+    }
+
+    const clampedFallback = this.#clampWindowPosition(windowElement, fallbackX, preferredY);
+    windowState.x = clampedFallback.x;
+    windowState.y = clampedFallback.y;
+    windowState.windowedPositionVersion = 1;
   }
 
   /** Checks whether a premium color appears usable in Wplace's own palette.

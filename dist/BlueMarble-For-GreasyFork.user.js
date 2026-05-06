@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.18
+// @version         0.92.19
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -22,7 +22,7 @@
 // @grant           GM.download
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.18
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.19
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -2665,7 +2665,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     return `${day}/${month}/${year} ${hour}:${minute}${period}`;
   }
-  var _WindowFilter_instances, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, isColorBought_fn, getBoughtColorIDsFromUserData_fn, collectBoughtColorIDs_fn, findBoughtColorPayloadCandidates_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
+  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, isColorBought_fn, getBoughtColorIDsFromUserData_fn, collectBoughtColorIDs_fn, findBoughtColorPayloadCandidates_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
   var WindowFilter = class extends Overlay {
     /** Constructor for the color filter window
      * @param {*} executor - The executing class
@@ -2768,6 +2768,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         "role": "presentation",
         "textContent": "\u25E2"
       }).buildElement().buildElement().buildOverlay(this.windowParent);
+      void __privateMethod(this, _WindowFilter_instances, refreshBoughtColorData_fn).call(this);
       this.handleDrag(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-dragbar`);
       this.handleResize(`#${this.windowID}.bm-window`, `#${this.windowID} .bm-resize-corner`, {
         minWidth: Math.min(this.windowMinWidth, window.innerWidth - 16),
@@ -2838,6 +2839,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         "textContent": "\u25E2"
       }).buildElement().buildElement().buildOverlay(this.windowParent);
       __privateMethod(this, _WindowFilter_instances, initializeWindowedPersistence_fn).call(this);
+      void __privateMethod(this, _WindowFilter_instances, refreshBoughtColorData_fn).call(this);
       const scrollableContainer = document.querySelector(`#${this.windowID} .bm-container.bm-scrollable`);
       __privateMethod(this, _WindowFilter_instances, buildColorList_fn).call(this, scrollableContainer);
       __privateMethod(this, _WindowFilter_instances, syncSortFormControls_fn).call(this);
@@ -2943,6 +2945,15 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
   };
   _WindowFilter_instances = new WeakSet();
+  refreshBoughtColorData_fn = async function() {
+    const before = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDsFromUserData_fn).call(this);
+    await this.apiManager?.ensureUserData?.();
+    const after = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDsFromUserData_fn).call(this);
+    if (!after || before?.size == after.size) {
+      return;
+    }
+    __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, this.sortPrimary, this.sortSecondary, this.showUnused, this.showCompleted, this.showFree, this.showPremium, this.sortBought);
+  };
   /** Retrieves the persisted window state object.
    * @returns {Object | null}
    * @since 0.92.0
@@ -3206,6 +3217,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     if (!windowState || !windowElement) {
       return;
     }
+    __privateMethod(this, _WindowFilter_instances, applyDefaultWindowPosition_fn).call(this, windowElement, windowState);
     const width = Number(windowState.width);
     const height = Number(windowState.height);
     const hasWidth = Number.isFinite(width);
@@ -3311,6 +3323,41 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     this.windowViewportResizeHandler = () => __privateMethod(this, _WindowFilter_instances, scheduleWindowStateSave_fn).call(this, windowElement, 0);
     window.addEventListener("resize", this.windowViewportResizeHandler);
+  };
+  /** Applies the first-spawn windowed filter position beside the main Blue Marble window.
+   * @param {HTMLElement} windowElement
+   * @param {Object} windowState
+   * @since 0.92.19
+   */
+  applyDefaultWindowPosition_fn = function(windowElement, windowState) {
+    const hasSavedPosition = Number.isFinite(Number(windowState.x)) && Number.isFinite(Number(windowState.y));
+    const hasLegacyDefaultPosition = hasSavedPosition && Number(windowState.x) <= 8 && Number(windowState.y) <= 8;
+    if (hasSavedPosition && !hasLegacyDefaultPosition) {
+      return;
+    }
+    const mainWindow = document.querySelector("#bm-window-main.bm-window");
+    if (!mainWindow) {
+      windowState.x = 8;
+      windowState.y = 10;
+      windowState.windowedPositionVersion = 1;
+      return;
+    }
+    const mainRect = mainWindow.getBoundingClientRect();
+    const gap = 10;
+    const preferredX = mainRect.left - windowElement.offsetWidth - gap;
+    const preferredY = mainRect.top;
+    const fallbackX = mainRect.left + mainRect.width + gap;
+    const clampedPreferred = __privateMethod(this, _WindowFilter_instances, clampWindowPosition_fn).call(this, windowElement, preferredX, preferredY);
+    if (Math.abs(clampedPreferred.x - preferredX) <= 2) {
+      windowState.x = clampedPreferred.x;
+      windowState.y = clampedPreferred.y;
+      windowState.windowedPositionVersion = 1;
+      return;
+    }
+    const clampedFallback = __privateMethod(this, _WindowFilter_instances, clampWindowPosition_fn).call(this, windowElement, fallbackX, preferredY);
+    windowState.x = clampedFallback.x;
+    windowState.y = clampedFallback.y;
+    windowState.windowedPositionVersion = 1;
   };
   /** Checks whether a premium color appears usable in Wplace's own palette.
    * @param {{id: number, premium: boolean}} color - Palette color metadata
@@ -5164,6 +5211,28 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.templateCoordsTilePixel = [];
       this.userData = null;
       this.jsonResponses = /* @__PURE__ */ new Map();
+    }
+    /** Fetches Wplace user data when the page has not already requested it.
+     * @returns {Promise<Object | null>}
+     * @since 0.92.19
+     */
+    async ensureUserData() {
+      if (this.userData) {
+        return this.userData;
+      }
+      try {
+        const response = await fetch("https://backend.wplace.live/me", { credentials: "include" });
+        const dataJSON = await response.json();
+        if (dataJSON?.status && dataJSON.status?.toString()[0] != "2") {
+          return null;
+        }
+        this.userData = dataJSON;
+        this.jsonResponses.set("me", dataJSON);
+        return this.userData;
+      } catch (error) {
+        console.warn(`Blue Marble: Could not fetch user data for bought colors: ${error?.message || error}`);
+        return null;
+      }
     }
     /** Determines if the spontaneously received response is something we want.
      * Otherwise, we can ignore it.

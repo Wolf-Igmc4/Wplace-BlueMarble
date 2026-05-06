@@ -23,6 +23,26 @@ export default class ApiManager {
     this.jsonResponses = new Map(); // Recent JSON responses indexed by endpoint name
   }
 
+  /** Fetches Wplace user data when the page has not already requested it.
+   * @returns {Promise<Object | null>}
+   * @since 0.92.19
+   */
+  async ensureUserData() {
+    if (this.userData) {return this.userData;}
+
+    try {
+      const response = await fetch('https://backend.wplace.live/me', {credentials: 'include'});
+      const dataJSON = await response.json();
+      if (dataJSON?.status && dataJSON.status?.toString()[0] != '2') {return null;}
+      this.userData = dataJSON;
+      this.jsonResponses.set('me', dataJSON);
+      return this.userData;
+    } catch (error) {
+      console.warn(`Blue Marble: Could not fetch user data for bought colors: ${error?.message || error}`);
+      return null;
+    }
+  }
+
   /** Determines if the spontaneously received response is something we want.
    * Otherwise, we can ignore it.
    * Note: Due to aggressive compression, make your calls like `data['jsonData']['name']` instead of `data.jsonData.name`
