@@ -1378,12 +1378,12 @@ export default class WindowFilter extends Overlay {
     }
 
     this.templateManager.setColorFilters(changedColorIDs, targetIsHidden);
-    console.log('[BM PERF] bulk-filter', {
+    console.log(`[BM PERF] bulk-filter ${JSON.stringify({
       hidden: targetIsHidden,
       colorsChanged: changedColorIDs.length,
       visibleCards: colors.length,
       paletteColors: this.palette.length
-    });
+    })}`);
   }
 
   /** Updates the color toggle labels on the icon and the clickable color block.

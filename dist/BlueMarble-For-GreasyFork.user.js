@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.27
+// @version         0.92.28
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.27
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.28
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -3893,12 +3893,12 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       __privateMethod(this, _WindowFilter_instances, syncColorToggleLabel_fn).call(this, button, paletteColor);
     }
     this.templateManager.setColorFilters(changedColorIDs, targetIsHidden);
-    console.log("[BM PERF] bulk-filter", {
+    console.log(`[BM PERF] bulk-filter ${JSON.stringify({
       hidden: targetIsHidden,
       colorsChanged: changedColorIDs.length,
       visibleCards: colors.length,
       paletteColors: this.palette.length
-    });
+    })}`);
   };
   /** Updates the color toggle labels on the icon and the clickable color block.
    * @param {HTMLButtonElement} button - The color visibility button
@@ -4525,7 +4525,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
   };
 
   // src/templateManager.js
-  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, loadTemplate_fn, storeTemplates_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, invalidateTemplateRenderCaches_fn, debugRenderPerf_fn, getSortedTemplates_fn, getTemplateChunkColorIDs_fn, getTemplateTileIndex_fn, ensureTemplateChunkColorIDs_fn, templateChunkHasVisibleColor_fn, templateChunkNeedsMutation_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
+  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, loadTemplate_fn, storeTemplates_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, invalidateTemplateRenderCaches_fn, debugRenderPerf_fn, clearTileRenderCache_fn, setTileRenderCache_fn, getTileRenderCache_fn, getColorFilterKey_fn, createTileRenderCacheKey_fn, getSortedTemplates_fn, getTemplateChunkColorIDs_fn, getTemplateTileIndex_fn, ensureTemplateChunkColorIDs_fn, templateChunkHasVisibleColor_fn, templateChunkNeedsMutation_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
   var TemplateManager = class {
     /** The constructor for the {@link TemplateManager} class.
      * @param {string} name - The name of the userscript
@@ -4558,6 +4558,8 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       this.templateTileIndex = null;
       this.renderStateVersion = 0;
       this.renderPerfDebug = true;
+      this.tileRenderCache = /* @__PURE__ */ new Map();
+      this.tileRenderCacheMaxEntries = 48;
     }
     /** Updates the stored instance of the main window.
      * @param {WindowMain} windowMain - The main window instance
@@ -4583,11 +4585,13 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       if (shouldBeFiltered) {
         this.shouldFilterColor.set(colorID, true);
         this.renderStateVersion++;
+        __privateMethod(this, _TemplateManager_instances, clearTileRenderCache_fn).call(this);
         __privateMethod(this, _TemplateManager_instances, persistColorFilterSettings_fn).call(this);
         return;
       }
       this.shouldFilterColor.delete(colorID);
       this.renderStateVersion++;
+      __privateMethod(this, _TemplateManager_instances, clearTileRenderCache_fn).call(this);
       __privateMethod(this, _TemplateManager_instances, persistColorFilterSettings_fn).call(this);
     }
     /** Sets several hidden color filters in one persistence pass.
@@ -4619,6 +4623,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
         return;
       }
       this.renderStateVersion++;
+      __privateMethod(this, _TemplateManager_instances, clearTileRenderCache_fn).call(this);
       __privateMethod(this, _TemplateManager_instances, persistColorFilterSettings_fn).call(this);
     }
     /** Checks whether any template is currently loaded.
@@ -4885,6 +4890,8 @@ Canvas Height: ${canvasHeight}`);
         }
       }
       const renderStart = performance.now();
+      const renderStateAtStart = this.renderStateVersion;
+      const filterKeyAtStart = __privateMethod(this, _TemplateManager_instances, getColorFilterKey_fn).call(this);
       const timings = {};
       const drawSize = this.tileSize * this.drawMult;
       tileCoords = tileCoords[0].toString().padStart(4, "0") + "," + tileCoords[1].toString().padStart(4, "0");
@@ -4917,6 +4924,24 @@ Version: ${this.version}`);
         });
         return tileBlob;
       }
+      const highlightPattern = this.settingsManager?.userSettings?.highlight || [[2, 0, 0]];
+      const highlightPatternIndexZero = highlightPattern?.[0];
+      const highlightDisabled = highlightPattern?.length == 1 && highlightPatternIndexZero?.[0] == 2 && highlightPatternIndexZero?.[1] == 0 && highlightPatternIndexZero?.[2] == 0;
+      const { cacheKey, hashMs } = await __privateMethod(this, _TemplateManager_instances, createTileRenderCacheKey_fn).call(this, tileBlob, tileCoords, highlightDisabled, highlightPattern, renderStateAtStart, filterKeyAtStart);
+      timings.tileHashMs = hashMs;
+      const cachedBlob = __privateMethod(this, _TemplateManager_instances, getTileRenderCache_fn).call(this, cacheKey);
+      if (cachedBlob) {
+        __privateMethod(this, _TemplateManager_instances, debugRenderPerf_fn).call(this, "tile-cache-hit", {
+          tileCoords,
+          chunksOnTile: templatesForTile.length,
+          chunksDrawn: templateCount,
+          filterCount: this.shouldFilterColor.size,
+          renderStateVersion: this.renderStateVersion,
+          totalMs: Number((performance.now() - renderStart).toFixed(2)),
+          timings
+        });
+        return cachedBlob;
+      }
       const bitmapStart = performance.now();
       const tileBitmap = await createImageBitmap(tileBlob);
       timings.tileBitmapMs = Number((performance.now() - bitmapStart).toFixed(2));
@@ -4932,9 +4957,6 @@ Version: ${this.version}`);
       const tileBeforeTemplates = context.getImageData(0, 0, drawSize, drawSize);
       const tileBeforeTemplates32 = new Uint32Array(tileBeforeTemplates.data.buffer);
       timings.canvasSetupMs = Number((performance.now() - canvasStart).toFixed(2));
-      const highlightPattern = this.settingsManager?.userSettings?.highlight || [[2, 0, 0]];
-      const highlightPatternIndexZero = highlightPattern?.[0];
-      const highlightDisabled = highlightPattern?.length == 1 && highlightPatternIndexZero?.[0] == 2 && highlightPatternIndexZero?.[1] == 0 && highlightPatternIndexZero?.[2] == 0;
       let mutationCount = 0;
       let directDrawCount = 0;
       let scanMs = 0;
@@ -4997,6 +5019,18 @@ Version: ${this.version}`);
       const blobStart = performance.now();
       const outputBlob = await canvas.convertToBlob({ type: "image/png" });
       timings.blobMs = Number((performance.now() - blobStart).toFixed(2));
+      if (this.renderStateVersion != renderStateAtStart) {
+        __privateMethod(this, _TemplateManager_instances, debugRenderPerf_fn).call(this, "tile-stale-discard", {
+          tileCoords,
+          startedRenderStateVersion: renderStateAtStart,
+          currentRenderStateVersion: this.renderStateVersion,
+          filterCount: this.shouldFilterColor.size,
+          totalMs: Number((performance.now() - renderStart).toFixed(2)),
+          timings
+        });
+        return tileBlob;
+      }
+      __privateMethod(this, _TemplateManager_instances, setTileRenderCache_fn).call(this, cacheKey, outputBlob);
       __privateMethod(this, _TemplateManager_instances, debugRenderPerf_fn).call(this, "tile-render", {
         tileCoords,
         chunksOnTile: templatesForTile.length,
@@ -5176,6 +5210,7 @@ Version: ${this.version}`);
     this.sortedTemplatesArray = null;
     this.templateTileIndex = null;
     this.renderStateVersion++;
+    __privateMethod(this, _TemplateManager_instances, clearTileRenderCache_fn).call(this);
   };
   /** Emits temporary render timing logs.
    * @param {string} eventName - Short event name
@@ -5186,7 +5221,69 @@ Version: ${this.version}`);
     if (!this.renderPerfDebug) {
       return;
     }
-    console.log(`[BM PERF] ${eventName}`, details);
+    console.log(`[BM PERF] ${eventName} ${JSON.stringify(details)}`);
+  };
+  /** Clears cached rendered tile blobs.
+   * @since 0.92.27
+   */
+  clearTileRenderCache_fn = function() {
+    this.tileRenderCache?.clear();
+  };
+  /** Records a rendered tile blob in the small LRU cache.
+   * @param {string} cacheKey - Render cache key
+   * @param {Blob} blob - Rendered tile blob
+   * @since 0.92.27
+   */
+  setTileRenderCache_fn = function(cacheKey, blob) {
+    if (!cacheKey || !blob) {
+      return;
+    }
+    this.tileRenderCache.set(cacheKey, blob);
+    while (this.tileRenderCache.size > this.tileRenderCacheMaxEntries) {
+      const oldestKey = this.tileRenderCache.keys().next().value;
+      this.tileRenderCache.delete(oldestKey);
+    }
+  };
+  /** Gets a rendered tile blob from the LRU cache.
+   * @param {string} cacheKey - Render cache key
+   * @returns {Blob | undefined}
+   * @since 0.92.27
+   */
+  getTileRenderCache_fn = function(cacheKey) {
+    const cachedBlob = this.tileRenderCache.get(cacheKey);
+    if (!cachedBlob) {
+      return void 0;
+    }
+    this.tileRenderCache.delete(cacheKey);
+    this.tileRenderCache.set(cacheKey, cachedBlob);
+    return cachedBlob;
+  };
+  /** Creates a stable string for the current hidden-color set.
+   * @returns {string} Sorted hidden color IDs
+   * @since 0.92.27
+   */
+  getColorFilterKey_fn = function() {
+    return Array.from(this.shouldFilterColor.keys()).sort((a, b) => a - b).join(",");
+  };
+  createTileRenderCacheKey_fn = async function(tileBlob, tileCoords, highlightDisabled, highlightPattern, renderStateVersion, filterKey) {
+    const hashStart = performance.now();
+    const tileBuffer = await tileBlob.arrayBuffer();
+    const tileHashBuffer = await crypto.subtle.digest("SHA-1", tileBuffer);
+    const tileHash = Array.from(new Uint8Array(tileHashBuffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const highlightKey = highlightDisabled ? "none" : JSON.stringify(highlightPattern);
+    const transparentHighlightKey = this.settingsManager?.userSettings?.flags?.includes("hl-noTrans") ? "no-trans" : "trans";
+    const cacheKey = JSON.stringify({
+      tileCoords,
+      tileHash,
+      renderStateVersion,
+      highlight: highlightKey,
+      transparentHighlight: transparentHighlightKey,
+      filter: filterKey
+    });
+    return {
+      cacheKey,
+      hashMs: Number((performance.now() - hashStart).toFixed(2))
+    };
   };
   /** Returns templates in draw order without re-sorting on every tile.
    * @returns {Template[]} Sorted templates

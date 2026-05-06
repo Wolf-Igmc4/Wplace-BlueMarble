@@ -120,6 +120,8 @@ export default class TemplateManager {
     this.templateTileIndex = null; // Cached lookup from tile coords to template chunks
     this.renderStateVersion = 0; // Increments whenever render-relevant template state changes
     this.renderPerfDebug = true; // Temporary render performance logs while optimizing large blueprints
+    this.tileRenderCache = new Map(); // Reuses processed tile blobs while tile image + render state are unchanged
+    this.tileRenderCacheMaxEntries = 48; // Small LRU cache for visible map churn
   }
 
   /** Updates the stored instance of the main window.
@@ -148,12 +150,14 @@ export default class TemplateManager {
     if (shouldBeFiltered) {
       this.shouldFilterColor.set(colorID, true);
       this.renderStateVersion++;
+      this.#clearTileRenderCache();
       this.#persistColorFilterSettings();
       return;
     }
 
     this.shouldFilterColor.delete(colorID);
     this.renderStateVersion++;
+    this.#clearTileRenderCache();
     this.#persistColorFilterSettings();
   }
 
@@ -181,6 +185,7 @@ export default class TemplateManager {
 
     if (!didChange) {return;}
     this.renderStateVersion++;
+    this.#clearTileRenderCache();
     this.#persistColorFilterSettings();
   }
 
@@ -635,6 +640,7 @@ export default class TemplateManager {
     this.sortedTemplatesArray = null;
     this.templateTileIndex = null;
     this.renderStateVersion++;
+    this.#clearTileRenderCache();
   }
 
   /** Emits temporary render timing logs.
@@ -644,7 +650,84 @@ export default class TemplateManager {
    */
   #debugRenderPerf(eventName, details = {}) {
     if (!this.renderPerfDebug) {return;}
-    console.log(`[BM PERF] ${eventName}`, details);
+    console.log(`[BM PERF] ${eventName} ${JSON.stringify(details)}`);
+  }
+
+  /** Clears cached rendered tile blobs.
+   * @since 0.92.27
+   */
+  #clearTileRenderCache() {
+    this.tileRenderCache?.clear();
+  }
+
+  /** Records a rendered tile blob in the small LRU cache.
+   * @param {string} cacheKey - Render cache key
+   * @param {Blob} blob - Rendered tile blob
+   * @since 0.92.27
+   */
+  #setTileRenderCache(cacheKey, blob) {
+    if (!cacheKey || !blob) {return;}
+
+    this.tileRenderCache.set(cacheKey, blob);
+    while (this.tileRenderCache.size > this.tileRenderCacheMaxEntries) {
+      const oldestKey = this.tileRenderCache.keys().next().value;
+      this.tileRenderCache.delete(oldestKey);
+    }
+  }
+
+  /** Gets a rendered tile blob from the LRU cache.
+   * @param {string} cacheKey - Render cache key
+   * @returns {Blob | undefined}
+   * @since 0.92.27
+   */
+  #getTileRenderCache(cacheKey) {
+    const cachedBlob = this.tileRenderCache.get(cacheKey);
+    if (!cachedBlob) {return undefined;}
+
+    this.tileRenderCache.delete(cacheKey);
+    this.tileRenderCache.set(cacheKey, cachedBlob);
+    return cachedBlob;
+  }
+
+  /** Creates a stable string for the current hidden-color set.
+   * @returns {string} Sorted hidden color IDs
+   * @since 0.92.27
+   */
+  #getColorFilterKey() {
+    return Array.from(this.shouldFilterColor.keys()).sort((a, b) => a - b).join(',');
+  }
+
+  /** Builds a content-sensitive cache key for tile rendering.
+   * @param {Blob} tileBlob - Original tile image
+   * @param {string} tileCoords - Padded tile coords
+   * @param {boolean} highlightDisabled - Whether highlight rendering is disabled
+   * @param {Array<number[]>} highlightPattern - Highlight pattern
+   * @param {number} renderStateVersion - Render state version at request start
+   * @param {string} filterKey - Hidden color key at request start
+   * @returns {Promise<{cacheKey: string, hashMs: number}>} Cache key and timing
+   * @since 0.92.27
+   */
+  async #createTileRenderCacheKey(tileBlob, tileCoords, highlightDisabled, highlightPattern, renderStateVersion, filterKey) {
+    const hashStart = performance.now();
+    const tileBuffer = await tileBlob.arrayBuffer();
+    const tileHashBuffer = await crypto.subtle.digest('SHA-1', tileBuffer);
+    const tileHash = Array.from(new Uint8Array(tileHashBuffer), byte => byte.toString(16).padStart(2, '0')).join('');
+    const highlightKey = highlightDisabled ? 'none' : JSON.stringify(highlightPattern);
+    const transparentHighlightKey = this.settingsManager?.userSettings?.flags?.includes('hl-noTrans') ? 'no-trans' : 'trans';
+
+    const cacheKey = JSON.stringify({
+      tileCoords: tileCoords,
+      tileHash: tileHash,
+      renderStateVersion: renderStateVersion,
+      highlight: highlightKey,
+      transparentHighlight: transparentHighlightKey,
+      filter: filterKey
+    });
+
+    return {
+      cacheKey: cacheKey,
+      hashMs: Number((performance.now() - hashStart).toFixed(2))
+    };
   }
 
   /** Returns templates in draw order without re-sorting on every tile.
@@ -812,6 +895,8 @@ export default class TemplateManager {
     }
 
     const renderStart = performance.now();
+    const renderStateAtStart = this.renderStateVersion;
+    const filterKeyAtStart = this.#getColorFilterKey();
     const timings = {};
     const drawSize = this.tileSize * this.drawMult; // Calculate draw multiplier for scaling
 
@@ -856,7 +941,51 @@ export default class TemplateManager {
       });
       return tileBlob; // No templates are on this tile. Return the original tile early
     }
-    
+
+    // Obtains the highlight pattern
+    const highlightPattern = this.settingsManager?.userSettings?.highlight || [[2, 0, 0]];
+    // The code demands that a highlight pattern always exists.
+    // Therefore, to disable highlighting, the highlight pattern is `[[2, 0, 0]]`.
+    // `[[2, 0, 0]]` is special, and will skip the highlighting code altogether.
+    // As a side-effect, the template will always display while enabled.
+    // You can't disable all sub-pixels in order to hide the template.
+
+    // Contains the first index of the highlight pattern.
+    const highlightPatternIndexZero = highlightPattern?.[0];
+    // This is so we can later determine if the pattern is the preset "None"
+
+    // Should highlighting be disabled?
+    const highlightDisabled = (
+      (highlightPattern?.length == 1)
+      && (highlightPatternIndexZero?.[0] == 2)
+      && (highlightPatternIndexZero?.[1] == 0)
+      && (highlightPatternIndexZero?.[2] == 0)
+    )
+
+    const {cacheKey, hashMs} = await this.#createTileRenderCacheKey(
+      tileBlob,
+      tileCoords,
+      highlightDisabled,
+      highlightPattern,
+      renderStateAtStart,
+      filterKeyAtStart
+    );
+    timings.tileHashMs = hashMs;
+
+    const cachedBlob = this.#getTileRenderCache(cacheKey);
+    if (cachedBlob) {
+      this.#debugRenderPerf('tile-cache-hit', {
+        tileCoords: tileCoords,
+        chunksOnTile: templatesForTile.length,
+        chunksDrawn: templateCount,
+        filterCount: this.shouldFilterColor.size,
+        renderStateVersion: this.renderStateVersion,
+        totalMs: Number((performance.now() - renderStart).toFixed(2)),
+        timings: timings
+      });
+      return cachedBlob;
+    }
+
     const bitmapStart = performance.now();
     const tileBitmap = await createImageBitmap(tileBlob);
     timings.tileBitmapMs = Number((performance.now() - bitmapStart).toFixed(2));
@@ -878,26 +1007,6 @@ export default class TemplateManager {
     const tileBeforeTemplates = context.getImageData(0, 0, drawSize, drawSize);
     const tileBeforeTemplates32 = new Uint32Array(tileBeforeTemplates.data.buffer);
     timings.canvasSetupMs = Number((performance.now() - canvasStart).toFixed(2));
-
-    // Obtains the highlight pattern
-    const highlightPattern = this.settingsManager?.userSettings?.highlight || [[2, 0, 0]];
-    // The code demands that a highlight pattern always exists.
-    // Therefore, to disable highlighting, the highlight pattern is `[[2, 0, 0]]`.
-    // `[[2, 0, 0]]` is special, and will skip the highlighting code altogether.
-    // As a side-effect, the template will always display while enabled.
-    // You can't disable all sub-pixels in order to hide the template.
-
-    // Contains the first index of the highlight pattern.
-    const highlightPatternIndexZero = highlightPattern?.[0];
-    // This is so we can later determine if the pattern is the preset "None"
-
-    // Should highlighting be disabled?
-    const highlightDisabled = (
-      (highlightPattern?.length == 1)
-      && (highlightPatternIndexZero?.[0] == 2)
-      && (highlightPatternIndexZero?.[1] == 0)
-      && (highlightPatternIndexZero?.[2] == 0)
-    )
     
     let mutationCount = 0;
     let directDrawCount = 0;
@@ -986,6 +1095,20 @@ export default class TemplateManager {
     const blobStart = performance.now();
     const outputBlob = await canvas.convertToBlob({ type: 'image/png' });
     timings.blobMs = Number((performance.now() - blobStart).toFixed(2));
+
+    if (this.renderStateVersion != renderStateAtStart) {
+      this.#debugRenderPerf('tile-stale-discard', {
+        tileCoords: tileCoords,
+        startedRenderStateVersion: renderStateAtStart,
+        currentRenderStateVersion: this.renderStateVersion,
+        filterCount: this.shouldFilterColor.size,
+        totalMs: Number((performance.now() - renderStart).toFixed(2)),
+        timings: timings
+      });
+      return tileBlob;
+    }
+
+    this.#setTileRenderCache(cacheKey, outputBlob);
 
     this.#debugRenderPerf('tile-render', {
       tileCoords: tileCoords,
