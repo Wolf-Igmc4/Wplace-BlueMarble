@@ -210,7 +210,7 @@ export default class WindowFilter extends Overlay {
                   .addCheckbox({'id': 'bm-filter-show-completed', 'name': 'showCompleted', 'textContent': 'Completed'}).buildElement()
                   .addCheckbox({'id': 'bm-filter-show-free', 'name': 'showFree', 'textContent': 'Free'}).buildElement()
                   .addCheckbox({'id': 'bm-filter-show-premium', 'name': 'showPremium', 'textContent': 'Premium'}).buildElement()
-                  .addCheckbox({'id': 'bm-filter-sort-bought', 'name': 'sortBought', 'textContent': 'Bought colors'}).buildElement()
+                  .addCheckbox({'id': 'bm-filter-sort-bought', 'name': 'sortBought', 'textContent': 'Only bought colors'}).buildElement()
                 .buildElement()
               .buildElement()
             .buildElement()
