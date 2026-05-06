@@ -737,47 +737,14 @@ export default class WindowFilter extends Overlay {
     const colorElement = document.querySelector(`#color-${color.id}`);
     if (!colorElement) {return false;}
 
-    const control = colorElement.matches('button, input, [role="button"]')
-      ? colorElement
-      : colorElement.querySelector('button, input, [role="button"]');
-    const stateElements = [colorElement, control, ...colorElement.querySelectorAll('[aria-label], [title], [class], [data-state], [data-disabled], [data-locked]')]
-      .filter(Boolean)
-      .slice(0, 16);
-    const stateText = stateElements.map(element => {
-      const datasetText = Object.entries(element.dataset || {}).map(([key, value]) => `${key} ${value}`).join(' ');
-      return [
-        element.className || '',
-        element.getAttribute?.('aria-label') || '',
-        element.getAttribute?.('aria-pressed') || '',
-        element.getAttribute?.('aria-selected') || '',
-        element.getAttribute?.('title') || '',
-        element.getAttribute?.('aria-disabled') || '',
-        datasetText,
-        element.textContent || ''
-      ].join(' ');
-    }).join(' ');
-    const isDisabled = colorElement.matches(':disabled, [disabled]')
-      || control?.matches?.(':disabled, [disabled]')
-      || colorElement.getAttribute('aria-disabled') == 'true'
-      || control?.getAttribute?.('aria-disabled') == 'true'
-      || colorElement.dataset['disabled'] == 'true'
-      || colorElement.dataset['locked'] == 'true'
-      || /\b(disabled|locked|unavailable|not[-\s]?owned|not[-\s]?available|not-allowed|btn-disabled)\b/i.test(stateText)
-      || /\b(buy|purchase|unlock)\b/i.test(stateText)
-      || stateText.includes('🔒');
-    const hasBoughtState = /\b(owned|purchased|bought|unlocked|selected|active|enabled|available)\b/i.test(stateText)
-      || colorElement.getAttribute('aria-pressed') == 'true'
-      || colorElement.getAttribute('aria-selected') == 'true'
-      || control?.getAttribute?.('aria-pressed') == 'true'
-      || control?.getAttribute?.('aria-selected') == 'true';
-    const isBought = hasBoughtState && !isDisabled;
+    const isBought = !colorElement.querySelector('svg');
 
     if (window?.blueMarbleDebugBoughtColors) {
       console.log('[Blue Marble] bought color state', {
         id: color.id,
         name: color.name,
         bought: isBought,
-        stateText: stateText.trim().replace(/\s+/g, ' '),
+        source: 'dom-lock-icon',
         outerHTML: colorElement.outerHTML.slice(0, 1000)
       });
     }
@@ -811,6 +778,13 @@ export default class WindowFilter extends Overlay {
    * @since 0.92.16
    */
   #collectBoughtColorIDs(payload, ids, isUserData) {
+    if (Array.isArray(payload?.unlocked_colors)) {
+      for (const id of payload.unlocked_colors) {
+        const colorID = Number(id);
+        if (Number.isInteger(colorID) && colorID >= 32 && colorID <= 63) {ids.add(colorID);}
+      }
+    }
+
     const visited = new WeakSet();
     const visit = (value, path = '', depth = 0) => {
       if (depth > 5 || value == null) {return;}
@@ -819,8 +793,8 @@ export default class WindowFilter extends Overlay {
       visited.add(value);
 
       if (Array.isArray(value)) {
-        const pathLooksPurchased = /\b(color|colour|palette|premium).*(own|purchase|unlock|bought|available)|\b(own|purchase|unlock|bought|available).*(color|colour|palette|premium)/i.test(path);
-        const pathLooksLikeUserColors = isUserData && /(^|\.)((colors?|colours?|palette|premiumColors?))$/i.test(path);
+        const pathLooksPurchased = /\b(color|colour|palette|premium).*(own|purchase|unlock|bought|available)|\b(own|purchase|unlock|bought|available).*(color|colour|palette|premium)|unlocked[_-]?colors/i.test(path);
+        const pathLooksLikeUserColors = isUserData && /(^|\.)((colors?|colours?|palette|premiumColors?|unlocked_colors))$/i.test(path);
         if (pathLooksPurchased || pathLooksLikeUserColors) {
           for (const entry of value) {
             const id = typeof entry == 'object'

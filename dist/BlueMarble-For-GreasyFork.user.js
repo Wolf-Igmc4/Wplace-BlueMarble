@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.15
+// @version         0.92.16
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -22,7 +22,7 @@
 // @grant           GM.download
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.15
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.16
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -3329,30 +3329,13 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     if (!colorElement) {
       return false;
     }
-    const control = colorElement.matches('button, input, [role="button"]') ? colorElement : colorElement.querySelector('button, input, [role="button"]');
-    const stateElements = [colorElement, control, ...colorElement.querySelectorAll("[aria-label], [title], [class], [data-state], [data-disabled], [data-locked]")].filter(Boolean).slice(0, 16);
-    const stateText = stateElements.map((element) => {
-      const datasetText = Object.entries(element.dataset || {}).map(([key, value]) => `${key} ${value}`).join(" ");
-      return [
-        element.className || "",
-        element.getAttribute?.("aria-label") || "",
-        element.getAttribute?.("aria-pressed") || "",
-        element.getAttribute?.("aria-selected") || "",
-        element.getAttribute?.("title") || "",
-        element.getAttribute?.("aria-disabled") || "",
-        datasetText,
-        element.textContent || ""
-      ].join(" ");
-    }).join(" ");
-    const isDisabled = colorElement.matches(":disabled, [disabled]") || control?.matches?.(":disabled, [disabled]") || colorElement.getAttribute("aria-disabled") == "true" || control?.getAttribute?.("aria-disabled") == "true" || colorElement.dataset["disabled"] == "true" || colorElement.dataset["locked"] == "true" || /\b(disabled|locked|unavailable|not[-\s]?owned|not[-\s]?available|not-allowed|btn-disabled)\b/i.test(stateText) || /\b(buy|purchase|unlock)\b/i.test(stateText) || stateText.includes("\u{1F512}");
-    const hasBoughtState = /\b(owned|purchased|bought|unlocked|selected|active|enabled|available)\b/i.test(stateText) || colorElement.getAttribute("aria-pressed") == "true" || colorElement.getAttribute("aria-selected") == "true" || control?.getAttribute?.("aria-pressed") == "true" || control?.getAttribute?.("aria-selected") == "true";
-    const isBought = hasBoughtState && !isDisabled;
+    const isBought = !colorElement.querySelector("svg");
     if (window?.blueMarbleDebugBoughtColors) {
       console.log("[Blue Marble] bought color state", {
         id: color.id,
         name: color.name,
         bought: isBought,
-        stateText: stateText.trim().replace(/\s+/g, " "),
+        source: "dom-lock-icon",
         outerHTML: colorElement.outerHTML.slice(0, 1e3)
       });
     }
@@ -3383,6 +3366,14 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
    * @since 0.92.16
    */
   collectBoughtColorIDs_fn = function(payload, ids, isUserData) {
+    if (Array.isArray(payload?.unlocked_colors)) {
+      for (const id of payload.unlocked_colors) {
+        const colorID = Number(id);
+        if (Number.isInteger(colorID) && colorID >= 32 && colorID <= 63) {
+          ids.add(colorID);
+        }
+      }
+    }
     const visited = /* @__PURE__ */ new WeakSet();
     const visit = (value, path = "", depth = 0) => {
       if (depth > 5 || value == null) {
@@ -3396,8 +3387,8 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       }
       visited.add(value);
       if (Array.isArray(value)) {
-        const pathLooksPurchased = /\b(color|colour|palette|premium).*(own|purchase|unlock|bought|available)|\b(own|purchase|unlock|bought|available).*(color|colour|palette|premium)/i.test(path);
-        const pathLooksLikeUserColors = isUserData && /(^|\.)((colors?|colours?|palette|premiumColors?))$/i.test(path);
+        const pathLooksPurchased = /\b(color|colour|palette|premium).*(own|purchase|unlock|bought|available)|\b(own|purchase|unlock|bought|available).*(color|colour|palette|premium)|unlocked[_-]?colors/i.test(path);
+        const pathLooksLikeUserColors = isUserData && /(^|\.)((colors?|colours?|palette|premiumColors?|unlocked_colors))$/i.test(path);
         if (pathLooksPurchased || pathLooksLikeUserColors) {
           for (const entry of value) {
             const id = typeof entry == "object" ? Number(entry?.id ?? entry?.color ?? entry?.colorId ?? entry?.colourId) : Number(entry);
