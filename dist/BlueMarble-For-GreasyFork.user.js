@@ -45,7 +45,9 @@
     throw TypeError(msg);
   };
   var __accessCheck = (obj, member, msg) => member.has(obj) || __typeError("Cannot " + msg);
+  var __privateGet = (obj, member, getter) => (__accessCheck(obj, member, "read from private field"), getter ? getter.call(obj) : member.get(obj));
   var __privateAdd = (obj, member, value) => member.has(obj) ? __typeError("Cannot add the same private member more than once") : member instanceof WeakSet ? member.add(obj) : member.set(obj, value);
+  var __privateSet = (obj, member, value, setter) => (__accessCheck(obj, member, "write to private field"), setter ? setter.call(obj, value) : member.set(obj, value), value);
   var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
 
   // src/observers.js
@@ -504,8 +506,8 @@
   // src/Overlay.js
   var minimizeIconExpanded = '<svg class="bm-button-icon bm-button-icon-minimize" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 9.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var minimizeIconCollapsed = '<svg class="bm-button-icon bm-button-icon-minimize" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.5 7l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  var _Overlay_instances, createElement_fn, applyAttribute_fn;
-  var Overlay = class {
+  var _hasOutsideMinimizeListener, _Overlay_static, ensureOutsideMinimizeListener_fn, _Overlay_instances, createElement_fn, applyAttribute_fn;
+  var _Overlay = class _Overlay {
     /** Constructor for the Overlay class.
      * @param {string} name - The name of the userscript
      * @param {string} version - The version of the userscript
@@ -514,6 +516,7 @@
      */
     constructor(name2, version2) {
       __privateAdd(this, _Overlay_instances);
+      var _a;
       this.name = name2;
       this.version = version2;
       this.apiManager = null;
@@ -522,6 +525,7 @@
       this.overlay = null;
       this.currentParent = null;
       this.parentStack = [];
+      __privateMethod(_a = _Overlay, _Overlay_static, ensureOutsideMinimizeListener_fn).call(_a);
     }
     /** Populates the apiManager variable with the apiManager class.
      * @param {ApiManager} apiManager - The apiManager class instance
@@ -1848,6 +1852,58 @@
       this.updateInnerHTML(this.outputStatusId, "Error: " + text, true);
     }
   };
+  _hasOutsideMinimizeListener = new WeakMap();
+  _Overlay_static = new WeakSet();
+  ensureOutsideMinimizeListener_fn = function() {
+    if (__privateGet(_Overlay, _hasOutsideMinimizeListener) || typeof document == "undefined") {
+      return;
+    }
+    __privateSet(_Overlay, _hasOutsideMinimizeListener, true);
+    let pointerStart = null;
+    const clickMoveTolerance = 6;
+    const closestBlueMarbleWindow = (target) => {
+      if (target instanceof Element) {
+        return target.closest(".bm-window");
+      }
+      return target?.parentElement?.closest?.(".bm-window") || null;
+    };
+    const resetPointerStart = () => {
+      pointerStart = null;
+    };
+    document.addEventListener("pointerdown", (event) => {
+      if (event.button !== void 0 && event.button !== 0) {
+        return;
+      }
+      pointerStart = {
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        startedInBlueMarble: !!closestBlueMarbleWindow(event.target)
+      };
+    }, true);
+    document.addEventListener("pointerup", (event) => {
+      if (!pointerStart || pointerStart.pointerId !== event.pointerId) {
+        return;
+      }
+      const movedX = Math.abs(event.clientX - pointerStart.clientX);
+      const movedY = Math.abs(event.clientY - pointerStart.clientY);
+      const wasDrag = movedX > clickMoveTolerance || movedY > clickMoveTolerance;
+      const endedInBlueMarble = !!closestBlueMarbleWindow(event.target);
+      const shouldCollapse = !wasDrag && !pointerStart.startedInBlueMarble && !endedInBlueMarble;
+      resetPointerStart();
+      if (!shouldCollapse) {
+        return;
+      }
+      const expandedButtons = document.querySelectorAll('.bm-window .bm-dragbar button[data-button-status="expanded"]');
+      for (const button of expandedButtons) {
+        if (!(button instanceof HTMLButtonElement) || button.disabled || !button.isConnected) {
+          continue;
+        }
+        button.click();
+      }
+    }, true);
+    document.addEventListener("pointercancel", resetPointerStart, true);
+  };
   _Overlay_instances = new WeakSet();
   /** Creates an element.
    * For **internal use** of the {@link Overlay} class.
@@ -1901,6 +1957,9 @@
       element[property] = value;
     }
   };
+  __privateAdd(_Overlay, _Overlay_static);
+  __privateAdd(_Overlay, _hasOutsideMinimizeListener, false);
+  var Overlay = _Overlay;
 
   // src/WindowSettings.js
   var _WindowSettings_instances, errorOverrideFailure_fn;
@@ -2699,7 +2758,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         button.onclick = () => __privateMethod(this, _WindowFilter_instances, selectColorList_fn).call(this, false);
       }).buildElement().addButton({ "class": "bm-button-secondary", "textContent": "Show All Colors" }, (instance, button) => {
         button.onclick = () => __privateMethod(this, _WindowFilter_instances, selectColorList_fn).call(this, true);
-      }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container bm-scrollable bm-filter-scrollable" }).addDiv({ "class": "bm-container bm-filter-insights" }).addDiv({ "class": "bm-filter-stat-grid" }).addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Chunks" }).buildElement().addSpan({ "id": "bm-filter-tile-load", "class": "bm-filter-stat-value", "textContent": "0 / ???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Total" }).buildElement().addSpan({ "id": "bm-filter-tot-total", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Correct" }).buildElement().addSpan({ "id": "bm-filter-tot-correct", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Remaining" }).buildElement().addSpan({ "id": "bm-filter-tot-remaining", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card bm-filter-stat-card-wide" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Finished At" }).buildElement().addSpan({ "id": "bm-filter-tot-completed", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().buildElement().addHr().buildElement().addForm({ "class": "bm-container bm-filter-sort-panel" }).addFieldset().addLegend({ "textContent": "Sort Options:", "style": "font-weight: 700;" }).buildElement().addDiv({ "class": "bm-container bm-filter-sort-row" }).addSelect({ "id": "bm-filter-sort-primary", "name": "sortPrimary", "textContent": "I want to view " }).addOption({ "value": "id", "textContent": "color IDs" }).buildElement().addOption({ "value": "name", "textContent": "color names" }).buildElement().addOption({ "value": "bought", "textContent": "bought colors" }).buildElement().addOption({ "value": "premium", "textContent": "premium colors" }).buildElement().addOption({ "value": "percent", "textContent": "percentage" }).buildElement().addOption({ "value": "correct", "textContent": "correct pixels" }).buildElement().addOption({ "value": "incorrect", "textContent": "incorrect pixels" }).buildElement().addOption({ "value": "total", "textContent": "total pixels" }).buildElement().buildElement().addSelect({ "id": "bm-filter-sort-secondary", "name": "sortSecondary", "textContent": " in " }).addOption({ "value": "ascending", "textContent": "ascending" }).buildElement().addOption({ "value": "descending", "textContent": "descending" }).buildElement().buildElement().addSpan({ "textContent": " order." }).buildElement().buildElement().addDiv({ "class": "bm-container bm-filter-show-row" }).addSpan({ "class": "bm-filter-show-label", "textContent": "Show:" }).buildElement().addCheckbox({ "id": "bm-filter-show-unused", "name": "showUnused", "textContent": "Unused" }).buildElement().addCheckbox({ "id": "bm-filter-show-completed", "name": "showCompleted", "textContent": "Completed" }).buildElement().addCheckbox({ "id": "bm-filter-show-free", "name": "showFree", "textContent": "Free" }).buildElement().addCheckbox({ "id": "bm-filter-show-premium", "name": "showPremium", "textContent": "Premium" }).buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().addDiv({
+      }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container bm-scrollable bm-filter-scrollable" }).addDiv({ "class": "bm-container bm-filter-insights" }).addDiv({ "class": "bm-filter-stat-grid" }).addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Chunks" }).buildElement().addSpan({ "id": "bm-filter-tile-load", "class": "bm-filter-stat-value", "textContent": "0 / ???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Total" }).buildElement().addSpan({ "id": "bm-filter-tot-total", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Correct" }).buildElement().addSpan({ "id": "bm-filter-tot-correct", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Remaining" }).buildElement().addSpan({ "id": "bm-filter-tot-remaining", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card bm-filter-stat-card-wide" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Finished At" }).buildElement().addSpan({ "id": "bm-filter-tot-completed", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().buildElement().addHr().buildElement().addForm({ "class": "bm-container bm-filter-sort-panel" }).addFieldset().addLegend({ "textContent": "Sort Options:", "style": "font-weight: 700;" }).buildElement().addDiv({ "class": "bm-container bm-filter-sort-row" }).addSpan({ "class": "bm-filter-sort-label", "textContent": "Sort:" }).buildElement().addSelect({ "id": "bm-filter-sort-primary", "name": "sortPrimary" }).addOption({ "value": "id", "textContent": "color IDs" }).buildElement().addOption({ "value": "name", "textContent": "color names" }).buildElement().addOption({ "value": "bought", "textContent": "bought colors" }).buildElement().addOption({ "value": "premium", "textContent": "premium colors" }).buildElement().addOption({ "value": "percent", "textContent": "percentage" }).buildElement().addOption({ "value": "correct", "textContent": "correct pixels" }).buildElement().addOption({ "value": "incorrect", "textContent": "incorrect pixels" }).buildElement().addOption({ "value": "total", "textContent": "total pixels" }).buildElement().buildElement().addSpan({ "class": "bm-filter-sort-label", "textContent": "Order:" }).buildElement().addSelect({ "id": "bm-filter-sort-secondary", "name": "sortSecondary" }).addOption({ "value": "ascending", "textContent": "ascending" }).buildElement().addOption({ "value": "descending", "textContent": "descending" }).buildElement().buildElement().buildElement().addDiv({ "class": "bm-container bm-filter-show-row" }).addSpan({ "class": "bm-filter-show-label", "textContent": "I want to see:" }).buildElement().addCheckbox({ "id": "bm-filter-show-unused", "name": "showUnused", "textContent": "Unused" }).buildElement().addCheckbox({ "id": "bm-filter-show-completed", "name": "showCompleted", "textContent": "Completed" }).buildElement().addCheckbox({ "id": "bm-filter-show-free", "name": "showFree", "textContent": "Free" }).buildElement().addCheckbox({ "id": "bm-filter-show-premium", "name": "showPremium", "textContent": "Premium" }).buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().addDiv({
         "class": "bm-resize-corner",
         "title": "Resize Color Filter window",
         "aria-label": "Resize Color Filter window",
@@ -3021,7 +3080,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     for (const [input, value] of formData) {
       formValues[input] = value;
     }
-    __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, formValues["sortPrimary"], formValues["sortSecondary"], formValues["showUnused"] == "on", formValues["showCompleted"] == "on", formValues["showFree"] == "on", formValues["showPremium"] == "on");
+    __privateMethod(this, _WindowFilter_instances, sortColorList_fn).call(this, String(formValues["sortPrimary"] || this.sortPrimary), String(formValues["sortSecondary"] || this.sortSecondary), formValues["showUnused"] == "on", formValues["showCompleted"] == "on", formValues["showFree"] == "on", formValues["showPremium"] == "on");
     __privateMethod(this, _WindowFilter_instances, persistFilterViewSettings_fn).call(this, true);
   };
   /** Makes the sort form reactive, so the list updates as soon as a control changes.
@@ -3248,8 +3307,19 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       return false;
     }
     const control = colorElement.matches('button, input, [role="button"]') ? colorElement : colorElement.querySelector('button, input, [role="button"]');
-    const classText = `${colorElement.className || ""} ${control?.className || ""}`;
-    const isDisabled = colorElement.matches(":disabled, [disabled]") || control?.matches?.(":disabled, [disabled]") || colorElement.getAttribute("aria-disabled") == "true" || control?.getAttribute?.("aria-disabled") == "true" || colorElement.dataset["disabled"] == "true" || colorElement.dataset["locked"] == "true" || /\b(disabled|locked|unavailable)\b/i.test(classText);
+    const stateElements = [colorElement, control, ...colorElement.querySelectorAll("[aria-label], [title], [class], [data-state], [data-disabled], [data-locked]")].filter(Boolean).slice(0, 16);
+    const stateText = stateElements.map((element) => {
+      const datasetText = Object.entries(element.dataset || {}).map(([key, value]) => `${key} ${value}`).join(" ");
+      return [
+        element.className || "",
+        element.getAttribute?.("aria-label") || "",
+        element.getAttribute?.("title") || "",
+        element.getAttribute?.("aria-disabled") || "",
+        datasetText,
+        element.textContent || ""
+      ].join(" ");
+    }).join(" ");
+    const isDisabled = colorElement.matches(":disabled, [disabled]") || control?.matches?.(":disabled, [disabled]") || colorElement.getAttribute("aria-disabled") == "true" || control?.getAttribute?.("aria-disabled") == "true" || colorElement.dataset["disabled"] == "true" || colorElement.dataset["locked"] == "true" || /\b(disabled|locked|unavailable|not[-\s]?owned|not[-\s]?available|not-allowed|btn-disabled)\b/i.test(stateText) || /\b(buy|purchase|unlock)\b/i.test(stateText) || stateText.includes("\u{1F512}");
     return !isDisabled;
   };
   /** Creates the color list container.
@@ -3371,6 +3441,14 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
    * @since 0.88.222
    */
   sortColorList_fn = function(sortPrimary, sortSecondary, showUnused, showCompleted = this.showCompleted, showFree = this.showFree, showPremium = this.showPremium) {
+    const allowedPrimarySorts = /* @__PURE__ */ new Set(["id", "name", "bought", "premium", "percent", "correct", "incorrect", "total"]);
+    const allowedSecondarySorts = /* @__PURE__ */ new Set(["ascending", "descending"]);
+    if (!allowedPrimarySorts.has(sortPrimary)) {
+      sortPrimary = this.sortPrimary;
+    }
+    if (!allowedSecondarySorts.has(sortSecondary)) {
+      sortSecondary = this.sortSecondary;
+    }
     this.sortPrimary = sortPrimary;
     this.sortSecondary = sortSecondary;
     this.showUnused = showUnused;
@@ -3379,6 +3457,9 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     this.showPremium = showPremium;
     __privateMethod(this, _WindowFilter_instances, persistFilterViewSettings_fn).call(this);
     const colorList = document.querySelector(`#${this.colorListID}`);
+    if (!colorList) {
+      return;
+    }
     const colors = Array.from(colorList.children);
     for (const color of colors) {
       const paletteColor = this.palette.find((paletteColor2) => paletteColor2.id == color.dataset["id"]);

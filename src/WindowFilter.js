@@ -186,7 +186,8 @@ export default class WindowFilter extends Overlay {
               .addFieldset()
                 .addLegend({'textContent': 'Sort Options:', 'style': 'font-weight: 700;'}).buildElement()
                 .addDiv({'class': 'bm-container bm-filter-sort-row'})
-                  .addSelect({'id': 'bm-filter-sort-primary', 'name': 'sortPrimary', 'textContent': 'I want to view '})
+                  .addSpan({'class': 'bm-filter-sort-label', 'textContent': 'Sort:'}).buildElement()
+                  .addSelect({'id': 'bm-filter-sort-primary', 'name': 'sortPrimary'})
                     .addOption({'value': 'id', 'textContent': 'color IDs'}).buildElement()
                     .addOption({'value': 'name', 'textContent': 'color names'}).buildElement()
                     .addOption({'value': 'bought', 'textContent': 'bought colors'}).buildElement()
@@ -196,14 +197,14 @@ export default class WindowFilter extends Overlay {
                     .addOption({'value': 'incorrect', 'textContent': 'incorrect pixels'}).buildElement()
                     .addOption({'value': 'total', 'textContent': 'total pixels'}).buildElement()
                   .buildElement()
-                  .addSelect({'id': 'bm-filter-sort-secondary', 'name': 'sortSecondary', 'textContent': ' in '})
+                  .addSpan({'class': 'bm-filter-sort-label', 'textContent': 'Order:'}).buildElement()
+                  .addSelect({'id': 'bm-filter-sort-secondary', 'name': 'sortSecondary'})
                     .addOption({'value': 'ascending', 'textContent': 'ascending'}).buildElement()
                     .addOption({'value': 'descending', 'textContent': 'descending'}).buildElement()
                   .buildElement()
-                  .addSpan({'textContent': ' order.'}).buildElement()
                 .buildElement()
                 .addDiv({'class': 'bm-container bm-filter-show-row'})
-                  .addSpan({'class': 'bm-filter-show-label', 'textContent': 'Show:'}).buildElement()
+                  .addSpan({'class': 'bm-filter-show-label', 'textContent': 'I want to see:'}).buildElement()
                   .addCheckbox({'id': 'bm-filter-show-unused', 'name': 'showUnused', 'textContent': 'Unused'}).buildElement()
                   .addCheckbox({'id': 'bm-filter-show-completed', 'name': 'showCompleted', 'textContent': 'Completed'}).buildElement()
                   .addCheckbox({'id': 'bm-filter-show-free', 'name': 'showFree', 'textContent': 'Free'}).buildElement()
@@ -474,8 +475,8 @@ export default class WindowFilter extends Overlay {
     }
 
     this.#sortColorList(
-      formValues['sortPrimary'],
-      formValues['sortSecondary'],
+      String(formValues['sortPrimary'] || this.sortPrimary),
+      String(formValues['sortSecondary'] || this.sortSecondary),
       formValues['showUnused'] == 'on',
       formValues['showCompleted'] == 'on',
       formValues['showFree'] == 'on',
@@ -719,14 +720,29 @@ export default class WindowFilter extends Overlay {
     const control = colorElement.matches('button, input, [role="button"]')
       ? colorElement
       : colorElement.querySelector('button, input, [role="button"]');
-    const classText = `${colorElement.className || ''} ${control?.className || ''}`;
+    const stateElements = [colorElement, control, ...colorElement.querySelectorAll('[aria-label], [title], [class], [data-state], [data-disabled], [data-locked]')]
+      .filter(Boolean)
+      .slice(0, 16);
+    const stateText = stateElements.map(element => {
+      const datasetText = Object.entries(element.dataset || {}).map(([key, value]) => `${key} ${value}`).join(' ');
+      return [
+        element.className || '',
+        element.getAttribute?.('aria-label') || '',
+        element.getAttribute?.('title') || '',
+        element.getAttribute?.('aria-disabled') || '',
+        datasetText,
+        element.textContent || ''
+      ].join(' ');
+    }).join(' ');
     const isDisabled = colorElement.matches(':disabled, [disabled]')
       || control?.matches?.(':disabled, [disabled]')
       || colorElement.getAttribute('aria-disabled') == 'true'
       || control?.getAttribute?.('aria-disabled') == 'true'
       || colorElement.dataset['disabled'] == 'true'
       || colorElement.dataset['locked'] == 'true'
-      || /\b(disabled|locked|unavailable)\b/i.test(classText);
+      || /\b(disabled|locked|unavailable|not[-\s]?owned|not[-\s]?available|not-allowed|btn-disabled)\b/i.test(stateText)
+      || /\b(buy|purchase|unlock)\b/i.test(stateText)
+      || stateText.includes('🔒');
 
     return !isDisabled;
   }
@@ -913,6 +929,11 @@ export default class WindowFilter extends Overlay {
    */
   #sortColorList(sortPrimary, sortSecondary, showUnused, showCompleted = this.showCompleted, showFree = this.showFree, showPremium = this.showPremium) {
 
+    const allowedPrimarySorts = new Set(['id', 'name', 'bought', 'premium', 'percent', 'correct', 'incorrect', 'total']);
+    const allowedSecondarySorts = new Set(['ascending', 'descending']);
+    if (!allowedPrimarySorts.has(sortPrimary)) {sortPrimary = this.sortPrimary;}
+    if (!allowedSecondarySorts.has(sortSecondary)) {sortSecondary = this.sortSecondary;}
+
     // Update memorised sort settings
     this.sortPrimary = sortPrimary;
     this.sortSecondary = sortSecondary;
@@ -923,6 +944,7 @@ export default class WindowFilter extends Overlay {
     this.#persistFilterViewSettings();
 
     const colorList = document.querySelector(`#${this.colorListID}`);
+    if (!colorList) {return;}
 
     const colors = Array.from(colorList.children);
 

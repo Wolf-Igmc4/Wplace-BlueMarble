@@ -28,6 +28,8 @@ export const minimizeIconCollapsed = '<svg class="bm-button-icon bm-button-icon-
 */
 export default class Overlay {
 
+  static #hasOutsideMinimizeListener = false;
+
   /** Constructor for the Overlay class.
    * @param {string} name - The name of the userscript
    * @param {string} version - The version of the userscript
@@ -49,6 +51,59 @@ export default class Overlay {
     this.overlay = null; // The overlay root DOM HTMLElement
     this.currentParent = null; // The current parent HTMLElement in the overlay
     this.parentStack = []; // Tracks the parent elements BEFORE the currentParent so we can nest elements
+
+    Overlay.#ensureOutsideMinimizeListener();
+  }
+
+  /** Installs the shared listener that collapses expanded Blue Marble windows after outside clicks.
+   * @since 0.92.16
+   */
+  static #ensureOutsideMinimizeListener() {
+    if (Overlay.#hasOutsideMinimizeListener || typeof document == 'undefined') {return;}
+    Overlay.#hasOutsideMinimizeListener = true;
+
+    let pointerStart = null;
+    const clickMoveTolerance = 6;
+
+    const closestBlueMarbleWindow = target => {
+      if (target instanceof Element) {return target.closest('.bm-window');}
+      return target?.parentElement?.closest?.('.bm-window') || null;
+    };
+
+    const resetPointerStart = () => {
+      pointerStart = null;
+    };
+
+    document.addEventListener('pointerdown', event => {
+      if (event.button !== undefined && event.button !== 0) {return;}
+      pointerStart = {
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        startedInBlueMarble: !!closestBlueMarbleWindow(event.target)
+      };
+    }, true);
+
+    document.addEventListener('pointerup', event => {
+      if (!pointerStart || pointerStart.pointerId !== event.pointerId) {return;}
+
+      const movedX = Math.abs(event.clientX - pointerStart.clientX);
+      const movedY = Math.abs(event.clientY - pointerStart.clientY);
+      const wasDrag = movedX > clickMoveTolerance || movedY > clickMoveTolerance;
+      const endedInBlueMarble = !!closestBlueMarbleWindow(event.target);
+      const shouldCollapse = !wasDrag && !pointerStart.startedInBlueMarble && !endedInBlueMarble;
+      resetPointerStart();
+
+      if (!shouldCollapse) {return;}
+
+      const expandedButtons = document.querySelectorAll('.bm-window .bm-dragbar button[data-button-status="expanded"]');
+      for (const button of expandedButtons) {
+        if (!(button instanceof HTMLButtonElement) || button.disabled || !button.isConnected) {continue;}
+        button.click();
+      }
+    }, true);
+
+    document.addEventListener('pointercancel', resetPointerStart, true);
   }
 
   /** Populates the apiManager variable with the apiManager class.
