@@ -324,7 +324,6 @@ export default class WindowWizard extends Overlay {
 
     // If it has been requested that we open a new Template Wizard window, we do so
     if (shouldWindowWizardOpen) {
-      console.log(`Restarting Template Wizard...`);
       document.querySelector(`#${this.windowID}`).remove();
       new WindowWizard(this.name, this.version, this.schemaVersionBleedingEdge, this.templateManager).buildWindow();
     }

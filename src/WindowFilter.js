@@ -160,6 +160,9 @@ export default class WindowFilter extends Overlay {
           .addButton({'class': 'bm-button-secondary', 'textContent': 'Show All Colors'}, (instance, button) => {
             button.onclick = () => this.#selectColorList(true);
           }).buildElement()
+          .addButton({'class': 'bm-button-secondary', 'textContent': 'Show Filtered Colors Only'}, (instance, button) => {
+            button.onclick = () => this.#selectFilteredColorList();
+          }).buildElement()
         .buildElement()
         .addHr().buildElement()
         .addDiv({'class': 'bm-container bm-scrollable bm-filter-scrollable'})
@@ -1065,8 +1068,6 @@ export default class WindowFilter extends Overlay {
     // Figures out if this window is fullscreen or windowed mode
     const isWindowedMode = parentElement.closest(`#${this.windowID}`)?.classList.contains('bm-windowed');
     // Note: `undefined` is expected to behave as if `false`
-    
-    console.log(`Is Windowed Mode: ${isWindowedMode}`);
 
     const colorList = new Overlay(this.name, this.version);
     colorList.addDiv({'id': this.colorListID})
@@ -1378,12 +1379,66 @@ export default class WindowFilter extends Overlay {
     }
 
     this.templateManager.setColorFilters(changedColorIDs, targetIsHidden);
-    console.log(`[BM PERF] bulk-filter ${JSON.stringify({
-      'hidden': targetIsHidden,
-      'colorsChanged': changedColorIDs.length,
-      'visibleCards': colors.length,
-      'paletteColors': this.palette.length
-    })}`);
+    if (this.templateManager.renderPerfDebug) {
+      console.log(`[BM PERF] bulk-filter ${JSON.stringify({
+        'hidden': targetIsHidden,
+        'colorsChanged': changedColorIDs.length,
+        'visibleCards': colors.length,
+        'paletteColors': this.palette.length
+      })}`);
+    }
+  }
+
+  /** Shows only the colors currently visible in the sorted and filtered color list.
+   * @since 0.92.33
+   */
+  #selectFilteredColorList() {
+
+    const colorList = document.querySelector(`#${this.colorListID}`);
+    if (!colorList) {return;}
+
+    const colors = Array.from(colorList.children);
+    const visibleColorIDs = new Set(colors
+      .filter(color => !color.classList.contains('bm-color-hide'))
+      .map(color => Number(color.dataset.id))
+      .filter(colorID => Number.isFinite(colorID)));
+
+    const renderedColors = new Map(colors.map(color => [Number(color.dataset.id), color]));
+    const hiddenColorIDs = [];
+    let hiddenColorsChanged = 0;
+    let shownColorsChanged = 0;
+
+    for (const paletteColor of this.palette) {
+      if (!paletteColor?.id) {continue;}
+
+      const shouldBeHidden = !visibleColorIDs.has(paletteColor.id);
+      const colorIsHidden = !!this.templateManager.shouldFilterColor.get(paletteColor.id);
+      if (shouldBeHidden) {
+        hiddenColorIDs.push(paletteColor.id);
+      }
+      if (colorIsHidden != shouldBeHidden) {
+        shouldBeHidden ? hiddenColorsChanged++ : shownColorsChanged++;
+      }
+
+      const colorElement = renderedColors.get(paletteColor.id);
+      const button = colorElement?.querySelector('.bm-filter-color-visibility');
+      if (!button || button.disabled) {continue;}
+
+      button.dataset['state'] = shouldBeHidden ? 'hidden' : 'shown';
+      button.innerHTML = shouldBeHidden ? this.eyeClosed : this.eyeOpen;
+      this.#syncColorToggleLabel(button, paletteColor);
+    }
+
+    this.templateManager.replaceColorFilters(hiddenColorIDs);
+
+    if (this.templateManager.renderPerfDebug) {
+      console.log(`[BM PERF] filtered-only ${JSON.stringify({
+        'visibleCards': visibleColorIDs.size,
+        'hiddenColorsChanged': hiddenColorsChanged,
+        'shownColorsChanged': shownColorsChanged,
+        'paletteColors': this.palette.length
+      })}`);
+    }
   }
 
   /** Updates the color toggle labels on the icon and the clickable color block.
@@ -1716,8 +1771,6 @@ export default class WindowFilter extends Overlay {
         }
       }
     }
-
-    console.log(`Tiles loaded: ${this.tilesLoadedTotal} / ${this.tilesTotal}`);
 
     // If the template is complete, and the pixel count is non-zero, and at least 1 template exists, and all template tiles have been loaded this session...
     if ((this.allPixelsCorrectTotal >= this.allPixelsTotal) && !!this.allPixelsTotal && (this.tilesLoadedTotal == this.tilesTotal)) {

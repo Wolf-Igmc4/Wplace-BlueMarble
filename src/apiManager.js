@@ -5,7 +5,7 @@
  */
 
 import TemplateManager from "./templateManager.js";
-import { consoleError, escapeHTML, localizeNumber, numberToEncoded, serverTPtoDisplayTP } from "./utils.js";
+import { consoleError, escapeHTML, localizeNumber, serverTPtoDisplayTP } from "./utils.js";
 
 export default class ApiManager {
 
@@ -127,7 +127,9 @@ export default class ApiManager {
         this.jsonResponses.set(endpointText, dataJSON);
       }
 
-      console.log(`%cBlue Marble%c: Recieved message about "%s"`, 'color: cornflowerblue;', '', endpointText);
+      if (this.templateManager.renderPerfDebug) {
+        console.log(`%cBlue Marble%c: Recieved message about "%s"`, 'color: cornflowerblue;', '', endpointText);
+      }
 
       // Each case is something that Blue Marble can use from the fetch.
       // For instance, if the fetch was for "me", we can update the overlay stats
@@ -148,13 +150,6 @@ export default class ApiManager {
 
           const nextLevelPixels = Math.ceil(Math.pow(Math.floor(dataJSON['level']) * Math.pow(30, 0.65), (1/0.65)) - dataJSON['pixelsPainted']); // Calculates pixels to the next level
 
-          console.log(dataJSON['id']);
-          if (!!dataJSON['id'] || dataJSON['id'] === 0) {
-            console.log(numberToEncoded(
-              dataJSON['id'],
-              '!#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~'
-            ));
-          }
           this.templateManager.userID = dataJSON['id'];
 
           // Obtains the refill timer for charges
@@ -259,9 +254,7 @@ export default class ApiManager {
           const blobUUID = data['blobID'];
           const blobData = data['blobData'];
           
-          const timer = Date.now();
           const templateBlob = await this.templateManager.drawTemplateOnTile(blobData, tileCoordsTile);
-          console.log(`Finished loading the tile in ${(Date.now() - timer) / 1000} seconds!`);
 
           window.postMessage({
             source: 'blue-marble',
@@ -281,13 +274,10 @@ export default class ApiManager {
   // Sends a heartbeat to the telemetry server
   async sendHeartbeat(version) {
 
-    console.log('Sending heartbeat to telemetry server...');
-
     let userSettings = GM_getValue('bmUserSettings', '{}')
     userSettings = JSON.parse(userSettings);
 
     if (!userSettings || !userSettings.telemetry || !userSettings.uuid) {
-      console.log('Telemetry is disabled, not sending heartbeat.');
       return; // If telemetry is disabled, do not send heartbeat
     }
 

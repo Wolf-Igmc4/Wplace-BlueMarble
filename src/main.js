@@ -13,6 +13,8 @@ import SettingsManager from './settingsManager.js';
 const name = GM_info.script.name.toString(); // Name of userscript
 const version = GM_info.script.version.toString(); // Version of userscript
 const consoleStyle = 'color: cornflowerblue;'; // The styling for the console logs
+const userSettings = JSON.parse(GM_getValue('bmUserSettings', '{}')); // Loads the user settings
+const isDebugLoggingEnabled = !!(userSettings?.debugLogs || userSettings?.flags?.includes('bm-debug'));
 
 /** Injects code into the client
  * This code will execute outside of TamperMonkey's sandbox
@@ -23,6 +25,7 @@ function inject(callback) {
     const script = document.createElement('script');
     script.setAttribute('bm-name', name); // Passes in the name value
     script.setAttribute('bm-cStyle', consoleStyle); // Passes in the console style value
+    script.setAttribute('bm-debug', String(isDebugLoggingEnabled)); // Enables verbose fetch logs when explicitly requested
     script.textContent = `(${callback})();`;
     document.documentElement?.appendChild(script);
     script.remove();
@@ -37,18 +40,21 @@ inject(() => {
   const script = document.currentScript; // Gets the current script HTML Script Element
   const name = script?.getAttribute('bm-name') || 'Blue Marble'; // Gets the name value that was passed in. Defaults to "Blue Marble" if nothing was found
   const consoleStyle = script?.getAttribute('bm-cStyle') || ''; // Gets the console style value that was passed in. Defaults to no styling if nothing was found
+  const debugLogs = script?.getAttribute('bm-debug') == 'true';
   const fetchedBlobQueue = new Map(); // Blobs being processed
+  const debugLog = (...args) => {if (debugLogs) {console.log(...args);}};
 
   window.addEventListener('message', (event) => {
     const { source, endpoint, blobID, blobData, blink } = event.data;
 
     const elapsed = Date.now() - blink;
 
-    // Since this code does not run in the userscript, we can't use consoleLog().
-    console.groupCollapsed(`%c${name}%c: ${fetchedBlobQueue.size} Recieved IMAGE message about blob "${blobID}"`, consoleStyle, '');
-    console.log(`Blob fetch took %c${String(Math.floor(elapsed/60000)).padStart(2,'0')}:${String(Math.floor(elapsed/1000) % 60).padStart(2,'0')}.${String(elapsed % 1000).padStart(3,'0')}%c MM:SS.mmm`, consoleStyle, '');
-    console.log(fetchedBlobQueue);
-    console.groupEnd();
+    if (debugLogs) {
+      console.groupCollapsed(`%c${name}%c: ${fetchedBlobQueue.size} Recieved IMAGE message about blob "${blobID}"`, consoleStyle, '');
+      console.log(`Blob fetch took %c${String(Math.floor(elapsed/60000)).padStart(2,'0')}:${String(Math.floor(elapsed/1000) % 60).padStart(2,'0')}.${String(elapsed % 1000).padStart(3,'0')}%c MM:SS.mmm`, consoleStyle, '');
+      console.log(fetchedBlobQueue);
+      console.groupEnd();
+    }
 
     // The modified blob won't have an endpoint, so we ignore any message without one.
     if ((source == 'blue-marble') && !!blobID && !!blobData && !endpoint) {
@@ -62,7 +68,7 @@ inject(() => {
       } else {
         // ...else the blobID is unexpected. We don't know what it is, but we know for sure it is not a blob. This means we ignore it.
 
-        consoleWarn(`%c${name}%c: Attempted to retrieve a blob (%s) from queue, but the blobID was not a function! Skipping...`, consoleStyle, '', blobID);
+        console.warn(`%c${name}%c: Attempted to retrieve a blob (%s) from queue, but the blobID was not a function! Skipping...`, consoleStyle, '', blobID);
       }
 
       fetchedBlobQueue.delete(blobID); // Delete the blob from the queue, because we don't need to process it again
@@ -79,15 +85,14 @@ inject(() => {
     const cloned = response.clone(); // Makes a copy of the response
 
     // Retrieves the endpoint name. Unknown endpoint = "ignore"
-    const endpointName = ((args[0] instanceof Request) ? args[0]?.url : args[0]) || 'ignore';
+    const endpointName = String(((args[0] instanceof Request) ? args[0]?.url : args[0]) || 'ignore');
 
     // Check Content-Type to only process JSON
     const contentType = cloned.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
 
 
-      // Since this code does not run in the userscript, we can't use consoleLog().
-      console.log(`%c${name}%c: Sending JSON message about endpoint "${endpointName}"`, consoleStyle, '');
+      debugLog(`%c${name}%c: Sending JSON message about endpoint "${endpointName}"`, consoleStyle, '');
 
       // Sends a message about the endpoint it spied on
       cloned.json()
@@ -101,15 +106,14 @@ inject(() => {
         .catch(err => {
           console.error(`%c${name}%c: Failed to parse JSON: `, consoleStyle, '', err);
         });
-    } else if (contentType.includes('image/') && (!endpointName.includes('openfreemap') && !endpointName.includes('maps'))) {
+    } else if (contentType.includes('image/') && !endpointName.startsWith('data:') && !endpointName.startsWith('blob:') && (!endpointName.includes('openfreemap') && !endpointName.includes('maps'))) {
       // Fetch custom for all images but opensourcemap
 
       const blink = Date.now(); // Current time
 
       const blob = await cloned.blob(); // The original blob
 
-      // Since this code does not run in the userscript, we can't use consoleLog().
-      console.log(`%c${name}%c: ${fetchedBlobQueue.size} Sending IMAGE message about endpoint "${endpointName}"`, consoleStyle, '');
+      debugLog(`%c${name}%c: ${fetchedBlobQueue.size} Sending IMAGE message about endpoint "${endpointName}"`, consoleStyle, '');
 
       // Returns the manipulated blob
       return new Promise((resolve) => {
@@ -132,8 +136,7 @@ inject(() => {
             statusText: cloned.statusText
           }));
 
-          // Since this code does not run in the userscript, we can't use consoleLog().
-          console.log(`%c${name}%c: ${fetchedBlobQueue.size} Processed blob "${blobUUID}"`, consoleStyle, '');
+          debugLog(`%c${name}%c: ${fetchedBlobQueue.size} Processed blob "${blobUUID}"`, consoleStyle, '');
         });
 
         window.postMessage({
@@ -147,7 +150,7 @@ inject(() => {
         const elapsed = Date.now();
         console.error(`%c${name}%c: Failed to Promise blob!`, consoleStyle, '');
         console.groupCollapsed(`%c${name}%c: Details of failed blob Promise:`, consoleStyle, '');
-        console.log(`Endpoint: ${endpointName}\nThere are ${fetchedBlobQueue.size} blobs processing...\nBlink: ${blink.toLocaleString()}\nTime Since Blink: ${String(Math.floor(elapsed/60000)).padStart(2,'0')}:${String(Math.floor(elapsed/1000) % 60).padStart(2,'0')}.${String(elapsed % 1000).padStart(3,'0')} MM:SS.mmm`);
+        console.error(`Endpoint: ${endpointName}\nThere are ${fetchedBlobQueue.size} blobs processing...\nBlink: ${blink.toLocaleString()}\nTime Since Blink: ${String(Math.floor(elapsed/60000)).padStart(2,'0')}:${String(Math.floor(elapsed/1000) % 60).padStart(2,'0')}.${String(elapsed % 1000).padStart(3,'0')} MM:SS.mmm`);
         console.error(`Exception stack:`, exception);
         console.groupEnd();
       });
@@ -176,7 +179,6 @@ const robotoMonoInjectionPoint = 'robotoMonoInjectionPoint';
 if (!!(robotoMonoInjectionPoint.indexOf('@font-face') + 1)) {
   // A very hacky way of doing truthy/falsy logic
   
-  console.log(`Loading Roboto Mono as a file...`);
   GM_addStyle(robotoMonoInjectionPoint); // Add the Roboto Mono font-faces that were injected.
 } else {
   // Else, no Roboto Mono was found. We need to use a stylesheet.
@@ -193,7 +195,6 @@ if (!!(robotoMonoInjectionPoint.indexOf('@font-face') + 1)) {
   document.head?.appendChild(stylesheetLink);
 }
 
-const userSettings = JSON.parse(GM_getValue('bmUserSettings', '{}')); // Loads the user settings
 if (!userSettings.uuid) {
   userSettings.uuid = crypto.randomUUID(); // Generates a random UUID
   GM.setValue('bmUserSettings', JSON.stringify(userSettings));
@@ -213,16 +214,12 @@ templateManager.setWindowMain(windowMain);
 templateManager.setSettingsManager(settingsManager); // Sets the settings manager
 
 const storageTemplates = JSON.parse(GM_getValue('bmTemplates', '{}'));
-console.log(storageTemplates);
 apiManager.spontaneousResponseListener(windowMain); // Reads spontaneous fetch responces
 templateManager.importJSON(storageTemplates).then(() => {
   windowMain.refreshTemplateControls();
 }).catch(error => {
   consoleWarn(`Failed to load saved templates: ${error?.message || error}`);
 }); // Loads the templates
-
-
-console.log(userSettings);
 
 setInterval(() => apiManager.sendHeartbeat(version), 1000 * 60 * 30); // Sends a heartbeat every 30 minutes
 
@@ -232,7 +229,6 @@ const currentTelemetryVersion = 1;
 
 // The last "version" of the data collection agreement that the user agreed too
 const previousTelemetryVersion = userSettings?.telemetry;
-console.log(`Telemetry is ${!(previousTelemetryVersion == undefined)}`);
 
 // If the user has not agreed to the current data collection terms, we need to show the Telemetry window.
 if ((previousTelemetryVersion == undefined) || (previousTelemetryVersion > currentTelemetryVersion)) {

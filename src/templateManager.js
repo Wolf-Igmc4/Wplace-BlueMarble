@@ -1,6 +1,6 @@
 import SettingsManager from "./settingsManager";
 import Template from "./Template";
-import { base64ToUint8, colorpaletteForBlueMarble, consoleError, consoleLog, consoleWarn, localizeNumber, numberToEncoded, refreshWplaceTiles, sleep, viewCanvasInNewTab } from "./utils";
+import { base64ToUint8, clearWplaceTemplateOverlay, colorpaletteForBlueMarble, consoleError, consoleLog, consoleWarn, localizeNumber, numberToEncoded, refreshWplaceTiles, sleep, syncWplaceTemplateOverlay, viewCanvasInNewTab } from "./utils";
 import WindowMain from "./WindowMain";
 import WindowWizard from "./WindowWizard";
 
@@ -119,11 +119,15 @@ export default class TemplateManager {
     this.sortedTemplatesArray = null; // Cached draw-order template list
     this.templateTileIndex = null; // Cached lookup from tile coords to template chunks
     this.renderStateVersion = 0; // Increments whenever render-relevant template state changes
-    this.renderPerfDebug = true; // Temporary render performance logs while optimizing large blueprints
+    this.renderPerfDebug = !!this.settingsManager?.userSettings?.flags?.includes('bm-debug'); // Verbose render performance logs
     this.tileRenderCache = new Map(); // Reuses processed tile blobs while tile image + render state are unchanged
     this.tileRenderCacheMaxEntries = 48; // Small LRU cache for visible map churn
     this.tileRenderOutputType = 'image/webp'; // WebP encodes large transparent overlay tiles much faster than PNG
     this.tileRenderOutputQuality = 0.98; // High visual quality for pixel-art overlays
+    this.fastTemplateOverlayEnabled = true; // Experimental MapLibre overlay path for unfiltered templates
+    this.fastTemplateOverlayActive = false; // Whether Wplace accepted the current overlay
+    this.fastTemplateOverlaySyncPromise = null; // Prevents duplicate overlay syncs
+    this.fastTemplateOverlayStateKey = ''; // Last requested overlay state
   }
 
   /** Updates the stored instance of the main window.
@@ -140,6 +144,7 @@ export default class TemplateManager {
    */
   setSettingsManager(settingsManager) {
     this.settingsManager = settingsManager;
+    this.renderPerfDebug = !!this.settingsManager?.userSettings?.flags?.includes('bm-debug');
     this.#loadColorFilterSettings();
   }
 
@@ -154,6 +159,7 @@ export default class TemplateManager {
       this.renderStateVersion++;
       this.#clearTileRenderCache();
       this.#persistColorFilterSettings();
+      void this.#syncFastTemplateOverlay().then(() => this.#refreshVisibleTiles());
       return;
     }
 
@@ -161,6 +167,7 @@ export default class TemplateManager {
     this.renderStateVersion++;
     this.#clearTileRenderCache();
     this.#persistColorFilterSettings();
+    void this.#syncFastTemplateOverlay().then(() => this.#refreshVisibleTiles());
   }
 
   /** Sets several hidden color filters in one persistence pass.
@@ -189,6 +196,32 @@ export default class TemplateManager {
     this.renderStateVersion++;
     this.#clearTileRenderCache();
     this.#persistColorFilterSettings();
+    void this.#syncFastTemplateOverlay().then(() => this.#refreshVisibleTiles());
+  }
+
+  /** Replaces the hidden color filter set in one render refresh.
+   * @param {number[]} colorIDs - Blue Marble palette color IDs that should be hidden
+   * @since 0.92.33
+   */
+  replaceColorFilters(colorIDs) {
+    const nextHiddenColorIDs = new Set(
+      colorIDs
+        .map(colorID => Number(colorID))
+        .filter(colorID => Number.isFinite(colorID))
+    );
+    const currentHiddenColorIDs = Array.from(this.shouldFilterColor.keys());
+    const didChange = currentHiddenColorIDs.length != nextHiddenColorIDs.size
+      || currentHiddenColorIDs.some(colorID => !nextHiddenColorIDs.has(colorID));
+
+    if (!didChange) {return;}
+
+    this.shouldFilterColor = new Map(
+      Array.from(nextHiddenColorIDs).map(colorID => [colorID, true])
+    );
+    this.renderStateVersion++;
+    this.#clearTileRenderCache();
+    this.#persistColorFilterSettings();
+    void this.#syncFastTemplateOverlay().then(() => this.#refreshVisibleTiles());
   }
 
   /** Loads persisted hidden color IDs into the template renderer.
@@ -216,6 +249,175 @@ export default class TemplateManager {
       .map(colorID => Number(colorID))
       .filter(colorID => Number.isFinite(colorID))
       .sort((a, b) => a - b);
+  }
+
+  /** Checks whether the current highlight config can be represented by raw template images.
+   * @returns {boolean} Whether highlighting is disabled
+   * @since 0.92.30
+   */
+  #isHighlightDisabled() {
+    const highlightPattern = this.settingsManager?.userSettings?.highlight || [[2, 0, 0]];
+    const highlightPatternIndexZero = highlightPattern?.[0];
+
+    return (
+      (highlightPattern?.length == 1)
+      && (highlightPatternIndexZero?.[0] == 2)
+      && (highlightPatternIndexZero?.[1] == 0)
+      && (highlightPatternIndexZero?.[2] == 0)
+    );
+  }
+
+  /** Converts a Wplace tile/pixel corner to latitude/longitude.
+   * Unlike `tilePixelToLatLng`, this returns exact image corners instead of pixel centers.
+   * @param {number} tileX - Wplace tile X coordinate
+   * @param {number} tileY - Wplace tile Y coordinate
+   * @param {number} pixelX - Pixel X inside the tile
+   * @param {number} pixelY - Pixel Y inside the tile
+   * @returns {{lat: number, lng: number}} Latitude/longitude pair
+   * @since 0.92.30
+   */
+  #tilePixelCornerToLatLng(tileX, tileY, pixelX, pixelY) {
+    const earthHalfCircumference = 2 * Math.PI * 6378137 / 2;
+    const resolution = (2 * earthHalfCircumference) / (this.tileSize * Math.pow(2, 11));
+    const globalPixelX = (tileX * this.tileSize) + pixelX;
+    const globalPixelY = (tileY * this.tileSize) + pixelY;
+    const metersX = (globalPixelX * resolution) - earthHalfCircumference;
+    const metersY = earthHalfCircumference - (globalPixelY * resolution);
+    const lng = (metersX / earthHalfCircumference) * 180;
+    const latMercator = (metersY / earthHalfCircumference) * 180;
+    const lat = (180 / Math.PI) * (2 * Math.atan(Math.exp(latMercator * Math.PI / 180)) - (Math.PI / 2));
+    return { lat, lng };
+  }
+
+  /** Normalizes a stored PNG chunk to a browser-loadable image URL.
+   * @param {string} encodedTile - Stored base64 or data URL
+   * @returns {string}
+   * @since 0.92.30
+   */
+  #normalizeTemplateChunkURL(encodedTile) {
+    if (typeof encodedTile != 'string') {return '';}
+    if (encodedTile.startsWith('data:image/')) {return encodedTile;}
+    return `data:image/png;base64,${encodedTile}`;
+  }
+
+  /** Checks whether the experimental MapLibre overlay can represent the current render state.
+   * @returns {boolean} Whether the fast overlay can be used
+   * @since 0.92.30
+   */
+  #canUseFastTemplateOverlay() {
+    return (
+      this.fastTemplateOverlayEnabled
+      && this.templatesShouldBeDrawn
+      && this.templatesArray.length > 0
+      && this.shouldFilterColor.size == 0
+      && this.#isHighlightDisabled()
+      && !!this.templatesJSON?.templates
+    );
+  }
+
+  /** Builds the MapLibre image-source payload for currently loaded template chunks.
+   * @returns {{stateKey: string, chunks: Array<Object>, opacity: number}}
+   * @since 0.92.30
+   */
+  #buildFastTemplateOverlayPayload() {
+    const chunks = [];
+    const templateKeys = [];
+
+    for (const template of this.#getSortedTemplates()) {
+      const storageKey = template.storageKey;
+      const storageTemplate = this.templatesJSON?.templates?.[storageKey];
+      if (!storageKey || !storageTemplate?.tiles) {continue;}
+      templateKeys.push(storageKey);
+
+      for (const [tileKey, bitmap] of Object.entries(template.chunked || {})) {
+        const storedTile = storageTemplate.tiles[tileKey];
+        if (!storedTile || !bitmap?.width || !bitmap?.height) {continue;}
+
+        const [tileX, tileY, pixelX, pixelY] = tileKey.split(',').map(Number);
+        if (![tileX, tileY, pixelX, pixelY].every(Number.isFinite)) {continue;}
+
+        const logicalWidth = bitmap.width / this.drawMult;
+        const logicalHeight = bitmap.height / this.drawMult;
+        const topLeft = this.#tilePixelCornerToLatLng(tileX, tileY, pixelX, pixelY);
+        const topRight = this.#tilePixelCornerToLatLng(tileX, tileY, pixelX + logicalWidth, pixelY);
+        const bottomRight = this.#tilePixelCornerToLatLng(tileX, tileY, pixelX + logicalWidth, pixelY + logicalHeight);
+        const bottomLeft = this.#tilePixelCornerToLatLng(tileX, tileY, pixelX, pixelY + logicalHeight);
+
+        chunks.push({
+          'key': `${storageKey}:${tileKey}`,
+          'url': this.#normalizeTemplateChunkURL(storedTile),
+          'coordinates': [
+            [topLeft.lng, topLeft.lat],
+            [topRight.lng, topRight.lat],
+            [bottomRight.lng, bottomRight.lat],
+            [bottomLeft.lng, bottomLeft.lat]
+          ]
+        });
+      }
+    }
+
+    return {
+      'stateKey': JSON.stringify({
+        'renderStateVersion': this.renderStateVersion,
+        'templateKeys': templateKeys,
+        'chunkCount': chunks.length,
+        'drawMult': this.drawMult
+      }),
+      'chunks': chunks,
+      'opacity': 1
+    };
+  }
+
+  /** Synchronizes the experimental MapLibre overlay with the current template state.
+   * @returns {Promise<boolean>} Whether the fast overlay is active
+   * @since 0.92.30
+   */
+  async #syncFastTemplateOverlay() {
+    if (this.fastTemplateOverlaySyncPromise) {return await this.fastTemplateOverlaySyncPromise;}
+
+    this.fastTemplateOverlaySyncPromise = (async () => {
+      if (!this.#canUseFastTemplateOverlay()) {
+        if (this.fastTemplateOverlayActive || this.fastTemplateOverlayStateKey) {
+          await clearWplaceTemplateOverlay();
+          this.#debugRenderPerf('overlay-clear', {
+            'reason': this.templatesShouldBeDrawn ? 'unsupported-render-state' : 'templates-disabled',
+            'filterCount': this.shouldFilterColor.size,
+            'highlightDisabled': this.#isHighlightDisabled()
+          });
+        }
+        this.fastTemplateOverlayActive = false;
+        this.fastTemplateOverlayStateKey = '';
+        return false;
+      }
+
+      const payload = this.#buildFastTemplateOverlayPayload();
+      if (!payload['chunks'].length) {
+        await clearWplaceTemplateOverlay();
+        this.fastTemplateOverlayActive = false;
+        this.fastTemplateOverlayStateKey = '';
+        return false;
+      }
+
+      if (this.fastTemplateOverlayActive && (this.fastTemplateOverlayStateKey == payload['stateKey'])) {
+        return true;
+      }
+
+      const syncStart = performance.now();
+      const ok = await syncWplaceTemplateOverlay(payload);
+      this.fastTemplateOverlayActive = ok;
+      this.fastTemplateOverlayStateKey = ok ? payload['stateKey'] : '';
+      this.#debugRenderPerf('overlay-sync', {
+        'ok': ok,
+        'chunks': payload['chunks'].length,
+        'totalMs': Number((performance.now() - syncStart).toFixed(2))
+      });
+
+      return ok;
+    })().finally(() => {
+      this.fastTemplateOverlaySyncPromise = null;
+    });
+
+    return await this.fastTemplateOverlaySyncPromise;
   }
 
   /** Checks whether any template is currently loaded.
@@ -257,7 +459,7 @@ export default class TemplateManager {
   async createTemplate(blob, name, coords) {
 
     // Creates the JSON object if it does not already exist
-    if (!this.templatesJSON) {this.templatesJSON = await this.createJSON(); console.log(`Creating JSON...`);}
+    if (!this.templatesJSON) {this.templatesJSON = await this.createJSON();}
 
     this.windowMain.handleDisplayStatus(`Creating template at ${coords.join(', ')}...`);
 
@@ -276,8 +478,6 @@ export default class TemplateManager {
     // Does the user want to aggressively skip transparent tiles while creating templates?
     const shouldAggSkipTransTiles = this.settingsManager?.userSettings?.flags?.includes('hl-agSkip');
 
-    console.log(`Should Skip: ${shouldSkipTransTiles}; Should Agg Skip: ${shouldAggSkipTransTiles}`);
-    
     const { templateTiles, templateTilesBuffers } = await template.createTemplateTiles(this.tileSize, this.paletteBM, shouldSkipTransTiles, shouldAggSkipTransTiles); // Chunks the tiles
     
     template.chunked = templateTiles; // Stores the chunked tile bitmaps
@@ -287,7 +487,8 @@ export default class TemplateManager {
 
     // Appends a child into the templates object
     // The child's name is the number of templates already in the list (sort order) plus the encoded player ID
-    this.templatesJSON.templates[`${template.sortID} ${template.authorID}`] = {
+    const templateKey = `${template.sortID} ${template.authorID}`;
+    this.templatesJSON.templates[templateKey] = {
       "name": template.displayName, // Display name of template
       "coords": coords.join(', '), // The coords of the template
       "enabled": true,
@@ -295,17 +496,14 @@ export default class TemplateManager {
       "tiles": templateTilesBuffers // Stores the chunked tile buffers
     };
 
+    template.storageKey = templateKey;
     this.templatesArray = []; // Remove this to enable multiple templates (2/2)
     this.templatesArray.push(template); // Pushes the Template object instance to the Template Array
     this.#invalidateTemplateRenderCaches();
+    void this.#syncFastTemplateOverlay();
 
     this.windowMain.handleDisplayStatus(`Template created at ${coords.join(', ')}!`);
     this.windowMain.refreshTemplateControls();
-
-    console.log(Object.keys(this.templatesJSON.templates).length);
-    console.log(this.templatesJSON);
-    console.log(this.templatesArray);
-    console.log(JSON.stringify(this.templatesJSON));
 
     await this.#storeTemplates();
   }
@@ -438,7 +636,7 @@ export default class TemplateManager {
   async disableTemplate() {
 
     // Creates the JSON object if it does not already exist
-    if (!this.templatesJSON) {this.templatesJSON = await this.createJSON(); console.log(`Creating JSON...`);}
+    if (!this.templatesJSON) {this.templatesJSON = await this.createJSON();}
 
 
   }
@@ -449,8 +647,6 @@ export default class TemplateManager {
   async downloadAllTemplates() {
 
     consoleLog(`Downloading all templates...`);
-
-    console.log(this.templatesArray);
 
     // For each template loaded...
     for (const template of this.templatesArray) {
@@ -468,8 +664,6 @@ export default class TemplateManager {
 
     // Templates in user storage
     const templates = JSON.parse(GM_getValue('bmTemplates', '{}'))?.templates;
-
-    console.log(templates);
 
     // If there is at least one template loaded...
     if (Object.keys(templates).length > 0) {
@@ -526,8 +720,6 @@ export default class TemplateManager {
    */
   async convertTemplateToBlob(template) {
 
-    console.log(template);
-
     const templateTiles64 = template.chunked; // Tiles of template image as base 64
 
     // Sorts the keys of the tiles (Object -> Array)
@@ -561,15 +753,11 @@ export default class TemplateManager {
       absoluteLargestY = Math.max(absoluteLargestY, absoluteY + (tileImage.height / this.drawMult));
     })
 
-    console.log(`Absolute coordinates: (${absoluteSmallestX}, ${absoluteSmallestY}) and (${absoluteLargestX}, ${absoluteLargestY})`);
-
     // Calculates the template/canvas width and height
     const templateWidth = absoluteLargestX - absoluteSmallestX;
     const templateHeight = absoluteLargestY - absoluteSmallestY;
     const canvasWidth = templateWidth * this.drawMult;
     const canvasHeight = templateHeight * this.drawMult;
-
-    console.log(`Template Width: ${templateWidth}\nTemplate Height: ${templateHeight}\nCanvas Width: ${canvasWidth}\nCanvas Height: ${canvasHeight}`);
 
     // Creates a new canvas the size of the template
     const canvas = new OffscreenCanvas(canvasWidth, canvasHeight);
@@ -586,8 +774,6 @@ export default class TemplateManager {
       // Calculates the absolute pixel coordinates for this tile
       const absoluteX = (tileX * this.tileSize) + pixelX;
       const absoluteY = (tileY * this.tileSize) + pixelY;
-
-      console.log(`Drawing tile (${tileX}, ${tileY}, ${pixelX}, ${pixelY}) (${absoluteX}, ${absoluteY}) at (${absoluteX - absoluteSmallestX}, ${absoluteY - absoluteSmallestY}) on the canvas...`);
 
       // Draws the tile to the canvas
       context.drawImage(tileImage, (absoluteX - absoluteSmallestX) * this.drawMult, (absoluteY - absoluteSmallestY) * this.drawMult, tileImage.width, tileImage.height);
@@ -927,6 +1113,18 @@ export default class TemplateManager {
     const templatesForTile = this.#getTemplateTileIndex().get(tileCoords) ?? [];
     timings['indexMs'] = Number((performance.now() - indexStart).toFixed(2));
 
+    if (this.fastTemplateOverlayActive && this.#canUseFastTemplateOverlay()) {
+      this.windowMain.handleDisplayStatus(`Displaying templates with fast overlay.\nVersion: ${this.version}`);
+      this.#debugRenderPerf('tile-overlay-pass', {
+        'tileCoords': tileCoords,
+        'chunksOnTile': templatesForTile.length,
+        'renderStateVersion': this.renderStateVersion,
+        'totalMs': Number((performance.now() - renderStart).toFixed(2)),
+        'timings': timings
+      });
+      return tileBlob;
+    }
+
     const visibleFilterStart = performance.now();
     const templatesToDraw = templatesForTile.filter(templateChunk => this.#templateChunkHasVisibleColor(templateChunk));
     timings['visibleFilterMs'] = Number((performance.now() - visibleFilterStart).toFixed(2));
@@ -1199,9 +1397,6 @@ export default class TemplateManager {
    */
   async importJSON(json) {
 
-    console.log(`Importing JSON...`);
-    console.log(json);
-
     // If the passed in JSON is a Blue Marble template object...
     if (this.#isBlueMarbleTemplateJSON(json)) {
       this.templatesLoadingPromise = this.#parseBlueMarble(json)
@@ -1233,21 +1428,15 @@ export default class TemplateManager {
    */
   async #parseBlueMarble(json) {
 
-    console.log(`Parsing BlueMarble...`);
-
     const templates = json.templates || {};
     json.templates = templates;
     json.whoami = "BlueMarble";
     this.templatesJSON = json;
 
-    console.log(`BlueMarble length: ${Object.keys(templates).length}`);
-
     const schemaVersion = json?.schemaVersion;
     const schemaVersionArray = schemaVersion.split(/[-\.\+]/); // SemVer -> string[]
     const schemaVersionBleedingEdge = this.schemaVersion.split(/[-\.\+]/); // SemVer -> string[]
     const scriptVersion = json?.scriptVersion;
-
-    console.log(`BlueMarble Template Schema: ${schemaVersion}; Script Version: ${scriptVersion}`);
 
     // If MAJOR version is up-to-date...
     if (schemaVersionArray[0] == schemaVersionBleedingEdge[0]) {
@@ -1276,6 +1465,7 @@ export default class TemplateManager {
         await this.#storeTemplates();
       }
       this.windowMain?.refreshTemplateControls?.();
+      await this.#syncFastTemplateOverlay();
       await this.#refreshVisibleTiles();
 
     } else if (schemaVersionArray[0] < schemaVersionBleedingEdge[0]) {
@@ -1314,8 +1504,6 @@ export default class TemplateManager {
   
           const templateKey = template; // The identification key for the template. E.g., "0 $Z"
           const templateValue = templates[template]; // The actual content of the template
-          console.log(`Template Key: ${templateKey}`);
-  
           if (templates.hasOwnProperty(template)) {
             if (templateValue.enabled === false) {continue;}
   
@@ -1337,7 +1525,6 @@ export default class TemplateManager {
             const actualTileSize = tileSize * drawMult;
   
             for (const tile in tilesbase64) {
-              console.log(tile);
               if (tilesbase64.hasOwnProperty(tile)) {
                 const encodedTemplateBase64 = tilesbase64[tile];
                 const templateUint8Array = base64ToUint8(encodedTemplateBase64); // Base 64 -> Uint8Array
@@ -1365,11 +1552,10 @@ export default class TemplateManager {
             template.pixelCount = pixelCount;
             template.chunked = templateTiles;
             template.chunked32 = templateTiles32;
+            template.storageKey = templateKey;
             
             templatesArray.push(template);
             loadedTemplateKeys.add(templateKey);
-            console.log(templatesArray);
-            console.log(`^^^ This ^^^`);
           }
         }
       }
@@ -1390,6 +1576,7 @@ export default class TemplateManager {
    */
   setTemplatesShouldBeDrawn(value) {
     this.templatesShouldBeDrawn = value;
+    void this.#syncFastTemplateOverlay().then(() => this.#refreshVisibleTiles());
   }
 
   /** Calculates the correct pixels on this tile.

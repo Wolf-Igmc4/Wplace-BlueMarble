@@ -55,7 +55,6 @@ export default class SettingsManager extends WindowSettings {
       await GM.setValue(this.userSettingsSaveLocation, userSettingsCurrent); // Updates user storage
       this.userSettingsOld = structuredClone(this.userSettings); // Updates the old user settings with a duplicate of the current user settings
       this.lastUpdateTime = Date.now(); // Updates the variable that contains the last time updated
-      console.log(userSettingsCurrent);
     }
   }
 
@@ -67,7 +66,6 @@ export default class SettingsManager extends WindowSettings {
     await GM.setValue(this.userSettingsSaveLocation, userSettingsCurrent);
     this.userSettingsOld = structuredClone(this.userSettings);
     this.lastUpdateTime = Date.now();
-    console.log(userSettingsCurrent);
   }
 
   /** Toggles a boolean flag to the state that was passed in.

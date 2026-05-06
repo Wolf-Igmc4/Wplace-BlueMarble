@@ -243,6 +243,71 @@ export async function refreshWplaceTiles() {
   });
 }
 
+/** Draws templates as MapLibre raster image layers, bypassing per-tile bitmap composition.
+ * Falls back to `false` if Wplace internals can not be reached.
+ * @param {{stateKey: string, chunks: Array<Object>, opacity?: number}} payload - Overlay description
+ * @returns {Promise<boolean>} Whether the overlay was installed
+ * @since 0.92.30
+ */
+export async function syncWplaceTemplateOverlay(payload) {
+  installWplaceNavigatorBridge();
+
+  const requestID = crypto.randomUUID();
+  return await new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', onMessage);
+      resolve(false);
+    }, 4000);
+
+    const onMessage = (event) => {
+      const data = event.data;
+      if (!data || data['source'] != 'blue-marble' || data['endpoint'] != 'template-overlay-sync-result' || data['requestID'] != requestID) {return;}
+      clearTimeout(timeout);
+      window.removeEventListener('message', onMessage);
+      resolve(!!data['ok']);
+    };
+
+    window.addEventListener('message', onMessage);
+    window.postMessage({
+      'source': 'blue-marble',
+      'endpoint': 'template-overlay-sync',
+      'requestID': requestID,
+      'payload': payload
+    }, '*');
+  });
+}
+
+/** Clears the MapLibre raster image overlay used by Blue Marble.
+ * @returns {Promise<boolean>} Whether the overlay clear request was handled
+ * @since 0.92.30
+ */
+export async function clearWplaceTemplateOverlay() {
+  installWplaceNavigatorBridge();
+
+  const requestID = crypto.randomUUID();
+  return await new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', onMessage);
+      resolve(false);
+    }, 4000);
+
+    const onMessage = (event) => {
+      const data = event.data;
+      if (!data || data['source'] != 'blue-marble' || data['endpoint'] != 'template-overlay-clear-result' || data['requestID'] != requestID) {return;}
+      clearTimeout(timeout);
+      window.removeEventListener('message', onMessage);
+      resolve(!!data['ok']);
+    };
+
+    window.addEventListener('message', onMessage);
+    window.postMessage({
+      'source': 'blue-marble',
+      'endpoint': 'template-overlay-clear',
+      'requestID': requestID
+    }, '*');
+  });
+}
+
 /** Installs a page-context bridge that can access Wplace's internal Svelte modules.
  * @since 0.92.1
  */
@@ -256,7 +321,10 @@ function installWplaceNavigatorBridge() {
 
     const state = {
       map: null,
-      searchPromise: null
+      searchPromise: null,
+      overlayLayerIDs: [],
+      overlaySourceIDs: [],
+      overlayStateKey: ''
     };
 
     async function findMap() {
@@ -287,9 +355,147 @@ function installWplaceNavigatorBridge() {
       return null;
     }
 
+    function clearTemplateOverlay(map) {
+      for (const layerID of state.overlayLayerIDs) {
+        try {
+          if (map.getLayer?.(layerID)) {map.removeLayer(layerID);}
+        } catch (error) {}
+      }
+
+      for (const sourceID of state.overlaySourceIDs) {
+        try {
+          if (map.getSource?.(sourceID)) {map.removeSource(sourceID);}
+        } catch (error) {}
+      }
+
+      state.overlayLayerIDs = [];
+      state.overlaySourceIDs = [];
+      state.overlayStateKey = '';
+    }
+
+    async function syncTemplateOverlay(payload) {
+      const map = await (state.searchPromise ||= findMap());
+      state.searchPromise = null;
+      if (!map || typeof map.addSource != 'function' || typeof map.addLayer != 'function') {return false;}
+
+      if (state.overlayStateKey && state.overlayStateKey == payload?.stateKey) {
+        if (typeof map.triggerRepaint == 'function') {map.triggerRepaint();}
+        return true;
+      }
+
+      clearTemplateOverlay(map);
+
+      const chunks = Array.isArray(payload?.chunks) ? payload.chunks : [];
+      if (!chunks.length) {
+        if (typeof map.triggerRepaint == 'function') {map.triggerRepaint();}
+        return true;
+      }
+
+      chunks.forEach((chunk, index) => {
+        if (!chunk?.url || !Array.isArray(chunk.coordinates)) {
+          console.warn('[BM PERF] overlay-chunk-skip', {
+            index: index,
+            hasURL: !!chunk?.url,
+            hasCoordinates: Array.isArray(chunk?.coordinates),
+            keys: chunk ? Object.keys(chunk) : []
+          });
+          return;
+        }
+
+        const sourceID = 'blue-marble-template-source-' + index;
+        const layerID = 'blue-marble-template-layer-' + index;
+
+        try {
+          map.addSource(sourceID, {
+            type: 'image',
+            url: chunk.url,
+            coordinates: chunk.coordinates
+          });
+
+          map.addLayer({
+            id: layerID,
+            type: 'raster',
+            source: sourceID,
+            paint: {
+              'raster-opacity': Number.isFinite(payload?.opacity) ? payload.opacity : 1,
+              'raster-resampling': 'nearest'
+            }
+          });
+
+          state.overlaySourceIDs.push(sourceID);
+          state.overlayLayerIDs.push(layerID);
+        } catch (error) {
+          console.warn('[BM PERF] overlay-layer-error', {
+            index: index,
+            sourceID: sourceID,
+            layerID: layerID,
+            message: error?.message || String(error)
+          });
+        }
+      });
+
+      if (state.overlayLayerIDs.length != chunks.length) {
+        console.warn('[BM PERF] overlay-sync-partial', {
+          expected: chunks.length,
+          layers: state.overlayLayerIDs.length,
+          sources: state.overlaySourceIDs.length
+        });
+        clearTemplateOverlay(map);
+        if (typeof map.triggerRepaint == 'function') {map.triggerRepaint();}
+        return false;
+      }
+
+      state.overlayStateKey = payload?.stateKey || '';
+      if (typeof map.triggerRepaint == 'function') {map.triggerRepaint();}
+      return true;
+    }
+
     window.addEventListener('message', async (event) => {
       const data = event.data;
       if (!data || data.source != 'blue-marble') {return;}
+
+      if (data.endpoint == 'template-overlay-sync') {
+        let ok = false;
+
+        try {
+          ok = await syncTemplateOverlay(data.payload);
+        } catch (error) {
+          state.searchPromise = null;
+        }
+
+        window.postMessage({
+          source: 'blue-marble',
+          endpoint: 'template-overlay-sync-result',
+          requestID: data.requestID,
+          ok: ok
+        }, '*');
+        return;
+      }
+
+      if (data.endpoint == 'template-overlay-clear') {
+        let ok = false;
+
+        try {
+          const map = await (state.searchPromise ||= findMap());
+          state.searchPromise = null;
+
+          if (map) {
+            clearTemplateOverlay(map);
+            if (typeof map.triggerRepaint == 'function') {map.triggerRepaint();}
+            ok = true;
+          }
+        } catch (error) {
+          state.searchPromise = null;
+        }
+
+        window.postMessage({
+          source: 'blue-marble',
+          endpoint: 'template-overlay-clear-result',
+          requestID: data.requestID,
+          ok: ok
+        }, '*');
+        return;
+      }
 
       if (data.endpoint == 'refresh-tiles') {
         let ok = false;
