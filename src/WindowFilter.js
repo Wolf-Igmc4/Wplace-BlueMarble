@@ -60,6 +60,7 @@ export default class WindowFilter extends Overlay {
 
     /** The templateManager instance currently being used. @type {TemplateManager} */
     this.templateManager = executor.apiManager?.templateManager;
+    this.apiManager = executor.apiManager ?? null;
 
     // Eye icons
     this.eyeOpen = '<svg class="bm-filter-eye-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.8 12s3.1-5 8.2-5 8.2 5 8.2 5-3.1 5-8.2 5-8.2-5-8.2-5Z"/><circle cx="12" cy="12" r="2.5"/></svg>';
@@ -196,7 +197,6 @@ export default class WindowFilter extends Overlay {
                     .addOption({'value': 'incorrect', 'textContent': 'incorrect pixels'}).buildElement()
                     .addOption({'value': 'total', 'textContent': 'total pixels'}).buildElement()
                   .buildElement()
-                  .addCheckbox({'id': 'bm-filter-sort-bought', 'name': 'sortBought', 'textContent': 'Bought colors'}).buildElement()
                   .addSelect({'id': 'bm-filter-sort-secondary', 'name': 'sortSecondary', 'textContent': ' in '})
                     .addOption({'value': 'ascending', 'textContent': 'ascending'}).buildElement()
                     .addOption({'value': 'descending', 'textContent': 'descending'}).buildElement()
@@ -209,6 +209,7 @@ export default class WindowFilter extends Overlay {
                   .addCheckbox({'id': 'bm-filter-show-completed', 'name': 'showCompleted', 'textContent': 'Completed'}).buildElement()
                   .addCheckbox({'id': 'bm-filter-show-free', 'name': 'showFree', 'textContent': 'Free'}).buildElement()
                   .addCheckbox({'id': 'bm-filter-show-premium', 'name': 'showPremium', 'textContent': 'Premium'}).buildElement()
+                  .addCheckbox({'id': 'bm-filter-sort-bought', 'name': 'sortBought', 'textContent': 'Bought colors'}).buildElement()
                 .buildElement()
               .buildElement()
             .buildElement()
@@ -456,6 +457,8 @@ export default class WindowFilter extends Overlay {
     }
     if (sortBoughtInput instanceof HTMLInputElement) {
       sortBoughtInput.checked = this.sortBought;
+      sortBoughtInput.disabled = !this.showPremium;
+      sortBoughtInput.parentElement?.classList.toggle('bm-filter-control-disabled', !this.showPremium);
     }
     if (showUnusedInput instanceof HTMLInputElement) {
       showUnusedInput.checked = this.showUnused;
@@ -484,15 +487,17 @@ export default class WindowFilter extends Overlay {
       formValues[input] = value;
     }
 
+    const showPremium = formValues['showPremium'] == 'on';
     this.#sortColorList(
       String(formValues['sortPrimary'] || this.sortPrimary),
       String(formValues['sortSecondary'] || this.sortSecondary),
       formValues['showUnused'] == 'on',
       formValues['showCompleted'] == 'on',
       formValues['showFree'] == 'on',
-      formValues['showPremium'] == 'on',
-      formValues['sortBought'] == 'on'
+      showPremium,
+      showPremium ? formValues['sortBought'] == 'on' : this.sortBought
     );
+    this.#syncSortFormControls();
     this.#persistFilterViewSettings(true);
   }
 
@@ -725,6 +730,9 @@ export default class WindowFilter extends Overlay {
   #isColorBought(color) {
     if (!color?.premium) {return false;}
 
+    const boughtColorIDs = this.#getBoughtColorIDsFromUserData();
+    if (boughtColorIDs) {return boughtColorIDs.has(Number(color.id));}
+
     const colorElement = document.querySelector(`#color-${color.id}`);
     if (!colorElement) {return false;}
 
@@ -739,6 +747,8 @@ export default class WindowFilter extends Overlay {
       return [
         element.className || '',
         element.getAttribute?.('aria-label') || '',
+        element.getAttribute?.('aria-pressed') || '',
+        element.getAttribute?.('aria-selected') || '',
         element.getAttribute?.('title') || '',
         element.getAttribute?.('aria-disabled') || '',
         datasetText,
@@ -754,18 +764,61 @@ export default class WindowFilter extends Overlay {
       || /\b(disabled|locked|unavailable|not[-\s]?owned|not[-\s]?available|not-allowed|btn-disabled)\b/i.test(stateText)
       || /\b(buy|purchase|unlock)\b/i.test(stateText)
       || stateText.includes('🔒');
+    const hasBoughtState = /\b(owned|purchased|bought|unlocked|selected|active|enabled|available)\b/i.test(stateText)
+      || colorElement.getAttribute('aria-pressed') == 'true'
+      || colorElement.getAttribute('aria-selected') == 'true'
+      || control?.getAttribute?.('aria-pressed') == 'true'
+      || control?.getAttribute?.('aria-selected') == 'true';
+    const isBought = hasBoughtState && !isDisabled;
 
     if (window?.blueMarbleDebugBoughtColors) {
       console.log('[Blue Marble] bought color state', {
         id: color.id,
         name: color.name,
-        bought: !isDisabled,
+        bought: isBought,
         stateText: stateText.trim().replace(/\s+/g, ' '),
         outerHTML: colorElement.outerHTML.slice(0, 1000)
       });
     }
 
-    return !isDisabled;
+    return isBought;
+  }
+
+  /** Finds purchased premium color IDs from Wplace user data, when the payload exposes them.
+   * @returns {Set<number> | null}
+   * @since 0.92.16
+   */
+  #getBoughtColorIDsFromUserData() {
+    const userData = this.apiManager?.userData;
+    if (!userData || typeof userData != 'object') {return null;}
+
+    const ids = new Set();
+    const visited = new WeakSet();
+    const visit = (value, path = '', depth = 0) => {
+      if (depth > 5 || value == null) {return;}
+      if (typeof value != 'object') {return;}
+      if (visited.has(value)) {return;}
+      visited.add(value);
+
+      if (Array.isArray(value)) {
+        const pathLooksRelevant = /\b(color|colour|palette|premium).*(own|purchase|unlock|bought|available)|\b(own|purchase|unlock|bought|available).*(color|colour|palette|premium)/i.test(path);
+        if (pathLooksRelevant) {
+          for (const entry of value) {
+            const id = typeof entry == 'object'
+              ? Number(entry?.id ?? entry?.color ?? entry?.colorId ?? entry?.colourId)
+              : Number(entry);
+            if (Number.isInteger(id) && id >= 32 && id <= 63) {ids.add(id);}
+          }
+        }
+      }
+
+      for (const [key, child] of Object.entries(value)) {
+        visit(child, path ? `${path}.${key}` : key, depth + 1);
+      }
+    };
+
+    visit(userData);
+    return ids.size ? ids : null;
   }
 
   /** Creates the color list container.
@@ -960,6 +1013,7 @@ export default class WindowFilter extends Overlay {
     if (!allowedPrimarySorts.has(sortPrimary)) {sortPrimary = this.sortPrimary;}
     if (!allowedSecondarySorts.has(sortSecondary)) {sortSecondary = this.sortSecondary;}
     sortBought = !!sortBought;
+    const shouldGroupBoughtColors = sortBought && showPremium;
 
     // Update memorised sort settings
     this.sortPrimary = sortPrimary;
@@ -993,7 +1047,7 @@ export default class WindowFilter extends Overlay {
 
     colors.sort((index, nextIndex) => {
       const dataKey = sortPrimary;
-      if (sortBought) {
+      if (shouldGroupBoughtColors) {
         const boughtCompare = this.#compareColorDataset(index, nextIndex, 'bought', 'descending');
         if (boughtCompare) {return boughtCompare;}
       }

@@ -19,6 +19,7 @@ export default class ApiManager {
     this.chargeRefillTimerID = ''; // Contains the Charge refill timer element ID attribute so we can update the timer.
     this.coordsTilePixel = []; // Contains the last detected tile/pixel coordinate pair requested
     this.templateCoordsTilePixel = []; // Contains the last "enabled" template coords
+    this.userData = null; // Last received Wplace user data payload
   }
 
   /** Determines if the spontaneously received response is something we want.
@@ -62,6 +63,8 @@ export default class ApiManager {
             overlay.handleDisplayError(`You are not logged in or Wplace is offline!\nCould not fetch userdata.`);
             return; // Kills itself before attempting to display null userdata
           }
+
+          this.userData = dataJSON;
 
           const nextLevelPixels = Math.ceil(Math.pow(Math.floor(dataJSON['level']) * Math.pow(30, 0.65), (1/0.65)) - dataJSON['pixelsPainted']); // Calculates pixels to the next level
 

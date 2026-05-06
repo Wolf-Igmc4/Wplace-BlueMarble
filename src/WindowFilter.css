@@ -215,6 +215,10 @@
   gap: 0.35ch;
 }
 
+#bm-window-filter .bm-filter-control-disabled {
+  opacity: 0.55;
+}
+
 /* Filter flex */
 #bm-filter-flex {
   display: grid;

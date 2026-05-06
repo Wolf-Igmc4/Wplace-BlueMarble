@@ -497,6 +497,9 @@ input[type=file] {
 #bm-window-filter .bm-filter-show-row label {
   gap: 0.35ch;
 }
+#bm-window-filter .bm-filter-control-disabled {
+  opacity: 0.55;
+}
 #bm-filter-flex {
   display: grid;
   gap: 0.38rem;
