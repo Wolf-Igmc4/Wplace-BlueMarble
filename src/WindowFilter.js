@@ -281,11 +281,16 @@ export default class WindowFilter extends Overlay {
       .addDragbar()
         .addButton({'class': 'bm-button-circle', 'innerHTML': minimizeIconExpanded, 'aria-label': 'Minimize window "Color Filter"', 'data-button-status': 'expanded'}, (instance, button) => {
           button.onclick = () => {
+            const willExpand = button.dataset['buttonStatus'] == 'collapsed';
             const windowedColorTotals = document.querySelector('#bm-filter-windowed-color-totals');
             if (windowedColorTotals) {
               windowedColorTotals.style.display = (button.dataset['buttonStatus'] == 'expanded') ? 'none' : '';
             }
             instance.handleMinimization(button);
+            if (willExpand) {
+              const windowElement = document.querySelector(`#${this.windowID}.bm-windowed`);
+              this.#snapWindowedFilterToDefaultPosition(windowElement);
+            }
           };
           button.ontouchend = () => {button.click()}; // Needed only to negate weird interaction with dragbar
         }).buildElement()
@@ -671,6 +676,29 @@ export default class WindowFilter extends Overlay {
     };
   }
 
+  /** Applies the windowed filter transform from the persisted state immediately.
+   * @param {HTMLElement} windowElement
+   * @param {Object} windowState
+   * @since 0.92.26
+   */
+  #applyWindowStatePosition(windowElement, windowState) {
+    const x = Number(windowState.x);
+    const y = Number(windowState.y);
+    if (!windowElement?.isConnected || !Number.isFinite(x) || !Number.isFinite(y)) {return;}
+
+    const clampedPosition = this.#clampWindowPosition(windowElement, x, y);
+    windowElement.style.left = '0px';
+    windowElement.style.top = '0px';
+    windowElement.style.right = '';
+    windowElement.style.transform = `translate(${clampedPosition.x}px, ${clampedPosition.y}px)`;
+
+    if ((clampedPosition.x != x) || (clampedPosition.y != y)) {
+      windowState.x = clampedPosition.x;
+      windowState.y = clampedPosition.y;
+      void this.settingsManager?.saveUserStorageNow();
+    }
+  }
+
   /** Applies the persisted size and position to the windowed filter.
    * @param {HTMLElement} windowElement
    * @since 0.92.0
@@ -695,25 +723,7 @@ export default class WindowFilter extends Overlay {
       windowElement.style.height = `${windowState.height}px`;
     }
 
-    requestAnimationFrame(() => {
-      if (!windowElement.isConnected) {return;}
-
-      const x = Number(windowState.x);
-      const y = Number(windowState.y);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) {return;}
-
-      const clampedPosition = this.#clampWindowPosition(windowElement, x, y);
-      windowElement.style.left = '0px';
-      windowElement.style.top = '0px';
-      windowElement.style.right = '';
-      windowElement.style.transform = `translate(${clampedPosition.x}px, ${clampedPosition.y}px)`;
-
-      if ((clampedPosition.x != x) || (clampedPosition.y != y)) {
-        windowState.x = clampedPosition.x;
-        windowState.y = clampedPosition.y;
-        void this.settingsManager?.saveUserStorageNow();
-      }
-    });
+    this.#applyWindowStatePosition(windowElement, windowState);
   }
 
   /** Saves the current size and position of the windowed filter.
@@ -831,6 +841,18 @@ export default class WindowFilter extends Overlay {
     windowState.x = clampedFallback.x;
     windowState.y = clampedFallback.y;
     windowState.windowedPositionVersion = 1;
+  }
+
+  /** Snaps the windowed filter beside the main Blue Marble window.
+   * @param {HTMLElement | null} windowElement
+   * @since 0.92.26
+   */
+  #snapWindowedFilterToDefaultPosition(windowElement) {
+    const windowState = this.#getWindowState();
+    if (!windowState || !windowElement) {return;}
+    this.#applyDefaultWindowPosition(windowElement, windowState, {forceDefaultPosition: true});
+    this.#applyWindowStatePosition(windowElement, windowState);
+    void this.settingsManager?.saveUserStorageNow();
   }
 
   /** Checks whether a premium color appears usable in Wplace's own palette.

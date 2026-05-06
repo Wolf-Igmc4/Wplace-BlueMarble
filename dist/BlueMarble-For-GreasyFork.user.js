@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.25
+// @version         0.92.26
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.25
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.26
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -2674,7 +2674,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     }
     return `${day}/${month}/${year} ${hour}:${minute}${period}`;
   }
-  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, shouldDefaultToWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, startColorPickerObserver_fn, stopColorPickerObserver_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, isColorBought_fn, getBoughtColorIDsFromDOM_fn, getBoughtColorIDs_fn, getBoughtColorIDsFromUserData_fn, collectBoughtColorIDs_fn, findBoughtColorPayloadCandidates_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
+  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, shouldDefaultToWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, startColorPickerObserver_fn, stopColorPickerObserver_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, applyWindowStatePosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, snapWindowedFilterToDefaultPosition_fn, isColorBought_fn, getBoughtColorIDsFromDOM_fn, getBoughtColorIDs_fn, getBoughtColorIDsFromUserData_fn, collectBoughtColorIDs_fn, findBoughtColorPayloadCandidates_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
   var WindowFilter = class extends Overlay {
     /** Constructor for the color filter window
      * @param {*} executor - The executing class
@@ -2816,11 +2816,16 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
         "style": `width: min(360px, calc(100vw - 16px)); height: min(70vh, 32rem); min-width: min(${this.windowMinWidth}px, calc(100vw - 16px)); min-height: ${this.windowMinHeight}px; max-width: min(${this.windowMaxWidth}px, calc(100vw - 16px)); max-height: min(${this.windowMaxHeight}px, calc(100vh - 16px));`
       }).addDragbar().addButton({ "class": "bm-button-circle", "innerHTML": minimizeIconExpanded, "aria-label": 'Minimize window "Color Filter"', "data-button-status": "expanded" }, (instance, button) => {
         button.onclick = () => {
+          const willExpand = button.dataset["buttonStatus"] == "collapsed";
           const windowedColorTotals = document.querySelector("#bm-filter-windowed-color-totals");
           if (windowedColorTotals) {
             windowedColorTotals.style.display = button.dataset["buttonStatus"] == "expanded" ? "none" : "";
           }
           instance.handleMinimization(button);
+          if (willExpand) {
+            const windowElement = document.querySelector(`#${this.windowID}.bm-windowed`);
+            __privateMethod(this, _WindowFilter_instances, snapWindowedFilterToDefaultPosition_fn).call(this, windowElement);
+          }
         };
         button.ontouchend = () => {
           button.click();
@@ -3281,6 +3286,28 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       y: Math.min(Math.max(Math.round(Number(y) || margin), margin), maxY)
     };
   };
+  /** Applies the windowed filter transform from the persisted state immediately.
+   * @param {HTMLElement} windowElement
+   * @param {Object} windowState
+   * @since 0.92.26
+   */
+  applyWindowStatePosition_fn = function(windowElement, windowState) {
+    const x = Number(windowState.x);
+    const y = Number(windowState.y);
+    if (!windowElement?.isConnected || !Number.isFinite(x) || !Number.isFinite(y)) {
+      return;
+    }
+    const clampedPosition = __privateMethod(this, _WindowFilter_instances, clampWindowPosition_fn).call(this, windowElement, x, y);
+    windowElement.style.left = "0px";
+    windowElement.style.top = "0px";
+    windowElement.style.right = "";
+    windowElement.style.transform = `translate(${clampedPosition.x}px, ${clampedPosition.y}px)`;
+    if (clampedPosition.x != x || clampedPosition.y != y) {
+      windowState.x = clampedPosition.x;
+      windowState.y = clampedPosition.y;
+      void this.settingsManager?.saveUserStorageNow();
+    }
+  };
   /** Applies the persisted size and position to the windowed filter.
    * @param {HTMLElement} windowElement
    * @since 0.92.0
@@ -3303,26 +3330,7 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
       windowState.height = __privateMethod(this, _WindowFilter_instances, clampWindowDimension_fn).call(this, height, this.windowMinHeight, Math.min(this.windowMaxHeight, window.innerHeight - 16));
       windowElement.style.height = `${windowState.height}px`;
     }
-    requestAnimationFrame(() => {
-      if (!windowElement.isConnected) {
-        return;
-      }
-      const x = Number(windowState.x);
-      const y = Number(windowState.y);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) {
-        return;
-      }
-      const clampedPosition = __privateMethod(this, _WindowFilter_instances, clampWindowPosition_fn).call(this, windowElement, x, y);
-      windowElement.style.left = "0px";
-      windowElement.style.top = "0px";
-      windowElement.style.right = "";
-      windowElement.style.transform = `translate(${clampedPosition.x}px, ${clampedPosition.y}px)`;
-      if (clampedPosition.x != x || clampedPosition.y != y) {
-        windowState.x = clampedPosition.x;
-        windowState.y = clampedPosition.y;
-        void this.settingsManager?.saveUserStorageNow();
-      }
-    });
+    __privateMethod(this, _WindowFilter_instances, applyWindowStatePosition_fn).call(this, windowElement, windowState);
   };
   /** Saves the current size and position of the windowed filter.
    * @param {HTMLElement} windowElement
@@ -3431,6 +3439,19 @@ Getting Y ${pixelY}-${pixelY + drawSizeY}`);
     windowState.x = clampedFallback.x;
     windowState.y = clampedFallback.y;
     windowState.windowedPositionVersion = 1;
+  };
+  /** Snaps the windowed filter beside the main Blue Marble window.
+   * @param {HTMLElement | null} windowElement
+   * @since 0.92.26
+   */
+  snapWindowedFilterToDefaultPosition_fn = function(windowElement) {
+    const windowState = __privateMethod(this, _WindowFilter_instances, getWindowState_fn).call(this);
+    if (!windowState || !windowElement) {
+      return;
+    }
+    __privateMethod(this, _WindowFilter_instances, applyDefaultWindowPosition_fn).call(this, windowElement, windowState, { forceDefaultPosition: true });
+    __privateMethod(this, _WindowFilter_instances, applyWindowStatePosition_fn).call(this, windowElement, windowState);
+    void this.settingsManager?.saveUserStorageNow();
   };
   /** Checks whether a premium color appears usable in Wplace's own palette.
    * @param {{id: number, premium: boolean}} color - Palette color metadata
