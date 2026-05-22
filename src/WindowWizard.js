@@ -171,18 +171,27 @@ export default class WindowWizard extends Overlay {
     buttonOptions.buildElement().buildOverlay(document.querySelector('#bm-wizard-status').parentNode);
   }
 
+  /** Reloads the visible template list from userscript storage.
+   * @since 0.92.34
+   */
+  #refreshTemplateList() {
+    this.currentJSON = JSON.parse(GM_getValue('bmTemplates', '{}'));
+    document.querySelector(`#${this.windowID} #bm-wizard-tlist`)?.remove();
+    document.querySelector(`#${this.windowID} .bm-wizard-empty`)?.remove();
+    this.#displayTemplateList();
+  }
+
   /** Displays loaded templates to the user.
    * @since 0.88.441
    */
   #displayTemplateList() {
 
     const templates = this.currentJSON?.templates || {}; // Templates in user storage
+    const templateListParentElement = document.querySelector(`#${this.windowID} .bm-scrollable`);
+    if (!templateListParentElement) {return;}
 
     // If there is at least one template loaded...
     if (Object.keys(templates).length > 0) {
-
-      // Obtains the parent element for the template list
-      const templateListParentElement = document.querySelector(`#${this.windowID} .bm-scrollable`);
 
       // Creates the template list DOM tree
       const templateList = new Overlay(this.name, this.version);
@@ -202,7 +211,8 @@ export default class WindowWizard extends Overlay {
           const sortID = Number(templateKeyArray?.[0]); // Sort ID of the template
           const authorID = encodedToNumber(templateKeyArray?.[1] || '0', this.templateManager.encodingBase); // User ID of the person who exported the template
           const displayName = templateValue.name || `Template ${sortID || ''}`; // Display name of the template
-          const coords = templateValue?.coords?.split(',').map(Number); // "1,2,3,4" -> [1, 2, 3, 4]
+          const coords = templateValue?.coords?.split(',').map(Number) || []; // "1,2,3,4" -> [1, 2, 3, 4]
+          const coordsText = coords.length ? coords.join(', ') : '???';
           const totalPixelCount = templateValue.pixels?.total ?? undefined;
           const templateImage = undefined; // TODO: Add template image
           const isEnabledInStorage = templateValue.enabled === true;
@@ -225,13 +235,13 @@ export default class WindowWizard extends Overlay {
             .addDiv({'class': 'bm-flex-center bm-wizard-template-container-flavor'})
               .addHeader(3, {'textContent': displayName}).buildElement()
               .addSpan({'textContent': `Uploaded by user #${authorIDLocalized}`}).buildElement()
-              .addSpan({'textContent': `Coordinates: ${coords.join(', ')}`}).buildElement()
+              .addSpan({'textContent': `Coordinates: ${coordsText}`}).buildElement()
               .addSpan({'textContent': `Total Pixels: ${totalPixelCountLocalized}`}).buildElement()
               .addSpan({'class': 'bm-wizard-template-state', 'textContent': isActive ? 'Loaded in overlay' : (isEnabledInStorage ? 'Stored as active, not loaded yet' : 'Stored template')}).buildElement()
             .buildElement()
             .addDiv({'class': 'bm-wizard-template-actions'})
               .addButton({
-                'class': 'bm-button-secondary bm-wizard-template-active-button',
+                'class': 'bm-button-secondary bm-wizard-template-action-button bm-wizard-template-active-button',
                 'textContent': activeButtonText,
                 'aria-label': isActive ? `Template "${displayName}" is active and loaded` : `Load template "${displayName}" as active`,
                 'disabled': isActive
@@ -247,9 +257,112 @@ export default class WindowWizard extends Overlay {
                     return;
                   }
 
-                  this.currentJSON = JSON.parse(GM_getValue('bmTemplates', '{}'));
-                  document.querySelector(`#${this.windowID} #bm-wizard-tlist`)?.remove();
-                  this.#displayTemplateList();
+                  this.#refreshTemplateList();
+                };
+              }).buildElement()
+              .addButton({
+                'class': 'bm-button-secondary bm-wizard-template-action-button',
+                'textContent': 'Rename',
+                'aria-label': `Rename template "${displayName}"`
+              }, (instance, button) => {
+                button.onclick = () => {
+                  const actionContainer = button.closest('.bm-wizard-template-actions');
+                  if (!actionContainer) {return;}
+
+                  actionContainer.querySelector('.bm-wizard-template-rename-editor')?.remove();
+                  button.style.display = 'none';
+
+                  const renameEditor = document.createElement('form');
+                  renameEditor.className = 'bm-wizard-template-rename-editor';
+
+                  const renameInput = document.createElement('input');
+                  renameInput.className = 'bm-wizard-template-rename-input';
+                  renameInput.type = 'text';
+                  renameInput.value = displayName;
+                  renameInput.maxLength = 120;
+                  renameInput.ariaLabel = `New name for template "${displayName}"`;
+
+                  const saveButton = document.createElement('button');
+                  saveButton.className = 'bm-button-secondary bm-wizard-template-action-button';
+                  saveButton.type = 'submit';
+                  saveButton.textContent = 'Save';
+
+                  const cancelButton = document.createElement('button');
+                  cancelButton.className = 'bm-button-secondary bm-wizard-template-action-button';
+                  cancelButton.type = 'button';
+                  cancelButton.textContent = 'Cancel';
+
+                  const closeEditor = () => {
+                    renameEditor.remove();
+                    button.style.display = '';
+                  };
+
+                  cancelButton.onclick = closeEditor;
+
+                  renameEditor.onsubmit = async event => {
+                    event.preventDefault();
+                    saveButton.disabled = true;
+                    cancelButton.disabled = true;
+
+                    const renamed = await this.templateManager?.renameTemplate?.(templateKey, renameInput.value);
+                    if (!renamed) {
+                      saveButton.disabled = false;
+                      cancelButton.disabled = false;
+                      this.updateInnerHTML('#bm-wizard-status', 'Could not rename that template. Use a non-empty name and try again.', true);
+                      renameInput.focus();
+                      return;
+                    }
+
+                    this.#refreshTemplateList();
+                  };
+
+                  renameEditor.append(renameInput, saveButton, cancelButton);
+                  actionContainer.insertBefore(renameEditor, button.nextElementSibling);
+                  renameInput.focus();
+                  renameInput.select();
+                };
+              }).buildElement()
+              .addButton({
+                'class': 'bm-button-secondary bm-wizard-template-action-button',
+                'textContent': 'Download',
+                'aria-label': `Download template "${displayName}"`
+              }, (instance, button) => {
+                button.onclick = async () => {
+                  button.disabled = true;
+                  button.textContent = 'Downloading...';
+
+                  const downloaded = await this.templateManager?.downloadTemplateFromStorage?.(templateKey);
+                  if (!downloaded) {
+                    button.textContent = 'Download';
+                    button.disabled = false;
+                    this.updateInnerHTML('#bm-wizard-status', 'Could not download that template. It may no longer exist.', true);
+                    return;
+                  }
+
+                  button.textContent = 'Download';
+                  button.disabled = false;
+                };
+              }).buildElement()
+              .addButton({
+                'class': 'bm-button-secondary bm-wizard-template-action-button bm-wizard-template-delete-button',
+                'textContent': 'Delete',
+                'aria-label': `Delete template "${displayName}"`
+              }, (instance, button) => {
+                button.onclick = async () => {
+                  if (!window.confirm(`Delete template "${displayName}"?`)) {return;}
+
+                  button.disabled = true;
+                  button.textContent = 'Deleting...';
+
+                  const deleted = await this.templateManager?.deleteTemplate?.(templateKey);
+                  if (!deleted) {
+                    button.textContent = 'Delete';
+                    button.disabled = false;
+                    this.updateInnerHTML('#bm-wizard-status', 'Could not delete that template. It may no longer exist.', true);
+                    return;
+                  }
+
+                  this.#refreshTemplateList();
                 };
               }).buildElement()
             .buildElement()
@@ -259,6 +372,11 @@ export default class WindowWizard extends Overlay {
 
       // Adds the template list to the real DOM tree
       templateList.buildElement().buildOverlay(templateListParentElement);
+    } else {
+      const templateList = new Overlay(this.name, this.version);
+      templateList.addP({'class': 'bm-wizard-empty', 'textContent': 'No stored templates found.'})
+        .buildElement()
+        .buildOverlay(templateListParentElement);
     }
   }
 

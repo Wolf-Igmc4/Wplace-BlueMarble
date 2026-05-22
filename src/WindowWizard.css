@@ -130,13 +130,36 @@
 
 #bm-wizard-tlist .bm-wizard-template-actions {
   display: flex;
+  flex-direction: column;
   justify-content: flex-end;
-  min-width: 5.7rem;
+  gap: 0.32rem;
+  min-width: 7.6rem;
 }
 
-#bm-wizard-tlist .bm-wizard-template-active-button {
+#bm-wizard-tlist .bm-wizard-template-action-button {
   min-height: 2rem;
   white-space: nowrap;
+  padding: 0 0.8ch;
+}
+
+#bm-wizard-tlist .bm-wizard-template-delete-button {
+  color: #ffdede;
+  border-color: rgba(255, 142, 142, 0.55);
+}
+
+#bm-wizard-tlist .bm-wizard-template-rename-editor {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.32rem;
+  min-width: 0;
+}
+
+#bm-wizard-tlist .bm-wizard-template-rename-input {
+  grid-column: 1 / -1;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 0.78rem;
 }
 
 #bm-wizard-tlist .bm-wizard-template-card-active .bm-wizard-template-active-button {
@@ -204,12 +227,16 @@
   }
 
   #bm-wizard-tlist .bm-wizard-template-actions {
-    min-width: 0;
+    min-width: 6.6rem;
   }
 
-  #bm-wizard-tlist .bm-wizard-template-active-button {
+  #bm-wizard-tlist .bm-wizard-template-action-button {
     min-height: 1.85rem;
     padding: 0 0.55ch;
+    font-size: 0.68rem;
+  }
+
+  #bm-wizard-tlist .bm-wizard-template-rename-input {
     font-size: 0.68rem;
   }
 }

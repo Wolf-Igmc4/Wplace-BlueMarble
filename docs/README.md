@@ -124,7 +124,7 @@
     <li>Minimizing or maximizing the menu to switch between compact and full views with a quicker collapse/expand response</li>
     <li>Filtering overlay colors with a refreshed Color Filter UI, live progress stats, reactive free/premium/completed color filters, a fullscreen-only button to show only the colors currently visible in the sorted filter list, an only-bought-colors premium filter based on Wplace unlock data, persisted sort/visibility settings, adaptive fullscreen color columns, top-aligned fullscreen/windowed placement beside the main Blue Marble window, responsive small-screen placement, outside-click auto-minimization, and resizable fullscreen/windowed layouts</li>
     <li>Rendering unfiltered templates through an experimental MapLibre image-layer overlay so large templates can stay responsive without recomposing every fetched map tile, while bypassing internal <code>data:</code> and <code>blob:</code> overlay images in the fetch proxy and keeping verbose fetch/render diagnostics hidden unless the internal <code>bm-debug</code> flag is enabled</li>
-    <li>Keeping Template Wizard template details compact on small mobile screens so saved template slots stay readable, with per-template active controls for saved templates</li>
+    <li>Keeping Template Wizard template details compact on small mobile screens so saved template slots stay readable, with per-template active, inline rename, download, and delete controls for saved templates</li>
     <li>Showing the Color Filter button only after a template is loaded</li>
     <li>Jumping from each color in the full Color Filter view to a bounded random sample pool of remaining pixels for that color from the loaded template tiles, using smooth map navigation when Wplace exposes its map instance</li>
     <li>Showing a small green update arrow in the fork UI only when the original Blue Marble repository has a newer version than this script</li>
@@ -221,6 +221,7 @@
       <li>Upload a PNG or WEBP image.</li>
       <li>Click the "Create" button.</li>
       <li>If your template still does not show, try clicking the "Enable" button.</li>
+      <li>Use the Template Wizard to activate, rename, download, or delete stored templates without replacing other saved templates.</li>
     </ol>
   </p>
 

@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.33
+// @version         0.92.34
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.33
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.34
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -4262,7 +4262,7 @@
   };
 
   // src/WindowWizard.js
-  var _WindowWizard_instances, displaySchemaHealth_fn, displayTemplateList_fn, convertSchema_1_x_x_To_2_x_x_fn;
+  var _WindowWizard_instances, displaySchemaHealth_fn, refreshTemplateList_fn, displayTemplateList_fn, convertSchema_1_x_x_To_2_x_x_fn;
   var _WindowWizard = class _WindowWizard extends Overlay {
     /** Constructor for the Template Wizard window
      * @param {string} name - The name of the userscript
@@ -4367,13 +4367,25 @@
     }
     buttonOptions.buildElement().buildOverlay(document.querySelector("#bm-wizard-status").parentNode);
   };
+  /** Reloads the visible template list from userscript storage.
+   * @since 0.92.34
+   */
+  refreshTemplateList_fn = function() {
+    this.currentJSON = JSON.parse(GM_getValue("bmTemplates", "{}"));
+    document.querySelector(`#${this.windowID} #bm-wizard-tlist`)?.remove();
+    document.querySelector(`#${this.windowID} .bm-wizard-empty`)?.remove();
+    __privateMethod(this, _WindowWizard_instances, displayTemplateList_fn).call(this);
+  };
   /** Displays loaded templates to the user.
    * @since 0.88.441
    */
   displayTemplateList_fn = function() {
     const templates = this.currentJSON?.templates || {};
+    const templateListParentElement = document.querySelector(`#${this.windowID} .bm-scrollable`);
+    if (!templateListParentElement) {
+      return;
+    }
     if (Object.keys(templates).length > 0) {
-      const templateListParentElement = document.querySelector(`#${this.windowID} .bm-scrollable`);
       const templateList = new Overlay(this.name, this.version);
       templateList.addDiv({ "id": "bm-wizard-tlist", "class": "bm-container" });
       for (const template in templates) {
@@ -4384,7 +4396,8 @@
           const sortID = Number(templateKeyArray?.[0]);
           const authorID = encodedToNumber(templateKeyArray?.[1] || "0", this.templateManager.encodingBase);
           const displayName = templateValue.name || `Template ${sortID || ""}`;
-          const coords2 = templateValue?.coords?.split(",").map(Number);
+          const coords2 = templateValue?.coords?.split(",").map(Number) || [];
+          const coordsText = coords2.length ? coords2.join(", ") : "???";
           const totalPixelCount = templateValue.pixels?.total ?? void 0;
           const templateImage = void 0;
           const isEnabledInStorage = templateValue.enabled === true;
@@ -4394,8 +4407,8 @@
           const sortIDLocalized = typeof sortID == "number" ? localizeNumber(sortID) : "???";
           const authorIDLocalized = typeof authorID == "number" ? localizeNumber(authorID) : "???";
           const totalPixelCountLocalized = typeof totalPixelCount == "number" ? localizeNumber(totalPixelCount) : "???";
-          templateList.addDiv({ "class": `bm-container bm-wizard-template-card${isActive ? " bm-wizard-template-card-active" : ""}` }).addDiv({ "class": "bm-flex-center", "style": "flex-direction: column; gap: 0;" }).addDiv({ "class": "bm-wizard-template-container-image", "textContent": templateImage || "\u{1F5BC}\uFE0F" }).buildElement().addSmall({ "textContent": `#${sortIDLocalized}` }).buildElement().buildElement().addDiv({ "class": "bm-flex-center bm-wizard-template-container-flavor" }).addHeader(3, { "textContent": displayName }).buildElement().addSpan({ "textContent": `Uploaded by user #${authorIDLocalized}` }).buildElement().addSpan({ "textContent": `Coordinates: ${coords2.join(", ")}` }).buildElement().addSpan({ "textContent": `Total Pixels: ${totalPixelCountLocalized}` }).buildElement().addSpan({ "class": "bm-wizard-template-state", "textContent": isActive ? "Loaded in overlay" : isEnabledInStorage ? "Stored as active, not loaded yet" : "Stored template" }).buildElement().buildElement().addDiv({ "class": "bm-wizard-template-actions" }).addButton({
-            "class": "bm-button-secondary bm-wizard-template-active-button",
+          templateList.addDiv({ "class": `bm-container bm-wizard-template-card${isActive ? " bm-wizard-template-card-active" : ""}` }).addDiv({ "class": "bm-flex-center", "style": "flex-direction: column; gap: 0;" }).addDiv({ "class": "bm-wizard-template-container-image", "textContent": templateImage || "\u{1F5BC}\uFE0F" }).buildElement().addSmall({ "textContent": `#${sortIDLocalized}` }).buildElement().buildElement().addDiv({ "class": "bm-flex-center bm-wizard-template-container-flavor" }).addHeader(3, { "textContent": displayName }).buildElement().addSpan({ "textContent": `Uploaded by user #${authorIDLocalized}` }).buildElement().addSpan({ "textContent": `Coordinates: ${coordsText}` }).buildElement().addSpan({ "textContent": `Total Pixels: ${totalPixelCountLocalized}` }).buildElement().addSpan({ "class": "bm-wizard-template-state", "textContent": isActive ? "Loaded in overlay" : isEnabledInStorage ? "Stored as active, not loaded yet" : "Stored template" }).buildElement().buildElement().addDiv({ "class": "bm-wizard-template-actions" }).addButton({
+            "class": "bm-button-secondary bm-wizard-template-action-button bm-wizard-template-active-button",
             "textContent": activeButtonText,
             "aria-label": isActive ? `Template "${displayName}" is active and loaded` : `Load template "${displayName}" as active`,
             "disabled": isActive
@@ -4410,14 +4423,105 @@
                 this.updateInnerHTML("#bm-wizard-status", "Could not activate that template. It may no longer exist.", true);
                 return;
               }
-              this.currentJSON = JSON.parse(GM_getValue("bmTemplates", "{}"));
-              document.querySelector(`#${this.windowID} #bm-wizard-tlist`)?.remove();
-              __privateMethod(this, _WindowWizard_instances, displayTemplateList_fn).call(this);
+              __privateMethod(this, _WindowWizard_instances, refreshTemplateList_fn).call(this);
+            };
+          }).buildElement().addButton({
+            "class": "bm-button-secondary bm-wizard-template-action-button",
+            "textContent": "Rename",
+            "aria-label": `Rename template "${displayName}"`
+          }, (instance, button) => {
+            button.onclick = () => {
+              const actionContainer = button.closest(".bm-wizard-template-actions");
+              if (!actionContainer) {
+                return;
+              }
+              actionContainer.querySelector(".bm-wizard-template-rename-editor")?.remove();
+              button.style.display = "none";
+              const renameEditor = document.createElement("form");
+              renameEditor.className = "bm-wizard-template-rename-editor";
+              const renameInput = document.createElement("input");
+              renameInput.className = "bm-wizard-template-rename-input";
+              renameInput.type = "text";
+              renameInput.value = displayName;
+              renameInput.maxLength = 120;
+              renameInput.ariaLabel = `New name for template "${displayName}"`;
+              const saveButton = document.createElement("button");
+              saveButton.className = "bm-button-secondary bm-wizard-template-action-button";
+              saveButton.type = "submit";
+              saveButton.textContent = "Save";
+              const cancelButton = document.createElement("button");
+              cancelButton.className = "bm-button-secondary bm-wizard-template-action-button";
+              cancelButton.type = "button";
+              cancelButton.textContent = "Cancel";
+              const closeEditor = () => {
+                renameEditor.remove();
+                button.style.display = "";
+              };
+              cancelButton.onclick = closeEditor;
+              renameEditor.onsubmit = async (event) => {
+                event.preventDefault();
+                saveButton.disabled = true;
+                cancelButton.disabled = true;
+                const renamed = await this.templateManager?.renameTemplate?.(templateKey, renameInput.value);
+                if (!renamed) {
+                  saveButton.disabled = false;
+                  cancelButton.disabled = false;
+                  this.updateInnerHTML("#bm-wizard-status", "Could not rename that template. Use a non-empty name and try again.", true);
+                  renameInput.focus();
+                  return;
+                }
+                __privateMethod(this, _WindowWizard_instances, refreshTemplateList_fn).call(this);
+              };
+              renameEditor.append(renameInput, saveButton, cancelButton);
+              actionContainer.insertBefore(renameEditor, button.nextElementSibling);
+              renameInput.focus();
+              renameInput.select();
+            };
+          }).buildElement().addButton({
+            "class": "bm-button-secondary bm-wizard-template-action-button",
+            "textContent": "Download",
+            "aria-label": `Download template "${displayName}"`
+          }, (instance, button) => {
+            button.onclick = async () => {
+              button.disabled = true;
+              button.textContent = "Downloading...";
+              const downloaded = await this.templateManager?.downloadTemplateFromStorage?.(templateKey);
+              if (!downloaded) {
+                button.textContent = "Download";
+                button.disabled = false;
+                this.updateInnerHTML("#bm-wizard-status", "Could not download that template. It may no longer exist.", true);
+                return;
+              }
+              button.textContent = "Download";
+              button.disabled = false;
+            };
+          }).buildElement().addButton({
+            "class": "bm-button-secondary bm-wizard-template-action-button bm-wizard-template-delete-button",
+            "textContent": "Delete",
+            "aria-label": `Delete template "${displayName}"`
+          }, (instance, button) => {
+            button.onclick = async () => {
+              if (!window.confirm(`Delete template "${displayName}"?`)) {
+                return;
+              }
+              button.disabled = true;
+              button.textContent = "Deleting...";
+              const deleted = await this.templateManager?.deleteTemplate?.(templateKey);
+              if (!deleted) {
+                button.textContent = "Delete";
+                button.disabled = false;
+                this.updateInnerHTML("#bm-wizard-status", "Could not delete that template. It may no longer exist.", true);
+                return;
+              }
+              __privateMethod(this, _WindowWizard_instances, refreshTemplateList_fn).call(this);
             };
           }).buildElement().buildElement().buildElement();
         }
       }
       templateList.buildElement().buildOverlay(templateListParentElement);
+    } else {
+      const templateList = new Overlay(this.name, this.version);
+      templateList.addP({ "class": "bm-wizard-empty", "textContent": "No stored templates found." }).buildElement().buildOverlay(templateListParentElement);
     }
   };
   convertSchema_1_x_x_To_2_x_x_fn = async function(shouldWindowWizardOpen) {
@@ -4732,7 +4836,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
   };
 
   // src/templateManager.js
-  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, isHighlightDisabled_fn, tilePixelCornerToLatLng_fn, normalizeTemplateChunkURL_fn, canUseFastTemplateOverlay_fn, buildFastTemplateOverlayPayload_fn, syncFastTemplateOverlay_fn, loadTemplate_fn, storeTemplates_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, invalidateTemplateRenderCaches_fn, debugRenderPerf_fn, convertCanvasToTileBlob_fn, clearTileRenderCache_fn, setTileRenderCache_fn, getTileRenderCache_fn, getColorFilterKey_fn, createTileRenderCacheKey_fn, getSortedTemplates_fn, getTemplateChunkColorIDs_fn, getTemplateTileIndex_fn, ensureTemplateChunkColorIDs_fn, templateChunkHasVisibleColor_fn, templateChunkNeedsMutation_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
+  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, isHighlightDisabled_fn, tilePixelCornerToLatLng_fn, normalizeTemplateChunkURL_fn, canUseFastTemplateOverlay_fn, buildFastTemplateOverlayPayload_fn, syncFastTemplateOverlay_fn, loadTemplate_fn, storeTemplates_fn, getNextTemplateSortID_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, invalidateTemplateRenderCaches_fn, debugRenderPerf_fn, convertCanvasToTileBlob_fn, clearTileRenderCache_fn, setTileRenderCache_fn, getTileRenderCache_fn, getColorFilterKey_fn, createTileRenderCacheKey_fn, getSortedTemplates_fn, getTemplateChunkColorIDs_fn, getTemplateTileIndex_fn, ensureTemplateChunkColorIDs_fn, templateChunkHasVisibleColor_fn, templateChunkNeedsMutation_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
   var TemplateManager = class {
     /** The constructor for the {@link TemplateManager} class.
      * @param {string} name - The name of the userscript
@@ -4905,12 +5009,14 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       if (!this.templatesJSON) {
         this.templatesJSON = await this.createJSON();
       }
+      this.templatesJSON.templates = this.templatesJSON.templates || {};
       this.windowMain.handleDisplayStatus(`Creating template at ${coords2.join(", ")}...`);
+      const authorID = numberToEncoded(this.userID || 0, this.encodingBase);
+      const sortID = __privateMethod(this, _TemplateManager_instances, getNextTemplateSortID_fn).call(this, authorID);
       const template = new Template({
         displayName: name2,
-        sortID: 0,
-        // Object.keys(this.templatesJSON.templates).length || 0, // Uncomment this to enable multiple templates (1/2)
-        authorID: numberToEncoded(this.userID || 0, this.encodingBase),
+        sortID,
+        authorID,
         file: blob,
         coords: coords2
       });
@@ -4920,6 +5026,12 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       template.chunked = templateTiles;
       const _pixels = { "total": template.pixelCount.total, "colors": Object.fromEntries(template.pixelCount.colors) };
       const templateKey = `${template.sortID} ${template.authorID}`;
+      for (const storedTemplate of Object.values(this.templatesJSON.templates)) {
+        if (!storedTemplate || typeof storedTemplate != "object") {
+          continue;
+        }
+        storedTemplate.enabled = false;
+      }
       this.templatesJSON.templates[templateKey] = {
         "name": template.displayName,
         // Display name of template
@@ -4934,6 +5046,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       template.storageKey = templateKey;
       this.templatesArray = [];
       this.templatesArray.push(template);
+      this.loadedTemplateKeys = /* @__PURE__ */ new Set([templateKey]);
       __privateMethod(this, _TemplateManager_instances, invalidateTemplateRenderCaches_fn).call(this);
       void __privateMethod(this, _TemplateManager_instances, syncFastTemplateOverlay_fn).call(this);
       this.windowMain.handleDisplayStatus(`Template created at ${coords2.join(", ")}!`);
@@ -4949,6 +5062,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       if (!this.templatesJSON) {
         this.templatesJSON = JSON.parse(GM_getValue("bmTemplates", "{}"));
       }
+      this.templatesJSON.templates = this.templatesJSON.templates || {};
       const templates = this.templatesJSON?.templates || {};
       if (!templates[templateKey]) {
         return false;
@@ -4967,8 +5081,75 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
     }
     /** Deletes a template from the JSON object.
      * Also delete's the corrosponding {@link Template} class instance
+     * @param {string} templateKey - Storage key for the template to delete
+     * @returns {Promise<boolean>} Whether the template was found and deleted
+     * @since 0.92.34
      */
-    deleteTemplate() {
+    async deleteTemplate(templateKey) {
+      if (!this.templatesJSON) {
+        this.templatesJSON = JSON.parse(GM_getValue("bmTemplates", "{}"));
+      }
+      this.templatesJSON.templates = this.templatesJSON.templates || {};
+      const templates = this.templatesJSON.templates;
+      const template = templates[templateKey];
+      if (!template) {
+        return false;
+      }
+      const deletedTemplateName = template.name || templateKey;
+      delete templates[templateKey];
+      __privateMethod(this, _TemplateManager_instances, normalizeActiveTemplate_fn).call(this, templates);
+      await __privateMethod(this, _TemplateManager_instances, storeTemplates_fn).call(this);
+      await this.importJSON(this.templatesJSON);
+      this.windowMain?.refreshTemplateControls?.();
+      this.windowMain?.handleDisplayStatus?.(`Deleted template "${deletedTemplateName}".`);
+      return true;
+    }
+    /** Renames a stored template.
+     * @param {string} templateKey - Storage key for the template to rename
+     * @param {string} name - New display name
+     * @returns {Promise<boolean>} Whether the template was found and renamed
+     * @since 0.92.34
+     */
+    async renameTemplate(templateKey, name2) {
+      if (!this.templatesJSON) {
+        this.templatesJSON = JSON.parse(GM_getValue("bmTemplates", "{}"));
+      }
+      this.templatesJSON.templates = this.templatesJSON.templates || {};
+      const template = this.templatesJSON.templates[templateKey];
+      const displayName = String(name2 || "").trim();
+      if (!template || !displayName) {
+        return false;
+      }
+      template.name = displayName;
+      for (const templateInstance of this.templatesArray) {
+        if (templateInstance.storageKey != templateKey) {
+          continue;
+        }
+        templateInstance.displayName = displayName;
+      }
+      await __privateMethod(this, _TemplateManager_instances, storeTemplates_fn).call(this);
+      this.windowMain?.handleDisplayStatus?.(`Renamed template to "${displayName}".`);
+      return true;
+    }
+    /** Downloads one stored template by storage key.
+     * @param {string} templateKey - Storage key for the template to download
+     * @returns {Promise<boolean>} Whether the template was found and queued for download
+     * @since 0.92.34
+     */
+    async downloadTemplateFromStorage(templateKey) {
+      const templates = JSON.parse(GM_getValue("bmTemplates", "{}"))?.templates || {};
+      const template = templates[templateKey];
+      if (!template) {
+        return false;
+      }
+      await this.downloadTemplate(new Template({
+        displayName: template.name,
+        sortID: templateKey.split(" ")?.[0],
+        authorID: templateKey.split(" ")?.[1],
+        chunked: template.tiles
+      }));
+      this.windowMain?.handleDisplayStatus?.(`Downloaded template "${template.name || templateKey}".`);
+      return true;
     }
     /** Disables the template from view
      */
@@ -4995,12 +5176,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       if (Object.keys(templates).length > 0) {
         for (const [key, template] of Object.entries(templates)) {
           if (templates.hasOwnProperty(key)) {
-            await this.downloadTemplate(new Template({
-              displayName: template.name,
-              sortID: key.split(" ")?.[0],
-              authorID: key.split(" ")?.[1],
-              chunked: template.tiles
-            }));
+            await this.downloadTemplateFromStorage(key);
             await sleep(500);
           }
         }
@@ -5537,6 +5713,20 @@ Version: ${this.version}`);
   };
   storeTemplates_fn = async function() {
     await GM.setValue("bmTemplates", JSON.stringify(this.templatesJSON));
+  };
+  /** Returns the next storage sort ID that will not overwrite an existing template.
+   * @param {string} authorID - Encoded author ID used in the storage key
+   * @returns {number}
+   * @since 0.92.34
+   */
+  getNextTemplateSortID_fn = function(authorID) {
+    const templates = this.templatesJSON?.templates || {};
+    const sortIDs = Object.keys(templates).map((templateKey) => Number.parseInt(templateKey.split(" ")?.[0], 10)).filter(Number.isFinite);
+    let sortID = sortIDs.length ? Math.max(...sortIDs) + 1 : 0;
+    while (templates[`${sortID} ${authorID}`]) {
+      sortID++;
+    }
+    return sortID;
   };
   /** Returns the storage key that should be considered the single active template.
    * @param {Object} templates - Template storage object

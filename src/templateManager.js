@@ -460,14 +460,18 @@ export default class TemplateManager {
 
     // Creates the JSON object if it does not already exist
     if (!this.templatesJSON) {this.templatesJSON = await this.createJSON();}
+    this.templatesJSON.templates = this.templatesJSON.templates || {};
 
     this.windowMain.handleDisplayStatus(`Creating template at ${coords.join(', ')}...`);
+
+    const authorID = numberToEncoded(this.userID || 0, this.encodingBase);
+    const sortID = this.#getNextTemplateSortID(authorID);
 
     // Creates a new template instance
     const template = new Template({
       displayName: name,
-      sortID: 0, // Object.keys(this.templatesJSON.templates).length || 0, // Uncomment this to enable multiple templates (1/2)
-      authorID: numberToEncoded(this.userID || 0, this.encodingBase),
+      sortID: sortID,
+      authorID: authorID,
       file: blob,
       coords: coords
     });
@@ -488,6 +492,10 @@ export default class TemplateManager {
     // Appends a child into the templates object
     // The child's name is the number of templates already in the list (sort order) plus the encoded player ID
     const templateKey = `${template.sortID} ${template.authorID}`;
+    for (const storedTemplate of Object.values(this.templatesJSON.templates)) {
+      if (!storedTemplate || typeof storedTemplate != 'object') {continue;}
+      storedTemplate.enabled = false;
+    }
     this.templatesJSON.templates[templateKey] = {
       "name": template.displayName, // Display name of template
       "coords": coords.join(', '), // The coords of the template
@@ -499,6 +507,7 @@ export default class TemplateManager {
     template.storageKey = templateKey;
     this.templatesArray = []; // Remove this to enable multiple templates (2/2)
     this.templatesArray.push(template); // Pushes the Template object instance to the Template Array
+    this.loadedTemplateKeys = new Set([templateKey]);
     this.#invalidateTemplateRenderCaches();
     void this.#syncFastTemplateOverlay();
 
@@ -542,6 +551,25 @@ export default class TemplateManager {
    */
   async #storeTemplates() {
     await GM.setValue('bmTemplates', JSON.stringify(this.templatesJSON));
+  }
+
+  /** Returns the next storage sort ID that will not overwrite an existing template.
+   * @param {string} authorID - Encoded author ID used in the storage key
+   * @returns {number}
+   * @since 0.92.34
+   */
+  #getNextTemplateSortID(authorID) {
+    const templates = this.templatesJSON?.templates || {};
+    const sortIDs = Object.keys(templates)
+      .map(templateKey => Number.parseInt(templateKey.split(' ')?.[0], 10))
+      .filter(Number.isFinite);
+
+    let sortID = sortIDs.length ? Math.max(...sortIDs) + 1 : 0;
+    while (templates[`${sortID} ${authorID}`]) {
+      sortID++;
+    }
+
+    return sortID;
   }
 
   /** Returns the storage key that should be considered the single active template.
@@ -608,6 +636,7 @@ export default class TemplateManager {
     if (!this.templatesJSON) {
       this.templatesJSON = JSON.parse(GM_getValue('bmTemplates', '{}'));
     }
+    this.templatesJSON.templates = this.templatesJSON.templates || {};
 
     const templates = this.templatesJSON?.templates || {};
     if (!templates[templateKey]) {return false;}
@@ -626,9 +655,78 @@ export default class TemplateManager {
 
   /** Deletes a template from the JSON object.
    * Also delete's the corrosponding {@link Template} class instance
+   * @param {string} templateKey - Storage key for the template to delete
+   * @returns {Promise<boolean>} Whether the template was found and deleted
+   * @since 0.92.34
    */
-  deleteTemplate() {
+  async deleteTemplate(templateKey) {
+    if (!this.templatesJSON) {
+      this.templatesJSON = JSON.parse(GM_getValue('bmTemplates', '{}'));
+    }
+    this.templatesJSON.templates = this.templatesJSON.templates || {};
 
+    const templates = this.templatesJSON.templates;
+    const template = templates[templateKey];
+    if (!template) {return false;}
+
+    const deletedTemplateName = template.name || templateKey;
+    delete templates[templateKey];
+    this.#normalizeActiveTemplate(templates);
+
+    await this.#storeTemplates();
+    await this.importJSON(this.templatesJSON);
+    this.windowMain?.refreshTemplateControls?.();
+    this.windowMain?.handleDisplayStatus?.(`Deleted template "${deletedTemplateName}".`);
+    return true;
+  }
+
+  /** Renames a stored template.
+   * @param {string} templateKey - Storage key for the template to rename
+   * @param {string} name - New display name
+   * @returns {Promise<boolean>} Whether the template was found and renamed
+   * @since 0.92.34
+   */
+  async renameTemplate(templateKey, name) {
+    if (!this.templatesJSON) {
+      this.templatesJSON = JSON.parse(GM_getValue('bmTemplates', '{}'));
+    }
+    this.templatesJSON.templates = this.templatesJSON.templates || {};
+
+    const template = this.templatesJSON.templates[templateKey];
+    const displayName = String(name || '').trim();
+    if (!template || !displayName) {return false;}
+
+    template.name = displayName;
+
+    for (const templateInstance of this.templatesArray) {
+      if (templateInstance.storageKey != templateKey) {continue;}
+      templateInstance.displayName = displayName;
+    }
+
+    await this.#storeTemplates();
+    this.windowMain?.handleDisplayStatus?.(`Renamed template to "${displayName}".`);
+    return true;
+  }
+
+  /** Downloads one stored template by storage key.
+   * @param {string} templateKey - Storage key for the template to download
+   * @returns {Promise<boolean>} Whether the template was found and queued for download
+   * @since 0.92.34
+   */
+  async downloadTemplateFromStorage(templateKey) {
+    const templates = JSON.parse(GM_getValue('bmTemplates', '{}'))?.templates || {};
+    const template = templates[templateKey];
+    if (!template) {return false;}
+
+    await this.downloadTemplate(new Template({
+      displayName: template.name,
+      sortID: templateKey.split(' ')?.[0],
+      authorID: templateKey.split(' ')?.[1],
+      chunked: template.tiles
+    }));
+
+    this.windowMain?.handleDisplayStatus?.(`Downloaded template "${template.name || templateKey}".`);
+    return true;
   }
 
   /** Disables the template from view
@@ -673,14 +771,8 @@ export default class TemplateManager {
 
         // If the template is a direct child of the templates Object...
         if (templates.hasOwnProperty(key)) {
-          
-          // Downloads the template using a dummy Template instance
-          await this.downloadTemplate(new Template({
-            displayName: template.name,
-            sortID: key.split(' ')?.[0],
-            authorID: key.split(' ')?.[1],
-            chunked: template.tiles
-          }));
+
+          await this.downloadTemplateFromStorage(key);
 
           await sleep(500); // Avoids download throttling from the browser
         }
