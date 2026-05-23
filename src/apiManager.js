@@ -30,8 +30,9 @@ export default class ApiManager {
     this.templateEyedropperNativeProbeDelays = [60, 160, 320, 600]; // Detects native picker results even when Wplace's picker button was not recognized
     this.templateEyedropperTrackerInstalled = false; // Prevents duplicate global listeners
     this.placementGuardTrackerInstalled = false; // Prevents duplicate placement guard listeners
+    this.placementGuardEventListenersInstalled = false; // Prevents duplicate placement guard event listeners
     this.placementGuardFlag = 'ftr-placeGuard'; // User setting flag for wrong-color click blocking
-    this.placementGuardEvents = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'touchstart', 'touchend']; // Human map events that can start a placement
+    this.placementGuardEvents = ['pointerdown', 'pointermove', 'pointerup', 'mousedown', 'mousemove', 'mouseup', 'click', 'touchstart', 'touchmove', 'touchend']; // Human map events that can start a placement
     this.placementGuardLastBlockAt = 0; // Throttles status noise when wrong-color clicks are blocked
     this.debugLogLastAt = new Map(); // Throttles repeated picker/guard debug messages
     this.installTemplateEyedropperTracker();
@@ -95,14 +96,23 @@ export default class ApiManager {
     if (this.placementGuardTrackerInstalled) {return;}
     this.placementGuardTrackerInstalled = true;
 
+    window.addEventListener('message', event => this.handleDebugMessage(event), true);
     void installWplaceTilePixelTracker(this.templateManager?.tileSize || 1000, 11).then(ok => {
       this.debugLog('guard', 'tile-pixel-tracker-installed', {ok: ok}, 1000);
+      this.installPlacementGuardEventListeners();
     });
+  }
+
+  /** Installs placement guard event listeners after the coordinate tracker has registered first.
+   * @since 0.92.38
+   */
+  installPlacementGuardEventListeners() {
+    if (this.placementGuardEventListenersInstalled) {return;}
+    this.placementGuardEventListenersInstalled = true;
+
     for (const eventName of this.placementGuardEvents) {
       document.addEventListener(eventName, event => this.handlePlacementGuardEvent(event), true);
-      window.addEventListener(eventName, event => this.handlePlacementGuardEvent(event), true);
     }
-    window.addEventListener('message', event => this.handleDebugMessage(event), true);
   }
 
   /** Handles page-console debug commands for diagnosing guard/picker behavior.
@@ -181,6 +191,7 @@ export default class ApiManager {
     const baseDebug = {
       type: event.type,
       button: event.button,
+      buttons: event.buttons,
       target: this.describeElement(target),
       selectedColor: localStorage.getItem('selected-color')
     };
@@ -197,8 +208,8 @@ export default class ApiManager {
       this.debugLog('guard', 'skip', {...baseDebug, reason: 'picker-active'}, 1000);
       return false;
     }
-    if (event.button && event.button != 0) {
-      this.debugLog('guard', 'skip', {...baseDebug, reason: 'non-left-button'}, 1000);
+    if (!this.isPrimaryPlacementGesture(event)) {
+      this.debugLog('guard', 'skip', {...baseDebug, reason: 'not-primary-placement-gesture'}, 1000);
       return false;
     }
 
@@ -266,6 +277,22 @@ export default class ApiManager {
       templateColorID: templateColor.colorID
     }, 500);
     return false;
+  }
+
+  /** Checks whether an event can be part of a human left-click or left-drag placement.
+   * @param {Event} event - Pointer/mouse/touch event
+   * @returns {boolean}
+   * @since 0.92.38
+   */
+  isPrimaryPlacementGesture(event) {
+    if (event.type?.startsWith?.('touch')) {return true;}
+
+    if (event.type == 'pointermove' || event.type == 'mousemove') {
+      return !!(Number(event.buttons) & 1);
+    }
+
+    const button = Number(event.button);
+    return !Number.isFinite(button) || button == 0;
   }
 
   /** Gets the viewport coordinate for pointer/mouse/touch events.

@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.37
+// @version         0.92.38
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.37
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.38
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -540,7 +540,7 @@
       if (!map || typeof map.unproject != 'function') {return false;}
 
       if (!state.tilePixelTrackerInstalled) {
-        for (const eventName of ['pointerdown', 'mousedown', 'click', 'touchstart', 'touchend']) {
+        for (const eventName of ['pointerdown', 'pointermove', 'pointerup', 'mousedown', 'mousemove', 'mouseup', 'click', 'touchstart', 'touchmove', 'touchend']) {
           document.addEventListener(eventName, rememberTilePixelFromEvent, true);
         }
         state.tilePixelTrackerInstalled = true;
@@ -6683,8 +6683,9 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.templateEyedropperNativeProbeDelays = [60, 160, 320, 600];
       this.templateEyedropperTrackerInstalled = false;
       this.placementGuardTrackerInstalled = false;
+      this.placementGuardEventListenersInstalled = false;
       this.placementGuardFlag = "ftr-placeGuard";
-      this.placementGuardEvents = ["pointerdown", "mousedown", "pointerup", "mouseup", "click", "touchstart", "touchend"];
+      this.placementGuardEvents = ["pointerdown", "pointermove", "pointerup", "mousedown", "mousemove", "mouseup", "click", "touchstart", "touchmove", "touchend"];
       this.placementGuardLastBlockAt = 0;
       this.debugLogLastAt = /* @__PURE__ */ new Map();
       this.installTemplateEyedropperTracker();
@@ -6749,14 +6750,23 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         return;
       }
       this.placementGuardTrackerInstalled = true;
+      window.addEventListener("message", (event) => this.handleDebugMessage(event), true);
       void installWplaceTilePixelTracker(this.templateManager?.tileSize || 1e3, 11).then((ok) => {
         this.debugLog("guard", "tile-pixel-tracker-installed", { ok }, 1e3);
+        this.installPlacementGuardEventListeners();
       });
+    }
+    /** Installs placement guard event listeners after the coordinate tracker has registered first.
+     * @since 0.92.38
+     */
+    installPlacementGuardEventListeners() {
+      if (this.placementGuardEventListenersInstalled) {
+        return;
+      }
+      this.placementGuardEventListenersInstalled = true;
       for (const eventName of this.placementGuardEvents) {
         document.addEventListener(eventName, (event) => this.handlePlacementGuardEvent(event), true);
-        window.addEventListener(eventName, (event) => this.handlePlacementGuardEvent(event), true);
       }
-      window.addEventListener("message", (event) => this.handleDebugMessage(event), true);
     }
     /** Handles page-console debug commands for diagnosing guard/picker behavior.
      * @param {MessageEvent} event - Window message event
@@ -6828,6 +6838,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       const baseDebug = {
         type: event.type,
         button: event.button,
+        buttons: event.buttons,
         target: this.describeElement(target),
         selectedColor: localStorage.getItem("selected-color")
       };
@@ -6843,8 +6854,8 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         this.debugLog("guard", "skip", { ...baseDebug, reason: "picker-active" }, 1e3);
         return false;
       }
-      if (event.button && event.button != 0) {
-        this.debugLog("guard", "skip", { ...baseDebug, reason: "non-left-button" }, 1e3);
+      if (!this.isPrimaryPlacementGesture(event)) {
+        this.debugLog("guard", "skip", { ...baseDebug, reason: "not-primary-placement-gesture" }, 1e3);
         return false;
       }
       if (!target || !this.isWplaceMapClickTarget(target)) {
@@ -6904,6 +6915,21 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         templateColorID: templateColor.colorID
       }, 500);
       return false;
+    }
+    /** Checks whether an event can be part of a human left-click or left-drag placement.
+     * @param {Event} event - Pointer/mouse/touch event
+     * @returns {boolean}
+     * @since 0.92.38
+     */
+    isPrimaryPlacementGesture(event) {
+      if (event.type?.startsWith?.("touch")) {
+        return true;
+      }
+      if (event.type == "pointermove" || event.type == "mousemove") {
+        return !!(Number(event.buttons) & 1);
+      }
+      const button = Number(event.button);
+      return !Number.isFinite(button) || button == 0;
     }
     /** Gets the viewport coordinate for pointer/mouse/touch events.
      * @param {Event} event - DOM event

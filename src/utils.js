@@ -599,7 +599,7 @@ function installWplaceNavigatorBridge() {
       if (!map || typeof map.unproject != 'function') {return false;}
 
       if (!state.tilePixelTrackerInstalled) {
-        for (const eventName of ['pointerdown', 'mousedown', 'click', 'touchstart', 'touchend']) {
+        for (const eventName of ['pointerdown', 'pointermove', 'pointerup', 'mousedown', 'mousemove', 'mouseup', 'click', 'touchstart', 'touchmove', 'touchend']) {
           document.addEventListener(eventName, rememberTilePixelFromEvent, true);
         }
         state.tilePixelTrackerInstalled = true;
