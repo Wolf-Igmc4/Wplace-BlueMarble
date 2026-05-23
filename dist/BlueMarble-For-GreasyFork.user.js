@@ -452,6 +452,19 @@
       };
     }
 
+    function clientPointToMapPoint(map, clientX, clientY) {
+      const canvas = typeof map.getCanvas == 'function'
+        ? map.getCanvas()
+        : document.querySelector('.maplibregl-canvas');
+      const rect = canvas?.getBoundingClientRect?.();
+      if (!rect) {return [clientX, clientY];}
+
+      return [
+        clientX - rect.left,
+        clientY - rect.top
+      ];
+    }
+
     function isMapEventTarget(target) {
       return !!(
         target?.matches?.('.maplibregl-canvas')
@@ -469,7 +482,8 @@
       if (!Number.isFinite(point.clientX) || !Number.isFinite(point.clientY)) {return;}
 
       try {
-        const lngLat = map.unproject([point.clientX, point.clientY]);
+        const mapPoint = clientPointToMapPoint(map, point.clientX, point.clientY);
+        const lngLat = map.unproject(mapPoint);
         const coords = latLngToTilePixel(
           Number(lngLat.lat),
           Number(lngLat.lng),
@@ -671,7 +685,8 @@
           state.searchPromise = null;
 
           if (map && typeof map.unproject == 'function') {
-            const lngLat = map.unproject([data.clientX, data.clientY]);
+            const mapPoint = clientPointToMapPoint(map, Number(data.clientX), Number(data.clientY));
+            const lngLat = map.unproject(mapPoint);
             coords = latLngToTilePixel(
               Number(lngLat.lat),
               Number(lngLat.lng),
@@ -6624,6 +6639,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.templateEyedropperActiveUntil = 0;
       this.templateEyedropperActivationWindowMs = 15e3;
       this.templateEyedropperRetryDelays = [80, 180, 350];
+      this.templateEyedropperNativeProbeDelays = [60, 160, 320, 600];
       this.templateEyedropperTrackerInstalled = false;
       this.placementGuardTrackerInstalled = false;
       this.placementGuardFlag = "ftr-placeGuard";
@@ -6773,11 +6789,27 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           clearPickerActive();
         }
       }, true);
+      for (const eventName of ["pointerdown", "mousedown", "touchstart"]) {
+        document.addEventListener(eventName, (event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          if (!target) {
+            return;
+          }
+          if (target.closest('[id^="color-"]')) {
+            clearPickerActive();
+            return;
+          }
+          if (this.isWplaceColorPickerControl(target)) {
+            markPickerActive();
+          }
+        }, true);
+      }
       document.addEventListener("click", (event) => {
         const target = event.target instanceof Element ? event.target : null;
         if (!target) {
           return;
         }
+        const selectedColorBeforeClick = localStorage.getItem("selected-color");
         if (target.closest('[id^="color-"]')) {
           clearPickerActive();
           return;
@@ -6785,10 +6817,13 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         if (this.isWplaceColorPickerControl(target)) {
           markPickerActive();
         }
-        if (!this.isWplaceColorPickerActive() || !this.isWplaceMapClickTarget(target)) {
+        if (!this.isWplaceMapClickTarget(target)) {
           return;
         }
-        markPickerActive();
+        const wasPickerActive = this.isWplaceColorPickerActive();
+        if (wasPickerActive) {
+          markPickerActive();
+        }
         void screenToWplaceTilePixel(
           event.clientX,
           event.clientY,
@@ -6798,7 +6833,11 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           if (!coords2) {
             return;
           }
-          this.selectTemplateColorAtCoords(coords2.tile, coords2.pixel);
+          if (wasPickerActive || this.isWplaceColorPickerActive()) {
+            this.selectTemplateColorAtCoords(coords2.tile, coords2.pixel);
+            return;
+          }
+          this.selectTemplateColorAfterNativePickerChange(coords2.tile, coords2.pixel, selectedColorBeforeClick);
         });
       }, true);
     }
@@ -6818,10 +6857,18 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
     isWplaceColorPickerControl(element) {
       const labels = [
         "color picker",
+        "colorpicker",
+        "eyedropper",
+        "pick color",
+        "pick colour",
+        "sample color",
         "conta gotas",
+        "cuentagotas",
+        "gotero",
         "\u53D6\u8272\u5668",
         "farbpipette",
         "selector de color",
+        "seleccionar color",
         "pipette",
         "contagocce",
         "\u30AB\u30E9\u30FC\u30D4\u30C3\u30AB\u30FC",
@@ -6856,7 +6903,8 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         if (!this.isWplaceColorPickerControl(tooltip)) {
           continue;
         }
-        if (tooltip.matches?.(".btn-primary") || tooltip.querySelector?.(".btn-primary")) {
+        const control = tooltip.closest?.('button, [role="button"]') || tooltip;
+        if (control.matches?.('.btn-primary, .btn-active, .active, .selected, [aria-pressed="true"], [data-active="true"], [data-selected="true"]') || control.querySelector?.('.btn-primary, .btn-active, .active, .selected, [aria-pressed="true"], [data-active="true"], [data-selected="true"]')) {
           return true;
         }
       }
@@ -6895,6 +6943,37 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         setTimeout(() => select(false), delay);
       }
       return selected;
+    }
+    /** Corrects Wplace's native picker result when the click changed the selected palette color.
+     * This fallback avoids depending entirely on Wplace's picker button markup.
+     * @param {Array<string|number>} coordsTile - Wplace tile coordinates
+     * @param {Array<string|number>} coordsPixel - Wplace pixel coordinates
+     * @param {string | null} selectedColorBeforeClick - Palette color selected before the map click
+     * @returns {boolean} Whether a correction was scheduled
+     * @since 0.92.35
+     */
+    selectTemplateColorAfterNativePickerChange(coordsTile, coordsPixel, selectedColorBeforeClick) {
+      const templateColor = this.templateManager?.getTemplateColorAtTilePixel?.(
+        coordsTile?.[0],
+        coordsTile?.[1],
+        coordsPixel?.[0],
+        coordsPixel?.[1]
+      );
+      if (!templateColor || templateColor.colorID == -2) {
+        return false;
+      }
+      const previousColor = selectedColorBeforeClick == null ? null : String(selectedColorBeforeClick);
+      const expectedColor = String(templateColor.colorID == -1 ? 0 : templateColor.colorID);
+      for (const delay of this.templateEyedropperNativeProbeDelays) {
+        setTimeout(() => {
+          const currentColor = localStorage.getItem("selected-color");
+          if (currentColor == null || currentColor == previousColor || currentColor == expectedColor) {
+            return;
+          }
+          this.selectWplacePaletteColor(templateColor.colorID);
+        }, delay);
+      }
+      return true;
     }
     /** Selects the visible template color at a tile/pixel coordinate.
      * @param {Array<string|number>} coordsTile - Wplace tile coordinates

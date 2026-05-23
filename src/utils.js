@@ -513,6 +513,19 @@ function installWplaceNavigatorBridge() {
       };
     }
 
+    function clientPointToMapPoint(map, clientX, clientY) {
+      const canvas = typeof map.getCanvas == 'function'
+        ? map.getCanvas()
+        : document.querySelector('.maplibregl-canvas');
+      const rect = canvas?.getBoundingClientRect?.();
+      if (!rect) {return [clientX, clientY];}
+
+      return [
+        clientX - rect.left,
+        clientY - rect.top
+      ];
+    }
+
     function isMapEventTarget(target) {
       return !!(
         target?.matches?.('.maplibregl-canvas')
@@ -530,7 +543,8 @@ function installWplaceNavigatorBridge() {
       if (!Number.isFinite(point.clientX) || !Number.isFinite(point.clientY)) {return;}
 
       try {
-        const lngLat = map.unproject([point.clientX, point.clientY]);
+        const mapPoint = clientPointToMapPoint(map, point.clientX, point.clientY);
+        const lngLat = map.unproject(mapPoint);
         const coords = latLngToTilePixel(
           Number(lngLat.lat),
           Number(lngLat.lng),
@@ -732,7 +746,8 @@ function installWplaceNavigatorBridge() {
           state.searchPromise = null;
 
           if (map && typeof map.unproject == 'function') {
-            const lngLat = map.unproject([data.clientX, data.clientY]);
+            const mapPoint = clientPointToMapPoint(map, Number(data.clientX), Number(data.clientY));
+            const lngLat = map.unproject(mapPoint);
             coords = latLngToTilePixel(
               Number(lngLat.lat),
               Number(lngLat.lng),

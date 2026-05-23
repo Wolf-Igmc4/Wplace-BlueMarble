@@ -27,6 +27,7 @@ export default class ApiManager {
     this.templateEyedropperActiveUntil = 0; // Allows Blue Marble to override Wplace's next eyedropper result
     this.templateEyedropperActivationWindowMs = 15000; // Time after pressing/clicking Wplace's picker that a pixel response can be overridden
     this.templateEyedropperRetryDelays = [80, 180, 350]; // Re-applies selection if Wplace's async picker resolves after Blue Marble
+    this.templateEyedropperNativeProbeDelays = [60, 160, 320, 600]; // Detects native picker results even when Wplace's picker button was not recognized
     this.templateEyedropperTrackerInstalled = false; // Prevents duplicate global listeners
     this.placementGuardTrackerInstalled = false; // Prevents duplicate placement guard listeners
     this.placementGuardFlag = 'ftr-placeGuard'; // User setting flag for wrong-color click blocking
@@ -165,9 +166,22 @@ export default class ApiManager {
       if (event.code == 'KeyE') {clearPickerActive();}
     }, true);
 
+    for (const eventName of ['pointerdown', 'mousedown', 'touchstart']) {
+      document.addEventListener(eventName, event => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) {return;}
+        if (target.closest('[id^="color-"]')) {
+          clearPickerActive();
+          return;
+        }
+        if (this.isWplaceColorPickerControl(target)) {markPickerActive();}
+      }, true);
+    }
+
     document.addEventListener('click', event => {
       const target = event.target instanceof Element ? event.target : null;
       if (!target) {return;}
+      const selectedColorBeforeClick = localStorage.getItem('selected-color');
 
       if (target.closest('[id^="color-"]')) {
         clearPickerActive();
@@ -176,8 +190,10 @@ export default class ApiManager {
 
       if (this.isWplaceColorPickerControl(target)) {markPickerActive();}
 
-      if (!this.isWplaceColorPickerActive() || !this.isWplaceMapClickTarget(target)) {return;}
-      markPickerActive();
+      if (!this.isWplaceMapClickTarget(target)) {return;}
+      const wasPickerActive = this.isWplaceColorPickerActive();
+      if (wasPickerActive) {markPickerActive();}
+
       void screenToWplaceTilePixel(
         event.clientX,
         event.clientY,
@@ -185,7 +201,12 @@ export default class ApiManager {
         11
       ).then(coords => {
         if (!coords) {return;}
-        this.selectTemplateColorAtCoords(coords.tile, coords.pixel);
+        if (wasPickerActive || this.isWplaceColorPickerActive()) {
+          this.selectTemplateColorAtCoords(coords.tile, coords.pixel);
+          return;
+        }
+
+        this.selectTemplateColorAfterNativePickerChange(coords.tile, coords.pixel, selectedColorBeforeClick);
       });
     }, true);
   }
@@ -211,10 +232,18 @@ export default class ApiManager {
   isWplaceColorPickerControl(element) {
     const labels = [
       'color picker',
+      'colorpicker',
+      'eyedropper',
+      'pick color',
+      'pick colour',
+      'sample color',
       'conta gotas',
+      'cuentagotas',
+      'gotero',
       '取色器',
       'farbpipette',
       'selector de color',
+      'seleccionar color',
       'pipette',
       'contagocce',
       'カラーピッカー',
@@ -249,7 +278,11 @@ export default class ApiManager {
 
     for (const tooltip of document.querySelectorAll('.tooltip[data-tip], [title], [aria-label]')) {
       if (!this.isWplaceColorPickerControl(tooltip)) {continue;}
-      if (tooltip.matches?.('.btn-primary') || tooltip.querySelector?.('.btn-primary')) {return true;}
+      const control = tooltip.closest?.('button, [role="button"]') || tooltip;
+      if (
+        control.matches?.('.btn-primary, .btn-active, .active, .selected, [aria-pressed="true"], [data-active="true"], [data-selected="true"]')
+        || control.querySelector?.('.btn-primary, .btn-active, .active, .selected, [aria-pressed="true"], [data-active="true"], [data-selected="true"]')
+      ) {return true;}
     }
 
     return false;
@@ -290,6 +323,37 @@ export default class ApiManager {
     }
 
     return selected;
+  }
+
+  /** Corrects Wplace's native picker result when the click changed the selected palette color.
+   * This fallback avoids depending entirely on Wplace's picker button markup.
+   * @param {Array<string|number>} coordsTile - Wplace tile coordinates
+   * @param {Array<string|number>} coordsPixel - Wplace pixel coordinates
+   * @param {string | null} selectedColorBeforeClick - Palette color selected before the map click
+   * @returns {boolean} Whether a correction was scheduled
+   * @since 0.92.35
+   */
+  selectTemplateColorAfterNativePickerChange(coordsTile, coordsPixel, selectedColorBeforeClick) {
+    const templateColor = this.templateManager?.getTemplateColorAtTilePixel?.(
+      coordsTile?.[0],
+      coordsTile?.[1],
+      coordsPixel?.[0],
+      coordsPixel?.[1]
+    );
+    if (!templateColor || (templateColor.colorID == -2)) {return false;}
+
+    const previousColor = selectedColorBeforeClick == null ? null : String(selectedColorBeforeClick);
+    const expectedColor = String((templateColor.colorID == -1) ? 0 : templateColor.colorID);
+
+    for (const delay of this.templateEyedropperNativeProbeDelays) {
+      setTimeout(() => {
+        const currentColor = localStorage.getItem('selected-color');
+        if (currentColor == null || currentColor == previousColor || currentColor == expectedColor) {return;}
+        this.selectWplacePaletteColor(templateColor.colorID);
+      }, delay);
+    }
+
+    return true;
   }
 
   /** Selects the visible template color at a tile/pixel coordinate.
