@@ -390,7 +390,7 @@ export async function installWplaceTilePixelTracker(tileSize = 1000, tileZoom = 
  * @param {number} clientY - Current event viewport Y coordinate
  * @param {number} [maxAgeMs=500] - Maximum accepted age for the tracked coordinate
  * @param {number} [maxDistancePx=12] - Maximum pointer drift from the tracked coordinate
- * @returns {{tile: [number, number], pixel: [number, number], lat: number, lng: number} | null}
+ * @returns {{tile: [number, number], pixel: [number, number], lat: number, lng: number, zoom: number | null} | null}
  * @since 0.92.35
  */
 export function getTrackedWplaceTilePixel(clientX, clientY, maxAgeMs = 500, maxDistancePx = 12) {
@@ -408,10 +408,12 @@ export function getTrackedWplaceTilePixel(clientX, clientY, maxAgeMs = 500, maxD
       'pixel': payload['pixel'],
       'lat': payload['lat'],
       'lng': payload['lng'],
+      'zoom': Number.isFinite(Number(payload['zoom'])) ? Number(payload['zoom']) : null,
       '_debug': {
         'updatedAt': payload['updatedAt'],
         'clientX': payload['clientX'],
         'clientY': payload['clientY'],
+        'zoom': payload['zoom'],
         'mapPoint': payload['mapPoint'],
         'canvasRect': payload['canvasRect']
       }
@@ -582,6 +584,7 @@ function installWplaceNavigatorBridge() {
           pixel: coords.pixel,
           lat: coords.lat,
           lng: coords.lng,
+          zoom: typeof map.getZoom == 'function' ? map.getZoom() : null,
           mapPoint: mapPoint.point,
           canvasRect: mapPoint.canvasRect
         });

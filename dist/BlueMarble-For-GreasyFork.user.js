@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.42
+// @version         0.92.44
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.42
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.44
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -352,10 +352,12 @@
         "pixel": payload["pixel"],
         "lat": payload["lat"],
         "lng": payload["lng"],
+        "zoom": Number.isFinite(Number(payload["zoom"])) ? Number(payload["zoom"]) : null,
         "_debug": {
           "updatedAt": payload["updatedAt"],
           "clientX": payload["clientX"],
           "clientY": payload["clientY"],
+          "zoom": payload["zoom"],
           "mapPoint": payload["mapPoint"],
           "canvasRect": payload["canvasRect"]
         }
@@ -523,6 +525,7 @@
           pixel: coords.pixel,
           lat: coords.lat,
           lng: coords.lng,
+          zoom: typeof map.getZoom == 'function' ? map.getZoom() : null,
           mapPoint: mapPoint.point,
           canvasRect: mapPoint.canvasRect
         });
@@ -6689,11 +6692,15 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.placementGuardEvents = ["pointerdown", "pointermove", "pointerup", "mousedown", "mousemove", "mouseup", "click", "touchstart", "touchmove", "touchend"];
       this.placementGuardLastBlockAt = 0;
       this.placementGuardSpaceHeld = false;
+      this.placementGuardSpacePlacementAllowed = false;
+      this.placementGuardSpaceCancelledUntilKeyup = false;
+      this.placementGuardSyntheticSpaceReleaseUntil = 0;
       this.placementGuardDragState = null;
       this.placementGuardSuppressClickUntil = 0;
       this.placementGuardLastPointerPoint = null;
       this.placementGuardLastPointerOnMap = false;
       this.placementGuardLastPointerAt = 0;
+      this.placementGuardMinimumZoom = 15;
       this.debugLogLastAt = /* @__PURE__ */ new Map();
       this.installTemplateEyedropperTracker();
       this.installPlacementGuard();
@@ -6810,6 +6817,8 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           selectedColor: localStorage.getItem("selected-color"),
           events: this.placementGuardEvents,
           spaceHeld: this.placementGuardSpaceHeld,
+          spacePlacementAllowed: this.placementGuardSpacePlacementAllowed,
+          spaceCancelledUntilKeyup: this.placementGuardSpaceCancelledUntilKeyup,
           tracker: document.documentElement?.dataset?.bmTilePixelAtPointer || "",
           flags: this.templateManager?.settingsManager?.userSettings?.flags ?? []
         });
@@ -6824,19 +6833,39 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       if (event.code != "Space") {
         return;
       }
+      if (!event.isTrusted && Date.now() < this.placementGuardSyntheticSpaceReleaseUntil) {
+        return;
+      }
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) {
         return;
       }
+      if (!isDown) {
+        const changed2 = this.placementGuardSpaceHeld || this.placementGuardSpacePlacementAllowed || this.placementGuardSpaceCancelledUntilKeyup;
+        this.placementGuardSpaceHeld = false;
+        this.placementGuardSpacePlacementAllowed = false;
+        this.placementGuardSpaceCancelledUntilKeyup = false;
+        if (changed2) {
+          this.debugLog("guard", "space-up", {}, 500);
+        }
+        return;
+      }
+      if (this.placementGuardSpaceCancelledUntilKeyup) {
+        this.debugLog("guard", "block", { type: event.type, reason: "space-session-cancelled-until-keyup" }, 500);
+        this.blockPlacementEvent(event);
+        return;
+      }
       if (isDown && this.shouldBlockPlacementGuardSpaceEvent(event)) {
         this.placementGuardSpaceHeld = false;
+        this.placementGuardSpacePlacementAllowed = false;
         this.blockPlacementEvent(event);
         return;
       }
       const changed = this.placementGuardSpaceHeld != isDown;
-      this.placementGuardSpaceHeld = isDown;
+      this.placementGuardSpaceHeld = true;
+      this.placementGuardSpacePlacementAllowed = true;
       if (changed) {
-        this.debugLog("guard", isDown ? "space-down" : "space-up", {}, 500);
+        this.debugLog("guard", "space-down", {}, 500);
       }
     }
     /** Checks whether the wrong-color placement guard is enabled.
@@ -6893,6 +6922,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         button: event.button,
         buttons: event.buttons,
         spaceHeld: this.placementGuardSpaceHeld,
+        spacePlacementAllowed: this.placementGuardSpacePlacementAllowed,
         target: this.describeElement(target),
         selectedColor: localStorage.getItem("selected-color")
       };
@@ -6911,6 +6941,11 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       if (!this.isPrimaryPlacementGesture(event)) {
         this.debugLog("guard", "skip", { ...baseDebug, reason: "not-primary-placement-gesture" }, 1e3);
         return false;
+      }
+      if (this.isMoveEvent(event) && this.placementGuardSpaceHeld && !this.placementGuardSpacePlacementAllowed) {
+        this.debugLog("guard", "block", { ...baseDebug, reason: "space-session-cancelled" }, 500);
+        this.blockPlacementEvent(event);
+        return true;
       }
       if (this.isPlacementEndEvent(event) && dragState?.dragged && !dragState.spaceAtStart && !this.placementGuardSpaceHeld) {
         this.placementGuardSuppressClickUntil = Date.now() + 400;
@@ -6944,6 +6979,10 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         }, 1e3);
         return false;
       }
+      if (this.isPlacementGuardBelowPixelZoom(coords2)) {
+        this.debugLog("guard", "skip", { ...baseDebug, reason: "below-pixel-zoom", coords: coords2 }, 1e3);
+        return false;
+      }
       const templateColor = this.templateManager?.getTemplateColorAtTilePixel?.(
         coords2["tile"]?.[0],
         coords2["tile"]?.[1],
@@ -6958,6 +6997,13 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           coords: coords2,
           templateColorID: templateColor?.colorID ?? null
         }, 500);
+        if (this.isMoveEvent(event) && this.placementGuardSpaceHeld) {
+          this.cancelPlacementGuardSpaceSession("moved-over-non-matching-template-pixel", {
+            activeColorID,
+            coords: coords2,
+            templateColorID: templateColor?.colorID ?? null
+          });
+        }
         this.blockPlacementEvent(event);
         return true;
       }
@@ -6972,6 +7018,14 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           coords: coords2,
           templateColorID: templateColor.colorID
         }, 500);
+        if (this.isMoveEvent(event) && this.placementGuardSpaceHeld) {
+          this.cancelPlacementGuardSpaceSession("moved-with-selected-color-mismatch", {
+            activeColorID,
+            selectedColorID,
+            coords: coords2,
+            templateColorID: templateColor.colorID
+          });
+        }
         this.blockPlacementEvent(event);
         return true;
       }
@@ -6983,6 +7037,41 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         templateColorID: templateColor.colorID
       }, 500);
       return false;
+    }
+    /** Cancels continuous Space placement until the user physically releases Space.
+     * @param {string} reason - Cancellation reason
+     * @param {Object} [details={}] - Debug details
+     * @since 0.92.44
+     */
+    cancelPlacementGuardSpaceSession(reason, details = {}) {
+      if (this.placementGuardSpaceCancelledUntilKeyup) {
+        return;
+      }
+      this.placementGuardSpacePlacementAllowed = false;
+      this.placementGuardSpaceCancelledUntilKeyup = true;
+      this.debugLog("guard", "space-cancelled", { reason, ...details }, 500);
+      this.dispatchPlacementGuardSyntheticSpaceRelease(reason);
+    }
+    /** Sends a best-effort Space keyup so Wplace leaves continuous placement mode.
+     * @param {string} reason - Cancellation reason
+     * @since 0.92.44
+     */
+    dispatchPlacementGuardSyntheticSpaceRelease(reason) {
+      this.placementGuardSyntheticSpaceReleaseUntil = Date.now() + 100;
+      const targets = [document.activeElement, document, window].filter(Boolean);
+      for (const target of targets) {
+        try {
+          const event = new KeyboardEvent("keyup", {
+            key: " ",
+            code: "Space",
+            bubbles: true,
+            cancelable: true
+          });
+          target.dispatchEvent(event);
+        } catch (error) {
+        }
+      }
+      this.debugLog("guard", "space-release-sent", { reason }, 500);
     }
     /** Blocks Space-triggered placement before Wplace paints a wrong pixel.
      * @param {KeyboardEvent} event - Keyboard event
@@ -7004,6 +7093,10 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       const selectedMismatch = Number.isInteger(selectedColorID) && selectedColorID != activeColorID;
       const point = this.placementGuardLastPointerPoint;
       const coords2 = point ? getTrackedWplaceTilePixel(point.clientX, point.clientY) : null;
+      if (coords2 && this.isPlacementGuardBelowPixelZoom(coords2)) {
+        this.debugLog("guard", "skip", { type: event.type, reason: "space-below-pixel-zoom", coords: coords2 }, 1e3);
+        return false;
+      }
       const templateColor = coords2 ? this.templateManager?.getTemplateColorAtTilePixel?.(
         coords2["tile"]?.[0],
         coords2["tile"]?.[1],
@@ -7037,6 +7130,15 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         return true;
       }
       return false;
+    }
+    /** Checks whether the map is too far zoomed out for pixel placement guarding.
+     * @param {{zoom?: number | null}} coords - Tracked map coordinates
+     * @returns {boolean}
+     * @since 0.92.43
+     */
+    isPlacementGuardBelowPixelZoom(coords2) {
+      const zoom = Number(coords2?.["zoom"]);
+      return Number.isFinite(zoom) && zoom < this.placementGuardMinimumZoom;
     }
     /** Remembers whether the pointer is currently over the map for keyboard-triggered placement.
      * @param {Event} event - Pointer/mouse/touch event

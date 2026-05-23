@@ -35,11 +35,15 @@ export default class ApiManager {
     this.placementGuardEvents = ['pointerdown', 'pointermove', 'pointerup', 'mousedown', 'mousemove', 'mouseup', 'click', 'touchstart', 'touchmove', 'touchend']; // Human map events that can start a placement
     this.placementGuardLastBlockAt = 0; // Throttles status noise when wrong-color clicks are blocked
     this.placementGuardSpaceHeld = false; // Wplace can place continuously while Space is held
+    this.placementGuardSpacePlacementAllowed = false; // Whether the current Space hold is still on a safe path
+    this.placementGuardSpaceCancelledUntilKeyup = false; // Requires releasing Space after leaving the safe path
+    this.placementGuardSyntheticSpaceReleaseUntil = 0; // Lets synthetic keyup reach Wplace without changing our state
     this.placementGuardDragState = null; // Tracks whether a plain pointer gesture became map panning
     this.placementGuardSuppressClickUntil = 0; // Ignores the synthetic click fired after a map pan
     this.placementGuardLastPointerPoint = null; // Last pointer location for keyboard-triggered placement
     this.placementGuardLastPointerOnMap = false; // Whether the last pointer location was on Wplace's map
     this.placementGuardLastPointerAt = 0; // Timestamp for the last tracked pointer location
+    this.placementGuardMinimumZoom = 15; // Avoids blocking low-zoom map POI clicks rendered inside the canvas
     this.debugLogLastAt = new Map(); // Throttles repeated picker/guard debug messages
     this.installTemplateEyedropperTracker();
     this.installPlacementGuard();
@@ -155,6 +159,8 @@ export default class ApiManager {
         selectedColor: localStorage.getItem('selected-color'),
         events: this.placementGuardEvents,
         spaceHeld: this.placementGuardSpaceHeld,
+        spacePlacementAllowed: this.placementGuardSpacePlacementAllowed,
+        spaceCancelledUntilKeyup: this.placementGuardSpaceCancelledUntilKeyup,
         tracker: document.documentElement?.dataset?.bmTilePixelAtPointer || '',
         flags: this.templateManager?.settingsManager?.userSettings?.flags ?? []
       });
@@ -168,19 +174,40 @@ export default class ApiManager {
    */
   handlePlacementGuardKeyEvent(event, isDown) {
     if (event.code != 'Space') {return;}
+    if (!event.isTrusted && (Date.now() < this.placementGuardSyntheticSpaceReleaseUntil)) {return;}
+
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) {return;}
 
+    if (!isDown) {
+      const changed = this.placementGuardSpaceHeld || this.placementGuardSpacePlacementAllowed || this.placementGuardSpaceCancelledUntilKeyup;
+      this.placementGuardSpaceHeld = false;
+      this.placementGuardSpacePlacementAllowed = false;
+      this.placementGuardSpaceCancelledUntilKeyup = false;
+      if (changed) {
+        this.debugLog('guard', 'space-up', {}, 500);
+      }
+      return;
+    }
+
+    if (this.placementGuardSpaceCancelledUntilKeyup) {
+      this.debugLog('guard', 'block', {type: event.type, reason: 'space-session-cancelled-until-keyup'}, 500);
+      this.blockPlacementEvent(event);
+      return;
+    }
+
     if (isDown && this.shouldBlockPlacementGuardSpaceEvent(event)) {
       this.placementGuardSpaceHeld = false;
+      this.placementGuardSpacePlacementAllowed = false;
       this.blockPlacementEvent(event);
       return;
     }
 
     const changed = this.placementGuardSpaceHeld != isDown;
-    this.placementGuardSpaceHeld = isDown;
+    this.placementGuardSpaceHeld = true;
+    this.placementGuardSpacePlacementAllowed = true;
     if (changed) {
-      this.debugLog('guard', isDown ? 'space-down' : 'space-up', {}, 500);
+      this.debugLog('guard', 'space-down', {}, 500);
     }
   }
 
@@ -236,6 +263,7 @@ export default class ApiManager {
       button: event.button,
       buttons: event.buttons,
       spaceHeld: this.placementGuardSpaceHeld,
+      spacePlacementAllowed: this.placementGuardSpacePlacementAllowed,
       target: this.describeElement(target),
       selectedColor: localStorage.getItem('selected-color')
     };
@@ -255,6 +283,11 @@ export default class ApiManager {
     if (!this.isPrimaryPlacementGesture(event)) {
       this.debugLog('guard', 'skip', {...baseDebug, reason: 'not-primary-placement-gesture'}, 1000);
       return false;
+    }
+    if (this.isMoveEvent(event) && this.placementGuardSpaceHeld && !this.placementGuardSpacePlacementAllowed) {
+      this.debugLog('guard', 'block', {...baseDebug, reason: 'space-session-cancelled'}, 500);
+      this.blockPlacementEvent(event);
+      return true;
     }
     if (this.isPlacementEndEvent(event) && dragState?.dragged && !dragState.spaceAtStart && !this.placementGuardSpaceHeld) {
       this.placementGuardSuppressClickUntil = Date.now() + 400;
@@ -292,6 +325,10 @@ export default class ApiManager {
       }, 1000);
       return false;
     }
+    if (this.isPlacementGuardBelowPixelZoom(coords)) {
+      this.debugLog('guard', 'skip', {...baseDebug, reason: 'below-pixel-zoom', coords: coords}, 1000);
+      return false;
+    }
 
     const templateColor = this.templateManager?.getTemplateColorAtTilePixel?.(
       coords['tile']?.[0],
@@ -308,6 +345,13 @@ export default class ApiManager {
         coords: coords,
         templateColorID: templateColor?.colorID ?? null
       }, 500);
+      if (this.isMoveEvent(event) && this.placementGuardSpaceHeld) {
+        this.cancelPlacementGuardSpaceSession('moved-over-non-matching-template-pixel', {
+          activeColorID: activeColorID,
+          coords: coords,
+          templateColorID: templateColor?.colorID ?? null
+        });
+      }
       this.blockPlacementEvent(event);
       return true;
     }
@@ -323,6 +367,14 @@ export default class ApiManager {
         coords: coords,
         templateColorID: templateColor.colorID
       }, 500);
+      if (this.isMoveEvent(event) && this.placementGuardSpaceHeld) {
+        this.cancelPlacementGuardSpaceSession('moved-with-selected-color-mismatch', {
+          activeColorID: activeColorID,
+          selectedColorID: selectedColorID,
+          coords: coords,
+          templateColorID: templateColor.colorID
+        });
+      }
       this.blockPlacementEvent(event);
       return true;
     }
@@ -335,6 +387,42 @@ export default class ApiManager {
       templateColorID: templateColor.colorID
     }, 500);
     return false;
+  }
+
+  /** Cancels continuous Space placement until the user physically releases Space.
+   * @param {string} reason - Cancellation reason
+   * @param {Object} [details={}] - Debug details
+   * @since 0.92.44
+   */
+  cancelPlacementGuardSpaceSession(reason, details = {}) {
+    if (this.placementGuardSpaceCancelledUntilKeyup) {return;}
+    this.placementGuardSpacePlacementAllowed = false;
+    this.placementGuardSpaceCancelledUntilKeyup = true;
+    this.debugLog('guard', 'space-cancelled', {reason: reason, ...details}, 500);
+    this.dispatchPlacementGuardSyntheticSpaceRelease(reason);
+  }
+
+  /** Sends a best-effort Space keyup so Wplace leaves continuous placement mode.
+   * @param {string} reason - Cancellation reason
+   * @since 0.92.44
+   */
+  dispatchPlacementGuardSyntheticSpaceRelease(reason) {
+    this.placementGuardSyntheticSpaceReleaseUntil = Date.now() + 100;
+    const targets = [document.activeElement, document, window].filter(Boolean);
+
+    for (const target of targets) {
+      try {
+        const event = new KeyboardEvent('keyup', {
+          key: ' ',
+          code: 'Space',
+          bubbles: true,
+          cancelable: true
+        });
+        target.dispatchEvent(event);
+      } catch (error) {}
+    }
+
+    this.debugLog('guard', 'space-release-sent', {reason: reason}, 500);
   }
 
   /** Blocks Space-triggered placement before Wplace paints a wrong pixel.
@@ -353,6 +441,10 @@ export default class ApiManager {
     const selectedMismatch = Number.isInteger(selectedColorID) && (selectedColorID != activeColorID);
     const point = this.placementGuardLastPointerPoint;
     const coords = point ? getTrackedWplaceTilePixel(point.clientX, point.clientY) : null;
+    if (coords && this.isPlacementGuardBelowPixelZoom(coords)) {
+      this.debugLog('guard', 'skip', {type: event.type, reason: 'space-below-pixel-zoom', coords: coords}, 1000);
+      return false;
+    }
     const templateColor = coords ? this.templateManager?.getTemplateColorAtTilePixel?.(
       coords['tile']?.[0],
       coords['tile']?.[1],
@@ -390,6 +482,16 @@ export default class ApiManager {
     }
 
     return false;
+  }
+
+  /** Checks whether the map is too far zoomed out for pixel placement guarding.
+   * @param {{zoom?: number | null}} coords - Tracked map coordinates
+   * @returns {boolean}
+   * @since 0.92.43
+   */
+  isPlacementGuardBelowPixelZoom(coords) {
+    const zoom = Number(coords?.['zoom']);
+    return Number.isFinite(zoom) && (zoom < this.placementGuardMinimumZoom);
   }
 
   /** Remembers whether the pointer is currently over the map for keyboard-triggered placement.
