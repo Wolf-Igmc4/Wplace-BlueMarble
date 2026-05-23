@@ -308,6 +308,110 @@ export async function clearWplaceTemplateOverlay() {
   });
 }
 
+/** Converts a viewport click position to Wplace tile/pixel coordinates through MapLibre.
+ * Falls back to `null` if Wplace internals can not be reached.
+ * @param {number} clientX - Viewport X coordinate from a pointer/mouse event
+ * @param {number} clientY - Viewport Y coordinate from a pointer/mouse event
+ * @param {number} [tileSize=1000] - Wplace tile size
+ * @param {number} [tileZoom=11] - Pixel-art tile zoom used by Wplace
+ * @returns {Promise<{tile: [number, number], pixel: [number, number], lat: number, lng: number} | null>}
+ * @since 0.92.35
+ */
+export async function screenToWplaceTilePixel(clientX, clientY, tileSize = 1000, tileZoom = 11) {
+  installWplaceNavigatorBridge();
+
+  const requestID = crypto.randomUUID();
+  return await new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', onMessage);
+      resolve(null);
+    }, 4000);
+
+    const onMessage = (event) => {
+      const data = event.data;
+      if (!data || data['source'] != 'blue-marble' || data['endpoint'] != 'screen-to-tile-pixel-result' || data['requestID'] != requestID) {return;}
+      clearTimeout(timeout);
+      window.removeEventListener('message', onMessage);
+      resolve(data['ok'] ? data['coords'] : null);
+    };
+
+    window.addEventListener('message', onMessage);
+    window.postMessage({
+      'source': 'blue-marble',
+      'endpoint': 'screen-to-tile-pixel',
+      'requestID': requestID,
+      'clientX': clientX,
+      'clientY': clientY,
+      'tileSize': tileSize,
+      'tileZoom': tileZoom
+    }, '*');
+  });
+}
+
+/** Keeps the latest trusted map pointer coordinate available synchronously on the DOM.
+ * @param {number} [tileSize=1000] - Wplace tile size
+ * @param {number} [tileZoom=11] - Pixel-art tile zoom used by Wplace
+ * @returns {Promise<boolean>} Whether the page bridge installed the tracker
+ * @since 0.92.35
+ */
+export async function installWplaceTilePixelTracker(tileSize = 1000, tileZoom = 11) {
+  installWplaceNavigatorBridge();
+
+  const requestID = crypto.randomUUID();
+  return await new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', onMessage);
+      resolve(false);
+    }, 4000);
+
+    const onMessage = (event) => {
+      const data = event.data;
+      if (!data || data['source'] != 'blue-marble' || data['endpoint'] != 'tile-pixel-tracker-result' || data['requestID'] != requestID) {return;}
+      clearTimeout(timeout);
+      window.removeEventListener('message', onMessage);
+      resolve(!!data['ok']);
+    };
+
+    window.addEventListener('message', onMessage);
+    window.postMessage({
+      'source': 'blue-marble',
+      'endpoint': 'tile-pixel-tracker',
+      'requestID': requestID,
+      'tileSize': tileSize,
+      'tileZoom': tileZoom
+    }, '*');
+  });
+}
+
+/** Reads the most recent map pointer tile/pixel tracked by the page bridge.
+ * @param {number} clientX - Current event viewport X coordinate
+ * @param {number} clientY - Current event viewport Y coordinate
+ * @param {number} [maxAgeMs=500] - Maximum accepted age for the tracked coordinate
+ * @param {number} [maxDistancePx=12] - Maximum pointer drift from the tracked coordinate
+ * @returns {{tile: [number, number], pixel: [number, number], lat: number, lng: number} | null}
+ * @since 0.92.35
+ */
+export function getTrackedWplaceTilePixel(clientX, clientY, maxAgeMs = 500, maxDistancePx = 12) {
+  try {
+    const payload = JSON.parse(document.documentElement?.dataset?.bmTilePixelAtPointer || 'null');
+    if (!payload || !Array.isArray(payload.tile) || !Array.isArray(payload.pixel)) {return null;}
+    if ((Date.now() - Number(payload.updatedAt || 0)) > maxAgeMs) {return null;}
+
+    const deltaX = Math.abs(Number(payload.clientX) - Number(clientX));
+    const deltaY = Math.abs(Number(payload.clientY) - Number(clientY));
+    if ((deltaX > maxDistancePx) || (deltaY > maxDistancePx)) {return null;}
+
+    return {
+      tile: payload.tile,
+      pixel: payload.pixel,
+      lat: payload.lat,
+      lng: payload.lng
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
 /** Installs a page-context bridge that can access Wplace's internal Svelte modules.
  * @since 0.92.1
  */
@@ -324,7 +428,12 @@ function installWplaceNavigatorBridge() {
       searchPromise: null,
       overlayLayerIDs: [],
       overlaySourceIDs: [],
-      overlayStateKey: ''
+      overlayStateKey: '',
+      tilePixelTrackerInstalled: false,
+      tilePixelTrackerConfig: {
+        tileSize: 1000,
+        tileZoom: 11
+      }
     };
 
     async function findMap() {
@@ -371,6 +480,94 @@ function installWplaceNavigatorBridge() {
       state.overlayLayerIDs = [];
       state.overlaySourceIDs = [];
       state.overlayStateKey = '';
+    }
+
+    function latLngToTilePixel(lat, lng, tileSize = 1000, zoom = 11) {
+      const earthHalfCircumference = 2 * Math.PI * 6378137 / 2;
+      const resolution = (2 * earthHalfCircumference) / (tileSize * Math.pow(2, zoom));
+      const metersX = (lng / 180) * earthHalfCircumference;
+      const latRadians = lat * Math.PI / 180;
+      const latMercator = (180 / Math.PI) * Math.log(Math.tan((Math.PI / 4) + (latRadians / 2)));
+      const metersY = (latMercator / 180) * earthHalfCircumference;
+      const globalPixelX = Math.floor((metersX + earthHalfCircumference) / resolution);
+      const globalPixelY = Math.floor((earthHalfCircumference - metersY) / resolution);
+      const tileX = Math.floor(globalPixelX / tileSize);
+      const tileY = Math.floor(globalPixelY / tileSize);
+
+      return {
+        tile: [tileX, tileY],
+        pixel: [
+          ((globalPixelX % tileSize) + tileSize) % tileSize,
+          ((globalPixelY % tileSize) + tileSize) % tileSize
+        ],
+        lat: lat,
+        lng: lng
+      };
+    }
+
+    function getEventPoint(event) {
+      const touch = event.changedTouches?.[0] || event.touches?.[0];
+      return {
+        clientX: Number(touch?.clientX ?? event.clientX),
+        clientY: Number(touch?.clientY ?? event.clientY)
+      };
+    }
+
+    function isMapEventTarget(target) {
+      return !!(
+        target?.matches?.('.maplibregl-canvas')
+        || target?.closest?.('.maplibregl-canvas-container')
+        || target?.closest?.('.maplibregl-map')
+      );
+    }
+
+    function rememberTilePixelFromEvent(event) {
+      if (!isMapEventTarget(event.target)) {return;}
+      const map = state.map;
+      if (!map || typeof map.unproject != 'function') {return;}
+
+      const point = getEventPoint(event);
+      if (!Number.isFinite(point.clientX) || !Number.isFinite(point.clientY)) {return;}
+
+      try {
+        const lngLat = map.unproject([point.clientX, point.clientY]);
+        const coords = latLngToTilePixel(
+          Number(lngLat.lat),
+          Number(lngLat.lng),
+          Number(state.tilePixelTrackerConfig.tileSize) || 1000,
+          Number(state.tilePixelTrackerConfig.tileZoom) || 11
+        );
+
+        document.documentElement.dataset.bmTilePixelAtPointer = JSON.stringify({
+          clientX: point.clientX,
+          clientY: point.clientY,
+          updatedAt: Date.now(),
+          tile: coords.tile,
+          pixel: coords.pixel,
+          lat: coords.lat,
+          lng: coords.lng
+        });
+      } catch (error) {}
+    }
+
+    async function installTilePixelTracker(payload) {
+      state.tilePixelTrackerConfig = {
+        tileSize: Number(payload?.tileSize) || 1000,
+        tileZoom: Number(payload?.tileZoom) || 11
+      };
+
+      const map = await (state.searchPromise ||= findMap());
+      state.searchPromise = null;
+      if (!map || typeof map.unproject != 'function') {return false;}
+
+      if (!state.tilePixelTrackerInstalled) {
+        for (const eventName of ['pointerdown', 'mousedown', 'click', 'touchstart', 'touchend']) {
+          document.addEventListener(eventName, rememberTilePixelFromEvent, true);
+        }
+        state.tilePixelTrackerInstalled = true;
+      }
+
+      return true;
     }
 
     async function syncTemplateOverlay(payload) {
@@ -521,6 +718,54 @@ function installWplaceNavigatorBridge() {
         window.postMessage({
           source: 'blue-marble',
           endpoint: 'refresh-tiles-result',
+          requestID: data.requestID,
+          ok: ok
+        }, '*');
+        return;
+      }
+
+      if (data.endpoint == 'screen-to-tile-pixel') {
+        let coords = null;
+
+        try {
+          const map = await (state.searchPromise ||= findMap());
+          state.searchPromise = null;
+
+          if (map && typeof map.unproject == 'function') {
+            const lngLat = map.unproject([data.clientX, data.clientY]);
+            coords = latLngToTilePixel(
+              Number(lngLat.lat),
+              Number(lngLat.lng),
+              Number(data.tileSize) || 1000,
+              Number(data.tileZoom) || 11
+            );
+          }
+        } catch (error) {
+          state.searchPromise = null;
+        }
+
+        window.postMessage({
+          source: 'blue-marble',
+          endpoint: 'screen-to-tile-pixel-result',
+          requestID: data.requestID,
+          ok: !!coords,
+          coords: coords
+        }, '*');
+        return;
+      }
+
+      if (data.endpoint == 'tile-pixel-tracker') {
+        let ok = false;
+
+        try {
+          ok = await installTilePixelTracker(data);
+        } catch (error) {
+          state.searchPromise = null;
+        }
+
+        window.postMessage({
+          source: 'blue-marble',
+          endpoint: 'tile-pixel-tracker-result',
           requestID: data.requestID,
           ok: ok
         }, '*');

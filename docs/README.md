@@ -120,9 +120,9 @@
     <li>Displaying a simple coordinate system (tile coordinats & pixel coordinates)</li>
     <li>Autofilling template coordinates from filenames that start with <code>tileX-tileY-pixelX-pixelY</code></li>
     <li>Allowing you to move the color palette to the top of the screen when placing pixels</li>
-    <li>Allowing you to use the eyedropper on the template image, provided the colors are correct</li>
+    <li>Allowing you to use the eyedropper on the template image, including clicks anywhere on a visible template pixel instead of only the small rendered dot, provided the colors are correct</li>
     <li>Minimizing or maximizing the menu to switch between compact and full views with a quicker collapse/expand response</li>
-    <li>Filtering overlay colors with a refreshed Color Filter UI, live progress stats, reactive free/premium/completed color filters, a fullscreen-only button to show only the colors currently visible in the sorted filter list, an only-bought-colors premium filter based on Wplace unlock data, persisted sort/visibility settings, adaptive fullscreen color columns, top-aligned fullscreen/windowed placement beside the main Blue Marble window, responsive small-screen placement, outside-click auto-minimization, and resizable fullscreen/windowed layouts</li>
+    <li>Filtering overlay colors with a refreshed Color Filter UI, live progress stats, reactive free/premium/completed color filters, a fullscreen-only button to show only the colors currently visible in the sorted filter list, an only-bought-colors premium filter based on Wplace unlock data, a toggleable wrong-color click guard for single-color manual placement, persisted sort/visibility settings, adaptive fullscreen color columns, top-aligned fullscreen/windowed placement beside the main Blue Marble window, responsive small-screen placement, outside-click auto-minimization, and resizable fullscreen/windowed layouts</li>
     <li>Rendering unfiltered templates through an experimental MapLibre image-layer overlay so large templates can stay responsive without recomposing every fetched map tile, while bypassing internal <code>data:</code> and <code>blob:</code> overlay images in the fetch proxy and keeping verbose fetch/render diagnostics hidden unless the internal <code>bm-debug</code> flag is enabled</li>
     <li>Keeping Template Wizard template details compact on small mobile screens so saved template slots stay readable, with per-template active, inline rename, download, and delete controls for saved templates</li>
     <li>Showing the Color Filter button only after a template is loaded</li>
@@ -290,9 +290,10 @@
 
   <h3>How do I tell colors apart?</h3>
   <p><b>A:</b> Find the color in the color filter list. Click the checkbox to turn the color on or off. If you want to work on only one color at a time (recommended), then click "Disable All" in the color filter. Finally, enable the checkbox next to the color you want to place. This way, only one color on your template will appear at a time.</p>
+  <p>If you enable <b>Guard clicks</b> in the Color Filter while exactly one paintable template color is visible, Blue Marble blocks manual map clicks that do not match that visible template color. It does not place pixels, move clicks, or retry clicks automatically.</p>
 
   <h3>How do get the color of a pixel?</h3>
-  <p><b>A:</b> Use the eyedropper in the palette menu of wplace. If your template colors match the wplace palette, you can select the template pixel dot to get the template's color for that pixel.</p>
+  <p><b>A:</b> Use the eyedropper in the palette menu of wplace. If your template colors match the wplace palette, clicking a visible Blue Marble template pixel selects the template color for that pixel. If there is no visible template pixel there, Wplace keeps its normal eyedropper behavior.</p>
 
   <h3>Why do game notifications appear on top of the overlay?</h3>
   <p><b>A:</b> Game notifications only appear when they need immediate attention. Therefore, they have priority over the overlay (which typically needs no attention).</p>

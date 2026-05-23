@@ -46,6 +46,7 @@ export default class WindowFilter extends Overlay {
     this.windowParent = document.body; // The parent of the window DOM tree
     this.settingsManager = executor.settingsManager ?? null; // Settings manager from the executor
     this.windowModeFlag = 'ftr-oWin'; // User setting flag for opening the filter in windowed mode
+    this.placementGuardFlag = 'ftr-placeGuard'; // User setting flag for blocking wrong-color clicks when one color is visible
     this.windowStateKey = 'windowFilter'; // User setting key for the persisted window state
     this.windowResizeObserver = null; // Resize observer for the windowed mode
     this.windowViewportResizeHandler = null; // Resize handler for viewport changes
@@ -162,6 +163,9 @@ export default class WindowFilter extends Overlay {
           }).buildElement()
           .addButton({'class': 'bm-button-secondary', 'textContent': 'Show Filtered Colors Only'}, (instance, button) => {
             button.onclick = () => this.#selectFilteredColorList();
+          }).buildElement()
+          .addCheckbox({'class': 'bm-filter-placement-guard', 'textContent': 'Guard clicks'}, (instance, label, checkbox) => {
+            this.#initializePlacementGuardToggle(label, checkbox);
           }).buildElement()
         .buildElement()
         .addHr().buildElement()
@@ -328,6 +332,9 @@ export default class WindowFilter extends Overlay {
           .addButton({'class': 'bm-button-secondary', 'textContent': 'Show All'}, (instance, button) => {
             button.onclick = () => this.#selectColorList(true);
           }).buildElement()
+          .addCheckbox({'class': 'bm-filter-placement-guard', 'textContent': 'Guard'}, (instance, label, checkbox) => {
+            this.#initializePlacementGuardToggle(label, checkbox);
+          }).buildElement()
         .buildElement()
         .addHr().buildElement()
         .addDiv({'class': 'bm-container bm-scrollable bm-filter-scrollable'})
@@ -376,6 +383,24 @@ export default class WindowFilter extends Overlay {
     if (!this.settingsManager) {return null;}
     this.settingsManager.userSettings[this.windowStateKey] ??= {};
     return this.settingsManager.userSettings[this.windowStateKey];
+  }
+
+  /** Initializes the wrong-color placement guard toggle.
+   * @param {HTMLLabelElement} label - Toggle label
+   * @param {HTMLInputElement} checkbox - Toggle input
+   * @since 0.92.35
+   */
+  #initializePlacementGuardToggle(label, checkbox) {
+    checkbox.checked = !!this.settingsManager?.userSettings?.flags?.includes(this.placementGuardFlag);
+    checkbox.title = 'Blocks manual map clicks unless they match the only visible template color.';
+    checkbox.ariaLabel = 'Block wrong-color clicks when only one template color is visible';
+    label.title = checkbox.title;
+    label.classList.add('bm-filter-placement-guard-label');
+
+    checkbox.onchange = async event => {
+      this.settingsManager?.toggleFlag?.(this.placementGuardFlag, event.target.checked);
+      await this.settingsManager?.saveUserStorageNow?.();
+    };
   }
 
   /** Loads persisted sort and show/hide controls for the Color Filter.

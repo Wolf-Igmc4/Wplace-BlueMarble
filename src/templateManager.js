@@ -437,6 +437,66 @@ export default class TemplateManager {
     return this.loadedTemplateKeys.has(templateKey);
   }
 
+  /** Returns the visible template palette color at a Wplace tile/pixel coordinate.
+   * @param {number|string} tileX - Wplace tile X coordinate
+   * @param {number|string} tileY - Wplace tile Y coordinate
+   * @param {number|string} pixelX - Pixel X inside the tile
+   * @param {number|string} pixelY - Pixel Y inside the tile
+   * @param {Object} [options={}] - Lookup options
+   * @param {boolean} [options.visibleOnly=true] - Whether hidden color-filtered pixels should be ignored
+   * @returns {{colorID: number, template: Template, chunkKey: string} | null} Matching template color, or null
+   * @since 0.92.35
+   */
+  getTemplateColorAtTilePixel(tileX, tileY, pixelX, pixelY, {visibleOnly = true} = {}) {
+    const numericTileX = Number(tileX);
+    const numericTileY = Number(tileY);
+    const numericPixelX = Number(pixelX);
+    const numericPixelY = Number(pixelY);
+
+    if (![numericTileX, numericTileY, numericPixelX, numericPixelY].every(Number.isFinite)) {return null;}
+    if ((numericPixelX < 0) || (numericPixelY < 0) || (numericPixelX >= this.tileSize) || (numericPixelY >= this.tileSize)) {return null;}
+
+    const tileCoords = `${numericTileX.toString().padStart(4, '0')},${numericTileY.toString().padStart(4, '0')}`;
+    const templatesForTile = this.#getTemplateTileIndex().get(tileCoords) ?? [];
+
+    for (let index = templatesForTile.length - 1; index >= 0; index--) {
+      const templateChunk = templatesForTile[index];
+      const colorID = this.#getTemplateChunkColorAtPixel(templateChunk, numericPixelX, numericPixelY);
+      if (colorID == null) {continue;}
+      if (visibleOnly && this.shouldFilterColor.get(colorID)) {continue;}
+
+      return {
+        colorID: colorID,
+        template: templateChunk.instance,
+        chunkKey: templateChunk.key
+      };
+    }
+
+    return null;
+  }
+
+  /** Returns template palette IDs that are currently visible after the color filter.
+   * @param {Object} [options={}] - Lookup options
+   * @param {boolean} [options.paintableOnly=false] - Whether to exclude Blue Marble-only colors
+   * @returns {number[]} Visible color IDs
+   * @since 0.92.35
+   */
+  getVisibleTemplateColorIDs({paintableOnly = false} = {}) {
+    const colorIDs = new Set();
+
+    for (const template of this.templatesArray) {
+      for (const colorID of template.pixelCount?.colors?.keys?.() || []) {
+        const numericColorID = Number(colorID);
+        if (!Number.isFinite(numericColorID)) {continue;}
+        if (this.shouldFilterColor.get(numericColorID)) {continue;}
+        if (paintableOnly && ((numericColorID < 1) || (numericColorID > 63))) {continue;}
+        colorIDs.add(numericColorID);
+      }
+    }
+
+    return Array.from(colorIDs).sort((left, right) => left - right);
+  }
+
   /** Creates the JSON object to store templates in
    * @returns {{ whoami: string, scriptVersion: string, schemaVersion: string, templates: Object }} The JSON object
    * @since 0.65.4
@@ -1134,6 +1194,40 @@ export default class TemplateManager {
       : !!templateChunk.instance.pixelCount?.colors?.get(-1);
 
     return templateChunk.colorIDs;
+  }
+
+  /** Returns the palette color drawn by one template chunk at a tile pixel.
+   * @param {Object} templateChunk - Indexed template chunk
+   * @param {number} pixelX - Pixel X inside the Wplace tile
+   * @param {number} pixelY - Pixel Y inside the Wplace tile
+   * @returns {number | null} Palette color ID, or null for transparent/out-of-bounds pixels
+   * @since 0.92.35
+   */
+  #getTemplateChunkColorAtPixel(templateChunk, pixelX, pixelY) {
+    const template32 = templateChunk?.chunked32;
+    const width = templateChunk?.bitmap?.width;
+    const height = templateChunk?.bitmap?.height;
+    if (!template32 || !width || !height) {return null;}
+
+    const chunkPixelX = Number(templateChunk.pixelCoords?.[0]);
+    const chunkPixelY = Number(templateChunk.pixelCoords?.[1]);
+    if (![chunkPixelX, chunkPixelY].every(Number.isFinite)) {return null;}
+
+    const logicalX = Math.floor(pixelX - chunkPixelX);
+    const logicalY = Math.floor(pixelY - chunkPixelY);
+    if ((logicalX < 0) || (logicalY < 0)) {return null;}
+
+    const templatePixelX = (logicalX * this.drawMult) + Math.floor(this.drawMult / 2);
+    const templatePixelY = (logicalY * this.drawMult) + Math.floor(this.drawMult / 2);
+    if ((templatePixelX < 0) || (templatePixelY < 0) || (templatePixelX >= width) || (templatePixelY >= height)) {return null;}
+
+    const templatePixel = template32[(templatePixelY * width) + templatePixelX];
+    const templatePixelAlpha = (templatePixel >>> 24) & 0xFF;
+    if (templatePixelAlpha <= this.paletteTolerance) {return null;}
+
+    const { LUT: lookupTable } = this.paletteBM;
+    const colorID = lookupTable.get(templatePixel) ?? -2;
+    return (colorID == 0) ? null : colorID;
   }
 
   /** Checks whether a chunk has any colors that are currently visible.

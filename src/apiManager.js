@@ -5,7 +5,7 @@
  */
 
 import TemplateManager from "./templateManager.js";
-import { consoleError, escapeHTML, localizeNumber, serverTPtoDisplayTP } from "./utils.js";
+import { consoleError, escapeHTML, getTrackedWplaceTilePixel, installWplaceTilePixelTracker, localizeNumber, screenToWplaceTilePixel, serverTPtoDisplayTP } from "./utils.js";
 
 export default class ApiManager {
 
@@ -24,6 +24,303 @@ export default class ApiManager {
     this.boughtColorStorageKey = 'bmBoughtColorIDs'; // Persistent bought premium color cache
     this.boughtColorIDsCache = this.loadBoughtColorIDs(); // Last known bought premium color IDs
     this.jsonResponses = new Map(); // Recent JSON responses indexed by endpoint name
+    this.templateEyedropperActiveUntil = 0; // Allows Blue Marble to override Wplace's next eyedropper result
+    this.templateEyedropperActivationWindowMs = 15000; // Time after pressing/clicking Wplace's picker that a pixel response can be overridden
+    this.templateEyedropperRetryDelays = [80, 180, 350]; // Re-applies selection if Wplace's async picker resolves after Blue Marble
+    this.templateEyedropperTrackerInstalled = false; // Prevents duplicate global listeners
+    this.placementGuardTrackerInstalled = false; // Prevents duplicate placement guard listeners
+    this.placementGuardFlag = 'ftr-placeGuard'; // User setting flag for wrong-color click blocking
+    this.placementGuardEvents = ['pointerdown', 'mousedown', 'click', 'touchstart', 'touchend']; // Human map events that can start a placement
+    this.placementGuardLastBlockAt = 0; // Throttles status noise when wrong-color clicks are blocked
+    this.installTemplateEyedropperTracker();
+    this.installPlacementGuard();
+  }
+
+  /** Tracks map coordinates and blocks wrong-color manual clicks when the placement guard is enabled.
+   * @since 0.92.35
+   */
+  installPlacementGuard() {
+    if (this.placementGuardTrackerInstalled) {return;}
+    this.placementGuardTrackerInstalled = true;
+
+    void installWplaceTilePixelTracker(this.templateManager?.tileSize || 1000, 11);
+    for (const eventName of this.placementGuardEvents) {
+      document.addEventListener(eventName, event => this.handlePlacementGuardEvent(event), true);
+    }
+  }
+
+  /** Checks whether the wrong-color placement guard is enabled.
+   * @returns {boolean}
+   * @since 0.92.35
+   */
+  isPlacementGuardEnabled() {
+    return !!this.templateManager?.settingsManager?.userSettings?.flags?.includes(this.placementGuardFlag);
+  }
+
+  /** Returns the single visible paintable color, or null when the filter state is not narrow enough.
+   * @returns {number | null}
+   * @since 0.92.35
+   */
+  getSingleVisibleTemplateColorID() {
+    const visibleColorIDs = this.templateManager?.getVisibleTemplateColorIDs?.({paintableOnly: true}) ?? [];
+    return (visibleColorIDs.length == 1) ? visibleColorIDs[0] : null;
+  }
+
+  /** Stops Wplace from receiving a wrong-color placement event.
+   * @param {Event} event - Pointer/mouse/touch event
+   * @since 0.92.35
+   */
+  blockPlacementEvent(event) {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    event.stopImmediatePropagation?.();
+
+    if ((Date.now() - this.placementGuardLastBlockAt) > 1800) {
+      this.placementGuardLastBlockAt = Date.now();
+      console.log('Blue Marble: blocked a wrong-color manual placement while placement guard is enabled.');
+    }
+  }
+
+  /** Blocks manual map clicks that do not match the one visible template color.
+   * @param {Event} event - Pointer/mouse/touch event
+   * @returns {boolean} Whether the event was blocked
+   * @since 0.92.35
+   */
+  handlePlacementGuardEvent(event) {
+    if (!event.isTrusted || !this.isPlacementGuardEnabled()) {return false;}
+    if (this.isWplaceColorPickerActive()) {return false;}
+    if (event.button && event.button != 0) {return false;}
+
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || !this.isWplaceMapClickTarget(target)) {return false;}
+
+    const activeColorID = this.getSingleVisibleTemplateColorID();
+    if (activeColorID == null) {return false;}
+
+    const selectedColorID = Number(localStorage.getItem('selected-color'));
+    if (Number.isInteger(selectedColorID) && (selectedColorID != activeColorID)) {
+      this.blockPlacementEvent(event);
+      return true;
+    }
+
+    const point = this.getEventClientPoint(event);
+    if (!point) {return false;}
+
+    const coords = getTrackedWplaceTilePixel(point.clientX, point.clientY);
+    if (!coords) {return false;}
+
+    const templateColor = this.templateManager?.getTemplateColorAtTilePixel?.(
+      coords.tile?.[0],
+      coords.tile?.[1],
+      coords.pixel?.[0],
+      coords.pixel?.[1]
+    );
+
+    if (!templateColor || (templateColor.colorID != activeColorID)) {
+      this.blockPlacementEvent(event);
+      return true;
+    }
+
+    return false;
+  }
+
+  /** Gets the viewport coordinate for pointer/mouse/touch events.
+   * @param {Event} event - DOM event
+   * @returns {{clientX: number, clientY: number} | null}
+   * @since 0.92.35
+   */
+  getEventClientPoint(event) {
+    const touch = event.changedTouches?.[0] || event.touches?.[0];
+    const clientX = Number(touch?.clientX ?? event.clientX);
+    const clientY = Number(touch?.clientY ?? event.clientY);
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {return null;}
+    return {clientX, clientY};
+  }
+
+  /** Tracks likely Wplace eyedropper activation without depending on internal Svelte state.
+   * @since 0.92.35
+   */
+  installTemplateEyedropperTracker() {
+    if (this.templateEyedropperTrackerInstalled) {return;}
+    this.templateEyedropperTrackerInstalled = true;
+
+    const markPickerActive = () => {
+      this.templateEyedropperActiveUntil = Date.now() + this.templateEyedropperActivationWindowMs;
+    };
+    const clearPickerActive = () => {
+      this.templateEyedropperActiveUntil = 0;
+    };
+
+    document.addEventListener('keydown', event => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) {return;}
+      if (event.code == 'KeyI') {markPickerActive();}
+      if (event.code == 'KeyE') {clearPickerActive();}
+    }, true);
+
+    document.addEventListener('keypress', event => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) {return;}
+      if (event.code == 'KeyI') {markPickerActive();}
+      if (event.code == 'KeyE') {clearPickerActive();}
+    }, true);
+
+    document.addEventListener('click', event => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) {return;}
+
+      if (target.closest('[id^="color-"]')) {
+        clearPickerActive();
+        return;
+      }
+
+      if (this.isWplaceColorPickerControl(target)) {markPickerActive();}
+
+      if (!this.isWplaceColorPickerActive() || !this.isWplaceMapClickTarget(target)) {return;}
+      markPickerActive();
+      void screenToWplaceTilePixel(
+        event.clientX,
+        event.clientY,
+        this.templateManager?.tileSize || 1000,
+        11
+      ).then(coords => {
+        if (!coords) {return;}
+        this.selectTemplateColorAtCoords(coords.tile, coords.pixel);
+      });
+    }, true);
+  }
+
+  /** Checks whether an element is part of Wplace's MapLibre map surface.
+   * @param {Element} element - Click target
+   * @returns {boolean}
+   * @since 0.92.35
+   */
+  isWplaceMapClickTarget(element) {
+    return !!(
+      element.matches?.('.maplibregl-canvas')
+      || element.closest?.('.maplibregl-canvas-container')
+      || element.closest?.('.maplibregl-map')
+    );
+  }
+
+  /** Checks whether an element looks like Wplace's color picker control.
+   * @param {Element} element - Click target or candidate element
+   * @returns {boolean}
+   * @since 0.92.35
+   */
+  isWplaceColorPickerControl(element) {
+    const labels = [
+      'color picker',
+      'conta gotas',
+      '取色器',
+      'farbpipette',
+      'selector de color',
+      'pipette',
+      'contagocce',
+      'カラーピッカー',
+      'próbnik kolorów',
+      'пипетка',
+      'bảng chọn màu'
+    ];
+    const candidates = [
+      element,
+      element.closest?.('.tooltip'),
+      element.closest?.('button')
+    ].filter(Boolean);
+
+    return candidates.some(candidate => {
+      const text = [
+        candidate.getAttribute?.('data-tip'),
+        candidate.getAttribute?.('title'),
+        candidate.getAttribute?.('aria-label'),
+        candidate.textContent
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      return labels.some(label => text.includes(label));
+    });
+  }
+
+  /** Checks whether Wplace's eyedropper appears to be the active tool.
+   * @returns {boolean}
+   * @since 0.92.35
+   */
+  isWplaceColorPickerActive() {
+    if (Date.now() <= this.templateEyedropperActiveUntil) {return true;}
+
+    for (const tooltip of document.querySelectorAll('.tooltip[data-tip], [title], [aria-label]')) {
+      if (!this.isWplaceColorPickerControl(tooltip)) {continue;}
+      if (tooltip.matches?.('.btn-primary') || tooltip.querySelector?.('.btn-primary')) {return true;}
+    }
+
+    return false;
+  }
+
+  /** Selects a Wplace palette color by clicking its live palette button.
+   * @param {number} colorID - Blue Marble/Wplace palette color ID
+   * @returns {boolean} Whether the color can be selected from the current DOM
+   * @since 0.92.35
+   */
+  selectWplacePaletteColor(colorID) {
+    const wplaceColorID = (colorID == -1) ? 0 : Number(colorID);
+    if (!Number.isInteger(wplaceColorID) || (wplaceColorID < 0) || (wplaceColorID > 63)) {return false;}
+
+    const expectedColorID = wplaceColorID.toString();
+    const select = (force = false) => {
+      const colorElement = document.getElementById(`color-${expectedColorID}`);
+      if (!colorElement) {
+        localStorage.setItem('selected-color', expectedColorID);
+        return false;
+      }
+
+      if (!force && (localStorage.getItem('selected-color') == expectedColorID)) {
+        colorElement.focus?.();
+        return true;
+      }
+
+      if (colorElement instanceof HTMLButtonElement && colorElement.disabled) {return false;}
+
+      colorElement.click();
+      colorElement.focus?.();
+      return true;
+    };
+
+    const selected = select(true);
+    for (const delay of this.templateEyedropperRetryDelays) {
+      setTimeout(() => select(false), delay);
+    }
+
+    return selected;
+  }
+
+  /** Selects the visible template color at a tile/pixel coordinate.
+   * @param {Array<string|number>} coordsTile - Wplace tile coordinates
+   * @param {Array<string|number>} coordsPixel - Wplace pixel coordinates
+   * @returns {boolean} Whether Blue Marble selected a template color
+   * @since 0.92.35
+   */
+  selectTemplateColorAtCoords(coordsTile, coordsPixel) {
+    const templateColor = this.templateManager?.getTemplateColorAtTilePixel?.(
+      coordsTile?.[0],
+      coordsTile?.[1],
+      coordsPixel?.[0],
+      coordsPixel?.[1]
+    );
+    this.templateEyedropperActiveUntil = 0;
+
+    if (!templateColor || (templateColor.colorID == -2)) {return false;}
+
+    return this.selectWplacePaletteColor(templateColor.colorID);
+  }
+
+  /** Overrides Wplace's eyedropper result with the visible template pixel color when possible.
+   * @param {Array<string|number>} coordsTile - Wplace tile coordinates
+   * @param {Array<string|number>} coordsPixel - Wplace pixel coordinates
+   * @returns {boolean} Whether Blue Marble selected a template color
+   * @since 0.92.35
+   */
+  selectTemplateColorForEyedropper(coordsTile, coordsPixel) {
+    if (!this.isWplaceColorPickerActive()) {return false;}
+    return this.selectTemplateColorAtCoords(coordsTile, coordsPixel);
   }
 
   /** Loads bought premium color IDs from userscript storage.
@@ -184,7 +481,8 @@ export default class ApiManager {
           }
           
           this.coordsTilePixel = [...coordsTile, ...coordsPixel]; // Combines the two arrays such that [x, y, x, y]
-          
+          this.selectTemplateColorForEyedropper(coordsTile, coordsPixel); // If Wplace's eyedropper was active, prefer the visible template color
+
           const displayTP = serverTPtoDisplayTP(coordsTile, coordsPixel); // Retrieves the coordinates that Wplace displays for this region
 
           const spanElements = document.querySelectorAll('span'); // Retrieves all span elements

@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.34
+// @version         0.92.35
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.34
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.35
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -273,6 +273,86 @@
       }, "*");
     });
   }
+  async function screenToWplaceTilePixel(clientX, clientY, tileSize = 1e3, tileZoom = 11) {
+    installWplaceNavigatorBridge();
+    const requestID = crypto.randomUUID();
+    return await new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        window.removeEventListener("message", onMessage);
+        resolve(null);
+      }, 4e3);
+      const onMessage = (event) => {
+        const data = event.data;
+        if (!data || data["source"] != "blue-marble" || data["endpoint"] != "screen-to-tile-pixel-result" || data["requestID"] != requestID) {
+          return;
+        }
+        clearTimeout(timeout);
+        window.removeEventListener("message", onMessage);
+        resolve(data["ok"] ? data["coords"] : null);
+      };
+      window.addEventListener("message", onMessage);
+      window.postMessage({
+        "source": "blue-marble",
+        "endpoint": "screen-to-tile-pixel",
+        "requestID": requestID,
+        "clientX": clientX,
+        "clientY": clientY,
+        "tileSize": tileSize,
+        "tileZoom": tileZoom
+      }, "*");
+    });
+  }
+  async function installWplaceTilePixelTracker(tileSize = 1e3, tileZoom = 11) {
+    installWplaceNavigatorBridge();
+    const requestID = crypto.randomUUID();
+    return await new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        window.removeEventListener("message", onMessage);
+        resolve(false);
+      }, 4e3);
+      const onMessage = (event) => {
+        const data = event.data;
+        if (!data || data["source"] != "blue-marble" || data["endpoint"] != "tile-pixel-tracker-result" || data["requestID"] != requestID) {
+          return;
+        }
+        clearTimeout(timeout);
+        window.removeEventListener("message", onMessage);
+        resolve(!!data["ok"]);
+      };
+      window.addEventListener("message", onMessage);
+      window.postMessage({
+        "source": "blue-marble",
+        "endpoint": "tile-pixel-tracker",
+        "requestID": requestID,
+        "tileSize": tileSize,
+        "tileZoom": tileZoom
+      }, "*");
+    });
+  }
+  function getTrackedWplaceTilePixel(clientX, clientY, maxAgeMs = 500, maxDistancePx = 12) {
+    try {
+      const payload = JSON.parse(document.documentElement?.dataset?.bmTilePixelAtPointer || "null");
+      if (!payload || !Array.isArray(payload.tile) || !Array.isArray(payload.pixel)) {
+        return null;
+      }
+      if (Date.now() - Number(payload.updatedAt || 0) > maxAgeMs) {
+        return null;
+      }
+      const deltaX = Math.abs(Number(payload.clientX) - Number(clientX));
+      const deltaY = Math.abs(Number(payload.clientY) - Number(clientY));
+      if (deltaX > maxDistancePx || deltaY > maxDistancePx) {
+        return null;
+      }
+      return {
+        tile: payload.tile,
+        pixel: payload.pixel,
+        lat: payload.lat,
+        lng: payload.lng
+      };
+    } catch (error) {
+      return null;
+    }
+  }
   function installWplaceNavigatorBridge() {
     if (document.documentElement?.dataset?.bmNavigatorBridge) {
       return;
@@ -287,7 +367,12 @@
       searchPromise: null,
       overlayLayerIDs: [],
       overlaySourceIDs: [],
-      overlayStateKey: ''
+      overlayStateKey: '',
+      tilePixelTrackerInstalled: false,
+      tilePixelTrackerConfig: {
+        tileSize: 1000,
+        tileZoom: 11
+      }
     };
 
     async function findMap() {
@@ -334,6 +419,94 @@
       state.overlayLayerIDs = [];
       state.overlaySourceIDs = [];
       state.overlayStateKey = '';
+    }
+
+    function latLngToTilePixel(lat, lng, tileSize = 1000, zoom = 11) {
+      const earthHalfCircumference = 2 * Math.PI * 6378137 / 2;
+      const resolution = (2 * earthHalfCircumference) / (tileSize * Math.pow(2, zoom));
+      const metersX = (lng / 180) * earthHalfCircumference;
+      const latRadians = lat * Math.PI / 180;
+      const latMercator = (180 / Math.PI) * Math.log(Math.tan((Math.PI / 4) + (latRadians / 2)));
+      const metersY = (latMercator / 180) * earthHalfCircumference;
+      const globalPixelX = Math.floor((metersX + earthHalfCircumference) / resolution);
+      const globalPixelY = Math.floor((earthHalfCircumference - metersY) / resolution);
+      const tileX = Math.floor(globalPixelX / tileSize);
+      const tileY = Math.floor(globalPixelY / tileSize);
+
+      return {
+        tile: [tileX, tileY],
+        pixel: [
+          ((globalPixelX % tileSize) + tileSize) % tileSize,
+          ((globalPixelY % tileSize) + tileSize) % tileSize
+        ],
+        lat: lat,
+        lng: lng
+      };
+    }
+
+    function getEventPoint(event) {
+      const touch = event.changedTouches?.[0] || event.touches?.[0];
+      return {
+        clientX: Number(touch?.clientX ?? event.clientX),
+        clientY: Number(touch?.clientY ?? event.clientY)
+      };
+    }
+
+    function isMapEventTarget(target) {
+      return !!(
+        target?.matches?.('.maplibregl-canvas')
+        || target?.closest?.('.maplibregl-canvas-container')
+        || target?.closest?.('.maplibregl-map')
+      );
+    }
+
+    function rememberTilePixelFromEvent(event) {
+      if (!isMapEventTarget(event.target)) {return;}
+      const map = state.map;
+      if (!map || typeof map.unproject != 'function') {return;}
+
+      const point = getEventPoint(event);
+      if (!Number.isFinite(point.clientX) || !Number.isFinite(point.clientY)) {return;}
+
+      try {
+        const lngLat = map.unproject([point.clientX, point.clientY]);
+        const coords = latLngToTilePixel(
+          Number(lngLat.lat),
+          Number(lngLat.lng),
+          Number(state.tilePixelTrackerConfig.tileSize) || 1000,
+          Number(state.tilePixelTrackerConfig.tileZoom) || 11
+        );
+
+        document.documentElement.dataset.bmTilePixelAtPointer = JSON.stringify({
+          clientX: point.clientX,
+          clientY: point.clientY,
+          updatedAt: Date.now(),
+          tile: coords.tile,
+          pixel: coords.pixel,
+          lat: coords.lat,
+          lng: coords.lng
+        });
+      } catch (error) {}
+    }
+
+    async function installTilePixelTracker(payload) {
+      state.tilePixelTrackerConfig = {
+        tileSize: Number(payload?.tileSize) || 1000,
+        tileZoom: Number(payload?.tileZoom) || 11
+      };
+
+      const map = await (state.searchPromise ||= findMap());
+      state.searchPromise = null;
+      if (!map || typeof map.unproject != 'function') {return false;}
+
+      if (!state.tilePixelTrackerInstalled) {
+        for (const eventName of ['pointerdown', 'mousedown', 'click', 'touchstart', 'touchend']) {
+          document.addEventListener(eventName, rememberTilePixelFromEvent, true);
+        }
+        state.tilePixelTrackerInstalled = true;
+      }
+
+      return true;
     }
 
     async function syncTemplateOverlay(payload) {
@@ -484,6 +657,54 @@
         window.postMessage({
           source: 'blue-marble',
           endpoint: 'refresh-tiles-result',
+          requestID: data.requestID,
+          ok: ok
+        }, '*');
+        return;
+      }
+
+      if (data.endpoint == 'screen-to-tile-pixel') {
+        let coords = null;
+
+        try {
+          const map = await (state.searchPromise ||= findMap());
+          state.searchPromise = null;
+
+          if (map && typeof map.unproject == 'function') {
+            const lngLat = map.unproject([data.clientX, data.clientY]);
+            coords = latLngToTilePixel(
+              Number(lngLat.lat),
+              Number(lngLat.lng),
+              Number(data.tileSize) || 1000,
+              Number(data.tileZoom) || 11
+            );
+          }
+        } catch (error) {
+          state.searchPromise = null;
+        }
+
+        window.postMessage({
+          source: 'blue-marble',
+          endpoint: 'screen-to-tile-pixel-result',
+          requestID: data.requestID,
+          ok: !!coords,
+          coords: coords
+        }, '*');
+        return;
+      }
+
+      if (data.endpoint == 'tile-pixel-tracker') {
+        let ok = false;
+
+        try {
+          ok = await installTilePixelTracker(data);
+        } catch (error) {
+          state.searchPromise = null;
+        }
+
+        window.postMessage({
+          source: 'blue-marble',
+          endpoint: 'tile-pixel-tracker-result',
           requestID: data.requestID,
           ok: ok
         }, '*');
@@ -2835,7 +3056,7 @@
     }
     return `${day}/${month}/${year} ${hour}:${minute}${period}`;
   }
-  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, shouldDefaultToWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, startColorPickerObserver_fn, stopColorPickerObserver_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, applyWindowStatePosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, snapWindowedFilterToDefaultPosition_fn, isColorBought_fn, getBoughtColorIDsFromDOM_fn, getBoughtColorIDs_fn, getBoughtColorIDsFromUserData_fn, collectBoughtColorIDs_fn, findBoughtColorPayloadCandidates_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, selectFilteredColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
+  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, initializePlacementGuardToggle_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, shouldDefaultToWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, startColorPickerObserver_fn, stopColorPickerObserver_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, applyWindowStatePosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, snapWindowedFilterToDefaultPosition_fn, isColorBought_fn, getBoughtColorIDsFromDOM_fn, getBoughtColorIDs_fn, getBoughtColorIDsFromUserData_fn, collectBoughtColorIDs_fn, findBoughtColorPayloadCandidates_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, selectFilteredColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
   var WindowFilter = class extends Overlay {
     /** Constructor for the color filter window
      * @param {*} executor - The executing class
@@ -2851,6 +3072,7 @@
       this.windowParent = document.body;
       this.settingsManager = executor.settingsManager ?? null;
       this.windowModeFlag = "ftr-oWin";
+      this.placementGuardFlag = "ftr-placeGuard";
       this.windowStateKey = "windowFilter";
       this.windowResizeObserver = null;
       this.windowViewportResizeHandler = null;
@@ -2935,6 +3157,8 @@
         button.onclick = () => __privateMethod(this, _WindowFilter_instances, selectColorList_fn).call(this, true);
       }).buildElement().addButton({ "class": "bm-button-secondary", "textContent": "Show Filtered Colors Only" }, (instance, button) => {
         button.onclick = () => __privateMethod(this, _WindowFilter_instances, selectFilteredColorList_fn).call(this);
+      }).buildElement().addCheckbox({ "class": "bm-filter-placement-guard", "textContent": "Guard clicks" }, (instance, label, checkbox) => {
+        __privateMethod(this, _WindowFilter_instances, initializePlacementGuardToggle_fn).call(this, label, checkbox);
       }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container bm-scrollable bm-filter-scrollable" }).addDiv({ "class": "bm-container bm-filter-insights" }).addDiv({ "class": "bm-filter-stat-grid" }).addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Chunks" }).buildElement().addSpan({ "id": "bm-filter-tile-load", "class": "bm-filter-stat-value", "textContent": "0 / ???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Total" }).buildElement().addSpan({ "id": "bm-filter-tot-total", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Correct" }).buildElement().addSpan({ "id": "bm-filter-tot-correct", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Remaining" }).buildElement().addSpan({ "id": "bm-filter-tot-remaining", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().addDiv({ "class": "bm-filter-stat-card bm-filter-stat-card-wide" }).addSpan({ "class": "bm-filter-stat-label", "textContent": "Finished At" }).buildElement().addSpan({ "id": "bm-filter-tot-completed", "class": "bm-filter-stat-value", "textContent": "???" }).buildElement().buildElement().buildElement().addHr().buildElement().addForm({ "class": "bm-container bm-filter-sort-panel" }).addFieldset().addLegend({ "textContent": "Sort Options:", "style": "font-weight: 700;" }).buildElement().addDiv({ "class": "bm-container bm-filter-sort-row" }).addSelect({ "id": "bm-filter-sort-primary", "name": "sortPrimary", "textContent": "I want to view " }).addOption({ "value": "id", "textContent": "color IDs" }).buildElement().addOption({ "value": "name", "textContent": "color names" }).buildElement().addOption({ "value": "premium", "textContent": "premium colors" }).buildElement().addOption({ "value": "percent", "textContent": "percentage" }).buildElement().addOption({ "value": "correct", "textContent": "correct pixels" }).buildElement().addOption({ "value": "incorrect", "textContent": "incorrect pixels" }).buildElement().addOption({ "value": "total", "textContent": "total pixels" }).buildElement().buildElement().addSelect({ "id": "bm-filter-sort-secondary", "name": "sortSecondary", "textContent": " in " }).addOption({ "value": "ascending", "textContent": "ascending" }).buildElement().addOption({ "value": "descending", "textContent": "descending" }).buildElement().buildElement().addSpan({ "textContent": " order." }).buildElement().buildElement().addDiv({ "class": "bm-container bm-filter-show-row" }).addSpan({ "class": "bm-filter-show-label", "textContent": "Show:" }).buildElement().addCheckbox({ "id": "bm-filter-show-unused", "name": "showUnused", "textContent": "Unused" }).buildElement().addCheckbox({ "id": "bm-filter-show-completed", "name": "showCompleted", "textContent": "Completed" }).buildElement().addCheckbox({ "id": "bm-filter-show-free", "name": "showFree", "textContent": "Free" }).buildElement().addCheckbox({ "id": "bm-filter-show-premium", "name": "showPremium", "textContent": "Premium" }).buildElement().addCheckbox({ "id": "bm-filter-sort-bought", "name": "sortBought", "textContent": "Only bought colors" }).buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().buildElement().addDiv({
         "class": "bm-resize-corner",
         "title": "Resize Color Filter window",
@@ -3011,6 +3235,8 @@
         button.onclick = () => __privateMethod(this, _WindowFilter_instances, selectColorList_fn).call(this, false);
       }).buildElement().addButton({ "class": "bm-button-secondary", "textContent": "Show All" }, (instance, button) => {
         button.onclick = () => __privateMethod(this, _WindowFilter_instances, selectColorList_fn).call(this, true);
+      }).buildElement().addCheckbox({ "class": "bm-filter-placement-guard", "textContent": "Guard" }, (instance, label, checkbox) => {
+        __privateMethod(this, _WindowFilter_instances, initializePlacementGuardToggle_fn).call(this, label, checkbox);
       }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container bm-scrollable bm-filter-scrollable" }).buildElement().buildElement().addDiv({
         "class": "bm-resize-corner",
         "title": "Resize Color Filter window",
@@ -3146,6 +3372,22 @@
     }
     (_a = this.settingsManager.userSettings)[_b = this.windowStateKey] ?? (_a[_b] = {});
     return this.settingsManager.userSettings[this.windowStateKey];
+  };
+  /** Initializes the wrong-color placement guard toggle.
+   * @param {HTMLLabelElement} label - Toggle label
+   * @param {HTMLInputElement} checkbox - Toggle input
+   * @since 0.92.35
+   */
+  initializePlacementGuardToggle_fn = function(label, checkbox) {
+    checkbox.checked = !!this.settingsManager?.userSettings?.flags?.includes(this.placementGuardFlag);
+    checkbox.title = "Blocks manual map clicks unless they match the only visible template color.";
+    checkbox.ariaLabel = "Block wrong-color clicks when only one template color is visible";
+    label.title = checkbox.title;
+    label.classList.add("bm-filter-placement-guard-label");
+    checkbox.onchange = async (event) => {
+      this.settingsManager?.toggleFlag?.(this.placementGuardFlag, event.target.checked);
+      await this.settingsManager?.saveUserStorageNow?.();
+    };
   };
   /** Loads persisted sort and show/hide controls for the Color Filter.
    * @since 0.92.11
@@ -4836,7 +5078,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
   };
 
   // src/templateManager.js
-  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, isHighlightDisabled_fn, tilePixelCornerToLatLng_fn, normalizeTemplateChunkURL_fn, canUseFastTemplateOverlay_fn, buildFastTemplateOverlayPayload_fn, syncFastTemplateOverlay_fn, loadTemplate_fn, storeTemplates_fn, getNextTemplateSortID_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, invalidateTemplateRenderCaches_fn, debugRenderPerf_fn, convertCanvasToTileBlob_fn, clearTileRenderCache_fn, setTileRenderCache_fn, getTileRenderCache_fn, getColorFilterKey_fn, createTileRenderCacheKey_fn, getSortedTemplates_fn, getTemplateChunkColorIDs_fn, getTemplateTileIndex_fn, ensureTemplateChunkColorIDs_fn, templateChunkHasVisibleColor_fn, templateChunkNeedsMutation_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
+  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, isHighlightDisabled_fn, tilePixelCornerToLatLng_fn, normalizeTemplateChunkURL_fn, canUseFastTemplateOverlay_fn, buildFastTemplateOverlayPayload_fn, syncFastTemplateOverlay_fn, loadTemplate_fn, storeTemplates_fn, getNextTemplateSortID_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, invalidateTemplateRenderCaches_fn, debugRenderPerf_fn, convertCanvasToTileBlob_fn, clearTileRenderCache_fn, setTileRenderCache_fn, getTileRenderCache_fn, getColorFilterKey_fn, createTileRenderCacheKey_fn, getSortedTemplates_fn, getTemplateChunkColorIDs_fn, getTemplateTileIndex_fn, ensureTemplateChunkColorIDs_fn, getTemplateChunkColorAtPixel_fn, templateChunkHasVisibleColor_fn, templateChunkNeedsMutation_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
   var TemplateManager = class {
     /** The constructor for the {@link TemplateManager} class.
      * @param {string} name - The name of the userscript
@@ -4982,6 +5224,71 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
      */
     hasLoadedTemplate(templateKey) {
       return this.loadedTemplateKeys.has(templateKey);
+    }
+    /** Returns the visible template palette color at a Wplace tile/pixel coordinate.
+     * @param {number|string} tileX - Wplace tile X coordinate
+     * @param {number|string} tileY - Wplace tile Y coordinate
+     * @param {number|string} pixelX - Pixel X inside the tile
+     * @param {number|string} pixelY - Pixel Y inside the tile
+     * @param {Object} [options={}] - Lookup options
+     * @param {boolean} [options.visibleOnly=true] - Whether hidden color-filtered pixels should be ignored
+     * @returns {{colorID: number, template: Template, chunkKey: string} | null} Matching template color, or null
+     * @since 0.92.35
+     */
+    getTemplateColorAtTilePixel(tileX, tileY, pixelX, pixelY, { visibleOnly = true } = {}) {
+      const numericTileX = Number(tileX);
+      const numericTileY = Number(tileY);
+      const numericPixelX = Number(pixelX);
+      const numericPixelY = Number(pixelY);
+      if (![numericTileX, numericTileY, numericPixelX, numericPixelY].every(Number.isFinite)) {
+        return null;
+      }
+      if (numericPixelX < 0 || numericPixelY < 0 || numericPixelX >= this.tileSize || numericPixelY >= this.tileSize) {
+        return null;
+      }
+      const tileCoords = `${numericTileX.toString().padStart(4, "0")},${numericTileY.toString().padStart(4, "0")}`;
+      const templatesForTile = __privateMethod(this, _TemplateManager_instances, getTemplateTileIndex_fn).call(this).get(tileCoords) ?? [];
+      for (let index = templatesForTile.length - 1; index >= 0; index--) {
+        const templateChunk = templatesForTile[index];
+        const colorID = __privateMethod(this, _TemplateManager_instances, getTemplateChunkColorAtPixel_fn).call(this, templateChunk, numericPixelX, numericPixelY);
+        if (colorID == null) {
+          continue;
+        }
+        if (visibleOnly && this.shouldFilterColor.get(colorID)) {
+          continue;
+        }
+        return {
+          colorID,
+          template: templateChunk.instance,
+          chunkKey: templateChunk.key
+        };
+      }
+      return null;
+    }
+    /** Returns template palette IDs that are currently visible after the color filter.
+     * @param {Object} [options={}] - Lookup options
+     * @param {boolean} [options.paintableOnly=false] - Whether to exclude Blue Marble-only colors
+     * @returns {number[]} Visible color IDs
+     * @since 0.92.35
+     */
+    getVisibleTemplateColorIDs({ paintableOnly = false } = {}) {
+      const colorIDs = /* @__PURE__ */ new Set();
+      for (const template of this.templatesArray) {
+        for (const colorID of template.pixelCount?.colors?.keys?.() || []) {
+          const numericColorID = Number(colorID);
+          if (!Number.isFinite(numericColorID)) {
+            continue;
+          }
+          if (this.shouldFilterColor.get(numericColorID)) {
+            continue;
+          }
+          if (paintableOnly && (numericColorID < 1 || numericColorID > 63)) {
+            continue;
+          }
+          colorIDs.add(numericColorID);
+        }
+      }
+      return Array.from(colorIDs).sort((left, right) => left - right);
     }
     /** Creates the JSON object to store templates in
      * @returns {{ whoami: string, scriptVersion: string, schemaVersion: string, templates: Object }} The JSON object
@@ -5973,6 +6280,44 @@ Version: ${this.version}`);
     templateChunk.hasErased = templateChunk.colorIDs ? templateChunk.colorIDs.has(-1) : !!templateChunk.instance.pixelCount?.colors?.get(-1);
     return templateChunk.colorIDs;
   };
+  /** Returns the palette color drawn by one template chunk at a tile pixel.
+   * @param {Object} templateChunk - Indexed template chunk
+   * @param {number} pixelX - Pixel X inside the Wplace tile
+   * @param {number} pixelY - Pixel Y inside the Wplace tile
+   * @returns {number | null} Palette color ID, or null for transparent/out-of-bounds pixels
+   * @since 0.92.35
+   */
+  getTemplateChunkColorAtPixel_fn = function(templateChunk, pixelX, pixelY) {
+    const template32 = templateChunk?.chunked32;
+    const width = templateChunk?.bitmap?.width;
+    const height = templateChunk?.bitmap?.height;
+    if (!template32 || !width || !height) {
+      return null;
+    }
+    const chunkPixelX = Number(templateChunk.pixelCoords?.[0]);
+    const chunkPixelY = Number(templateChunk.pixelCoords?.[1]);
+    if (![chunkPixelX, chunkPixelY].every(Number.isFinite)) {
+      return null;
+    }
+    const logicalX = Math.floor(pixelX - chunkPixelX);
+    const logicalY = Math.floor(pixelY - chunkPixelY);
+    if (logicalX < 0 || logicalY < 0) {
+      return null;
+    }
+    const templatePixelX = logicalX * this.drawMult + Math.floor(this.drawMult / 2);
+    const templatePixelY = logicalY * this.drawMult + Math.floor(this.drawMult / 2);
+    if (templatePixelX < 0 || templatePixelY < 0 || templatePixelX >= width || templatePixelY >= height) {
+      return null;
+    }
+    const templatePixel = template32[templatePixelY * width + templatePixelX];
+    const templatePixelAlpha = templatePixel >>> 24 & 255;
+    if (templatePixelAlpha <= this.paletteTolerance) {
+      return null;
+    }
+    const { LUT: lookupTable } = this.paletteBM;
+    const colorID = lookupTable.get(templatePixel) ?? -2;
+    return colorID == 0 ? null : colorID;
+  };
   /** Checks whether a chunk has any colors that are currently visible.
    * @param {Object} templateChunk - Indexed template chunk
    * @returns {boolean} Whether any color should be visible
@@ -6276,6 +6621,311 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.boughtColorStorageKey = "bmBoughtColorIDs";
       this.boughtColorIDsCache = this.loadBoughtColorIDs();
       this.jsonResponses = /* @__PURE__ */ new Map();
+      this.templateEyedropperActiveUntil = 0;
+      this.templateEyedropperActivationWindowMs = 15e3;
+      this.templateEyedropperRetryDelays = [80, 180, 350];
+      this.templateEyedropperTrackerInstalled = false;
+      this.placementGuardTrackerInstalled = false;
+      this.placementGuardFlag = "ftr-placeGuard";
+      this.placementGuardEvents = ["pointerdown", "mousedown", "click", "touchstart", "touchend"];
+      this.placementGuardLastBlockAt = 0;
+      this.installTemplateEyedropperTracker();
+      this.installPlacementGuard();
+    }
+    /** Tracks map coordinates and blocks wrong-color manual clicks when the placement guard is enabled.
+     * @since 0.92.35
+     */
+    installPlacementGuard() {
+      if (this.placementGuardTrackerInstalled) {
+        return;
+      }
+      this.placementGuardTrackerInstalled = true;
+      void installWplaceTilePixelTracker(this.templateManager?.tileSize || 1e3, 11);
+      for (const eventName of this.placementGuardEvents) {
+        document.addEventListener(eventName, (event) => this.handlePlacementGuardEvent(event), true);
+      }
+    }
+    /** Checks whether the wrong-color placement guard is enabled.
+     * @returns {boolean}
+     * @since 0.92.35
+     */
+    isPlacementGuardEnabled() {
+      return !!this.templateManager?.settingsManager?.userSettings?.flags?.includes(this.placementGuardFlag);
+    }
+    /** Returns the single visible paintable color, or null when the filter state is not narrow enough.
+     * @returns {number | null}
+     * @since 0.92.35
+     */
+    getSingleVisibleTemplateColorID() {
+      const visibleColorIDs = this.templateManager?.getVisibleTemplateColorIDs?.({ paintableOnly: true }) ?? [];
+      return visibleColorIDs.length == 1 ? visibleColorIDs[0] : null;
+    }
+    /** Stops Wplace from receiving a wrong-color placement event.
+     * @param {Event} event - Pointer/mouse/touch event
+     * @since 0.92.35
+     */
+    blockPlacementEvent(event) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      event.stopImmediatePropagation?.();
+      if (Date.now() - this.placementGuardLastBlockAt > 1800) {
+        this.placementGuardLastBlockAt = Date.now();
+        console.log("Blue Marble: blocked a wrong-color manual placement while placement guard is enabled.");
+      }
+    }
+    /** Blocks manual map clicks that do not match the one visible template color.
+     * @param {Event} event - Pointer/mouse/touch event
+     * @returns {boolean} Whether the event was blocked
+     * @since 0.92.35
+     */
+    handlePlacementGuardEvent(event) {
+      if (!event.isTrusted || !this.isPlacementGuardEnabled()) {
+        return false;
+      }
+      if (this.isWplaceColorPickerActive()) {
+        return false;
+      }
+      if (event.button && event.button != 0) {
+        return false;
+      }
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target || !this.isWplaceMapClickTarget(target)) {
+        return false;
+      }
+      const activeColorID = this.getSingleVisibleTemplateColorID();
+      if (activeColorID == null) {
+        return false;
+      }
+      const selectedColorID = Number(localStorage.getItem("selected-color"));
+      if (Number.isInteger(selectedColorID) && selectedColorID != activeColorID) {
+        this.blockPlacementEvent(event);
+        return true;
+      }
+      const point = this.getEventClientPoint(event);
+      if (!point) {
+        return false;
+      }
+      const coords2 = getTrackedWplaceTilePixel(point.clientX, point.clientY);
+      if (!coords2) {
+        return false;
+      }
+      const templateColor = this.templateManager?.getTemplateColorAtTilePixel?.(
+        coords2.tile?.[0],
+        coords2.tile?.[1],
+        coords2.pixel?.[0],
+        coords2.pixel?.[1]
+      );
+      if (!templateColor || templateColor.colorID != activeColorID) {
+        this.blockPlacementEvent(event);
+        return true;
+      }
+      return false;
+    }
+    /** Gets the viewport coordinate for pointer/mouse/touch events.
+     * @param {Event} event - DOM event
+     * @returns {{clientX: number, clientY: number} | null}
+     * @since 0.92.35
+     */
+    getEventClientPoint(event) {
+      const touch = event.changedTouches?.[0] || event.touches?.[0];
+      const clientX = Number(touch?.clientX ?? event.clientX);
+      const clientY = Number(touch?.clientY ?? event.clientY);
+      if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+        return null;
+      }
+      return { clientX, clientY };
+    }
+    /** Tracks likely Wplace eyedropper activation without depending on internal Svelte state.
+     * @since 0.92.35
+     */
+    installTemplateEyedropperTracker() {
+      if (this.templateEyedropperTrackerInstalled) {
+        return;
+      }
+      this.templateEyedropperTrackerInstalled = true;
+      const markPickerActive = () => {
+        this.templateEyedropperActiveUntil = Date.now() + this.templateEyedropperActivationWindowMs;
+      };
+      const clearPickerActive = () => {
+        this.templateEyedropperActiveUntil = 0;
+      };
+      document.addEventListener("keydown", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) {
+          return;
+        }
+        if (event.code == "KeyI") {
+          markPickerActive();
+        }
+        if (event.code == "KeyE") {
+          clearPickerActive();
+        }
+      }, true);
+      document.addEventListener("keypress", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) {
+          return;
+        }
+        if (event.code == "KeyI") {
+          markPickerActive();
+        }
+        if (event.code == "KeyE") {
+          clearPickerActive();
+        }
+      }, true);
+      document.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) {
+          return;
+        }
+        if (target.closest('[id^="color-"]')) {
+          clearPickerActive();
+          return;
+        }
+        if (this.isWplaceColorPickerControl(target)) {
+          markPickerActive();
+        }
+        if (!this.isWplaceColorPickerActive() || !this.isWplaceMapClickTarget(target)) {
+          return;
+        }
+        markPickerActive();
+        void screenToWplaceTilePixel(
+          event.clientX,
+          event.clientY,
+          this.templateManager?.tileSize || 1e3,
+          11
+        ).then((coords2) => {
+          if (!coords2) {
+            return;
+          }
+          this.selectTemplateColorAtCoords(coords2.tile, coords2.pixel);
+        });
+      }, true);
+    }
+    /** Checks whether an element is part of Wplace's MapLibre map surface.
+     * @param {Element} element - Click target
+     * @returns {boolean}
+     * @since 0.92.35
+     */
+    isWplaceMapClickTarget(element) {
+      return !!(element.matches?.(".maplibregl-canvas") || element.closest?.(".maplibregl-canvas-container") || element.closest?.(".maplibregl-map"));
+    }
+    /** Checks whether an element looks like Wplace's color picker control.
+     * @param {Element} element - Click target or candidate element
+     * @returns {boolean}
+     * @since 0.92.35
+     */
+    isWplaceColorPickerControl(element) {
+      const labels = [
+        "color picker",
+        "conta gotas",
+        "\u53D6\u8272\u5668",
+        "farbpipette",
+        "selector de color",
+        "pipette",
+        "contagocce",
+        "\u30AB\u30E9\u30FC\u30D4\u30C3\u30AB\u30FC",
+        "pr\xF3bnik kolor\xF3w",
+        "\u043F\u0438\u043F\u0435\u0442\u043A\u0430",
+        "b\u1EA3ng ch\u1ECDn m\xE0u"
+      ];
+      const candidates = [
+        element,
+        element.closest?.(".tooltip"),
+        element.closest?.("button")
+      ].filter(Boolean);
+      return candidates.some((candidate) => {
+        const text = [
+          candidate.getAttribute?.("data-tip"),
+          candidate.getAttribute?.("title"),
+          candidate.getAttribute?.("aria-label"),
+          candidate.textContent
+        ].filter(Boolean).join(" ").toLowerCase();
+        return labels.some((label) => text.includes(label));
+      });
+    }
+    /** Checks whether Wplace's eyedropper appears to be the active tool.
+     * @returns {boolean}
+     * @since 0.92.35
+     */
+    isWplaceColorPickerActive() {
+      if (Date.now() <= this.templateEyedropperActiveUntil) {
+        return true;
+      }
+      for (const tooltip of document.querySelectorAll(".tooltip[data-tip], [title], [aria-label]")) {
+        if (!this.isWplaceColorPickerControl(tooltip)) {
+          continue;
+        }
+        if (tooltip.matches?.(".btn-primary") || tooltip.querySelector?.(".btn-primary")) {
+          return true;
+        }
+      }
+      return false;
+    }
+    /** Selects a Wplace palette color by clicking its live palette button.
+     * @param {number} colorID - Blue Marble/Wplace palette color ID
+     * @returns {boolean} Whether the color can be selected from the current DOM
+     * @since 0.92.35
+     */
+    selectWplacePaletteColor(colorID) {
+      const wplaceColorID = colorID == -1 ? 0 : Number(colorID);
+      if (!Number.isInteger(wplaceColorID) || wplaceColorID < 0 || wplaceColorID > 63) {
+        return false;
+      }
+      const expectedColorID = wplaceColorID.toString();
+      const select = (force = false) => {
+        const colorElement = document.getElementById(`color-${expectedColorID}`);
+        if (!colorElement) {
+          localStorage.setItem("selected-color", expectedColorID);
+          return false;
+        }
+        if (!force && localStorage.getItem("selected-color") == expectedColorID) {
+          colorElement.focus?.();
+          return true;
+        }
+        if (colorElement instanceof HTMLButtonElement && colorElement.disabled) {
+          return false;
+        }
+        colorElement.click();
+        colorElement.focus?.();
+        return true;
+      };
+      const selected = select(true);
+      for (const delay of this.templateEyedropperRetryDelays) {
+        setTimeout(() => select(false), delay);
+      }
+      return selected;
+    }
+    /** Selects the visible template color at a tile/pixel coordinate.
+     * @param {Array<string|number>} coordsTile - Wplace tile coordinates
+     * @param {Array<string|number>} coordsPixel - Wplace pixel coordinates
+     * @returns {boolean} Whether Blue Marble selected a template color
+     * @since 0.92.35
+     */
+    selectTemplateColorAtCoords(coordsTile, coordsPixel) {
+      const templateColor = this.templateManager?.getTemplateColorAtTilePixel?.(
+        coordsTile?.[0],
+        coordsTile?.[1],
+        coordsPixel?.[0],
+        coordsPixel?.[1]
+      );
+      this.templateEyedropperActiveUntil = 0;
+      if (!templateColor || templateColor.colorID == -2) {
+        return false;
+      }
+      return this.selectWplacePaletteColor(templateColor.colorID);
+    }
+    /** Overrides Wplace's eyedropper result with the visible template pixel color when possible.
+     * @param {Array<string|number>} coordsTile - Wplace tile coordinates
+     * @param {Array<string|number>} coordsPixel - Wplace pixel coordinates
+     * @returns {boolean} Whether Blue Marble selected a template color
+     * @since 0.92.35
+     */
+    selectTemplateColorForEyedropper(coordsTile, coordsPixel) {
+      if (!this.isWplaceColorPickerActive()) {
+        return false;
+      }
+      return this.selectTemplateColorAtCoords(coordsTile, coordsPixel);
     }
     /** Loads bought premium color IDs from userscript storage.
      * @returns {Set<number> | null}
@@ -6409,6 +7059,7 @@ Did you try clicking the canvas first?`);
               return;
             }
             this.coordsTilePixel = [...coordsTile, ...coordsPixel];
+            this.selectTemplateColorForEyedropper(coordsTile, coordsPixel);
             const displayTP = serverTPtoDisplayTP(coordsTile, coordsPixel);
             const spanElements = document.querySelectorAll("span");
             for (const element of spanElements) {
