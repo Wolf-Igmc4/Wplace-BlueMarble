@@ -31,7 +31,7 @@ export default class ApiManager {
     this.templateEyedropperTrackerInstalled = false; // Prevents duplicate global listeners
     this.placementGuardTrackerInstalled = false; // Prevents duplicate placement guard listeners
     this.placementGuardFlag = 'ftr-placeGuard'; // User setting flag for wrong-color click blocking
-    this.placementGuardEvents = ['pointerdown', 'mousedown', 'click', 'touchstart', 'touchend']; // Human map events that can start a placement
+    this.placementGuardEvents = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'touchstart', 'touchend']; // Human map events that can start a placement
     this.placementGuardLastBlockAt = 0; // Throttles status noise when wrong-color clicks are blocked
     this.debugLogLastAt = new Map(); // Throttles repeated picker/guard debug messages
     this.installTemplateEyedropperTracker();
@@ -48,7 +48,9 @@ export default class ApiManager {
     const debugLogs = !!this.templateManager?.settingsManager?.userSettings?.debugLogs;
     const localDebug = localStorage.getItem('bm-debug') == 'true';
     const localChannelDebug = localStorage.getItem(`bm-debug-${channel}`) == 'true';
-    return debugLogs || flags.includes('bm-debug') || localDebug || localChannelDebug;
+    const datasetDebug = document.documentElement?.dataset?.bmDebug == 'true';
+    const datasetChannelDebug = document.documentElement?.dataset?.[`bmDebug${channel[0].toUpperCase()}${channel.slice(1)}`] == 'true';
+    return debugLogs || flags.includes('bm-debug') || localDebug || localChannelDebug || datasetDebug || datasetChannelDebug;
   }
 
   /** Writes a debug log when the focused debug channel is enabled.
@@ -98,6 +100,42 @@ export default class ApiManager {
     });
     for (const eventName of this.placementGuardEvents) {
       document.addEventListener(eventName, event => this.handlePlacementGuardEvent(event), true);
+      window.addEventListener(eventName, event => this.handlePlacementGuardEvent(event), true);
+    }
+    window.addEventListener('message', event => this.handleDebugMessage(event), true);
+  }
+
+  /** Handles page-console debug commands for diagnosing guard/picker behavior.
+   * @param {MessageEvent} event - Window message event
+   * @since 0.92.37
+   */
+  handleDebugMessage(event) {
+    const data = event.data;
+    if (!data || data['source'] != 'blue-marble-debug') {return;}
+
+    const channel = ['guard', 'picker', 'api'].includes(data['channel']) ? data['channel'] : 'guard';
+    const datasetKey = `bmDebug${channel[0].toUpperCase()}${channel.slice(1)}`;
+
+    if (data['endpoint'] == 'set-debug') {
+      document.documentElement.dataset[datasetKey] = data['enabled'] === false ? 'false' : 'true';
+      console.log(`[BM ${channel}] debug-${data['enabled'] === false ? 'disabled' : 'enabled'}`, {
+        datasetKey: datasetKey,
+        localStorageKey: `bm-debug-${channel}`
+      });
+      return;
+    }
+
+    if (data['endpoint'] == 'status') {
+      const visibleColorIDs = this.templateManager?.getVisibleTemplateColorIDs?.({paintableOnly: true}) ?? [];
+      console.log('[BM guard] status', {
+        debugEnabled: this.isDebugLoggingEnabled('guard'),
+        guardEnabled: this.isPlacementGuardEnabled(),
+        visibleColorIDs: visibleColorIDs,
+        selectedColor: localStorage.getItem('selected-color'),
+        events: this.placementGuardEvents,
+        tracker: document.documentElement?.dataset?.bmTilePixelAtPointer || '',
+        flags: this.templateManager?.settingsManager?.userSettings?.flags ?? []
+      });
     }
   }
 

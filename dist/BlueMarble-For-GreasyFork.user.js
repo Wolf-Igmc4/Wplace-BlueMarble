@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.36
+// @version         0.92.37
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.36
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.37
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -6684,7 +6684,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.templateEyedropperTrackerInstalled = false;
       this.placementGuardTrackerInstalled = false;
       this.placementGuardFlag = "ftr-placeGuard";
-      this.placementGuardEvents = ["pointerdown", "mousedown", "click", "touchstart", "touchend"];
+      this.placementGuardEvents = ["pointerdown", "mousedown", "pointerup", "mouseup", "click", "touchstart", "touchend"];
       this.placementGuardLastBlockAt = 0;
       this.debugLogLastAt = /* @__PURE__ */ new Map();
       this.installTemplateEyedropperTracker();
@@ -6700,7 +6700,9 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       const debugLogs = !!this.templateManager?.settingsManager?.userSettings?.debugLogs;
       const localDebug = localStorage.getItem("bm-debug") == "true";
       const localChannelDebug = localStorage.getItem(`bm-debug-${channel}`) == "true";
-      return debugLogs || flags.includes("bm-debug") || localDebug || localChannelDebug;
+      const datasetDebug = document.documentElement?.dataset?.bmDebug == "true";
+      const datasetChannelDebug = document.documentElement?.dataset?.[`bmDebug${channel[0].toUpperCase()}${channel.slice(1)}`] == "true";
+      return debugLogs || flags.includes("bm-debug") || localDebug || localChannelDebug || datasetDebug || datasetChannelDebug;
     }
     /** Writes a debug log when the focused debug channel is enabled.
      * @param {'picker'|'guard'|'api'} channel - Debug channel
@@ -6752,6 +6754,40 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       });
       for (const eventName of this.placementGuardEvents) {
         document.addEventListener(eventName, (event) => this.handlePlacementGuardEvent(event), true);
+        window.addEventListener(eventName, (event) => this.handlePlacementGuardEvent(event), true);
+      }
+      window.addEventListener("message", (event) => this.handleDebugMessage(event), true);
+    }
+    /** Handles page-console debug commands for diagnosing guard/picker behavior.
+     * @param {MessageEvent} event - Window message event
+     * @since 0.92.37
+     */
+    handleDebugMessage(event) {
+      const data = event.data;
+      if (!data || data["source"] != "blue-marble-debug") {
+        return;
+      }
+      const channel = ["guard", "picker", "api"].includes(data["channel"]) ? data["channel"] : "guard";
+      const datasetKey = `bmDebug${channel[0].toUpperCase()}${channel.slice(1)}`;
+      if (data["endpoint"] == "set-debug") {
+        document.documentElement.dataset[datasetKey] = data["enabled"] === false ? "false" : "true";
+        console.log(`[BM ${channel}] debug-${data["enabled"] === false ? "disabled" : "enabled"}`, {
+          datasetKey,
+          localStorageKey: `bm-debug-${channel}`
+        });
+        return;
+      }
+      if (data["endpoint"] == "status") {
+        const visibleColorIDs = this.templateManager?.getVisibleTemplateColorIDs?.({ paintableOnly: true }) ?? [];
+        console.log("[BM guard] status", {
+          debugEnabled: this.isDebugLoggingEnabled("guard"),
+          guardEnabled: this.isPlacementGuardEnabled(),
+          visibleColorIDs,
+          selectedColor: localStorage.getItem("selected-color"),
+          events: this.placementGuardEvents,
+          tracker: document.documentElement?.dataset?.bmTilePixelAtPointer || "",
+          flags: this.templateManager?.settingsManager?.userSettings?.flags ?? []
+        });
       }
     }
     /** Checks whether the wrong-color placement guard is enabled.
