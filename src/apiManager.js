@@ -34,6 +34,7 @@ export default class ApiManager {
     this.placementGuardFlag = 'ftr-placeGuard'; // User setting flag for wrong-color click blocking
     this.placementGuardEvents = ['pointerdown', 'pointermove', 'pointerup', 'mousedown', 'mousemove', 'mouseup', 'click', 'touchstart', 'touchmove', 'touchend']; // Human map events that can start a placement
     this.placementGuardLastBlockAt = 0; // Throttles status noise when wrong-color clicks are blocked
+    this.placementGuardSpaceHeld = false; // Wplace can place continuously while Space is held
     this.debugLogLastAt = new Map(); // Throttles repeated picker/guard debug messages
     this.installTemplateEyedropperTracker();
     this.installPlacementGuard();
@@ -97,6 +98,11 @@ export default class ApiManager {
     this.placementGuardTrackerInstalled = true;
 
     window.addEventListener('message', event => this.handleDebugMessage(event), true);
+    window.addEventListener('keydown', event => this.handlePlacementGuardKeyEvent(event, true), true);
+    window.addEventListener('keyup', event => this.handlePlacementGuardKeyEvent(event, false), true);
+    document.addEventListener('keydown', event => this.handlePlacementGuardKeyEvent(event, true), true);
+    document.addEventListener('keyup', event => this.handlePlacementGuardKeyEvent(event, false), true);
+    window.addEventListener('blur', () => {this.placementGuardSpaceHeld = false;}, true);
     void installWplaceTilePixelTracker(this.templateManager?.tileSize || 1000, 11).then(ok => {
       this.debugLog('guard', 'tile-pixel-tracker-installed', {ok: ok}, 1000);
       this.installPlacementGuardEventListeners();
@@ -143,9 +149,27 @@ export default class ApiManager {
         visibleColorIDs: visibleColorIDs,
         selectedColor: localStorage.getItem('selected-color'),
         events: this.placementGuardEvents,
+        spaceHeld: this.placementGuardSpaceHeld,
         tracker: document.documentElement?.dataset?.bmTilePixelAtPointer || '',
         flags: this.templateManager?.settingsManager?.userSettings?.flags ?? []
       });
+    }
+  }
+
+  /** Tracks Space because Wplace may use it for continuous manual placement.
+   * @param {KeyboardEvent} event - Keyboard event
+   * @param {boolean} isDown - Whether Space is pressed
+   * @since 0.92.39
+   */
+  handlePlacementGuardKeyEvent(event, isDown) {
+    if (event.code != 'Space') {return;}
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) {return;}
+
+    const changed = this.placementGuardSpaceHeld != isDown;
+    this.placementGuardSpaceHeld = isDown;
+    if (changed) {
+      this.debugLog('guard', isDown ? 'space-down' : 'space-up', {}, 500);
     }
   }
 
@@ -187,11 +211,14 @@ export default class ApiManager {
    * @since 0.92.35
    */
   handlePlacementGuardEvent(event) {
+    if (this.isMoveEvent(event) && !this.isPrimaryPlacementGesture(event)) {return false;}
+
     const target = event.target instanceof Element ? event.target : null;
     const baseDebug = {
       type: event.type,
       button: event.button,
       buttons: event.buttons,
+      spaceHeld: this.placementGuardSpaceHeld,
       target: this.describeElement(target),
       selectedColor: localStorage.getItem('selected-color')
     };
@@ -287,12 +314,21 @@ export default class ApiManager {
   isPrimaryPlacementGesture(event) {
     if (event.type?.startsWith?.('touch')) {return true;}
 
-    if (event.type == 'pointermove' || event.type == 'mousemove') {
-      return !!(Number(event.buttons) & 1);
+    if (this.isMoveEvent(event)) {
+      return this.placementGuardSpaceHeld || !!(Number(event.buttons) & 1);
     }
 
     const button = Number(event.button);
     return !Number.isFinite(button) || button == 0;
+  }
+
+  /** Checks whether an event is a high-frequency pointer movement.
+   * @param {Event} event - Pointer/mouse/touch event
+   * @returns {boolean}
+   * @since 0.92.39
+   */
+  isMoveEvent(event) {
+    return event.type == 'pointermove' || event.type == 'mousemove' || event.type == 'touchmove';
   }
 
   /** Gets the viewport coordinate for pointer/mouse/touch events.

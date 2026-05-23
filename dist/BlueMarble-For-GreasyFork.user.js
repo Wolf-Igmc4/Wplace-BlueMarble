@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.38
+// @version         0.92.39
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.38
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.39
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -6687,6 +6687,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.placementGuardFlag = "ftr-placeGuard";
       this.placementGuardEvents = ["pointerdown", "pointermove", "pointerup", "mousedown", "mousemove", "mouseup", "click", "touchstart", "touchmove", "touchend"];
       this.placementGuardLastBlockAt = 0;
+      this.placementGuardSpaceHeld = false;
       this.debugLogLastAt = /* @__PURE__ */ new Map();
       this.installTemplateEyedropperTracker();
       this.installPlacementGuard();
@@ -6751,6 +6752,13 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       }
       this.placementGuardTrackerInstalled = true;
       window.addEventListener("message", (event) => this.handleDebugMessage(event), true);
+      window.addEventListener("keydown", (event) => this.handlePlacementGuardKeyEvent(event, true), true);
+      window.addEventListener("keyup", (event) => this.handlePlacementGuardKeyEvent(event, false), true);
+      document.addEventListener("keydown", (event) => this.handlePlacementGuardKeyEvent(event, true), true);
+      document.addEventListener("keyup", (event) => this.handlePlacementGuardKeyEvent(event, false), true);
+      window.addEventListener("blur", () => {
+        this.placementGuardSpaceHeld = false;
+      }, true);
       void installWplaceTilePixelTracker(this.templateManager?.tileSize || 1e3, 11).then((ok) => {
         this.debugLog("guard", "tile-pixel-tracker-installed", { ok }, 1e3);
         this.installPlacementGuardEventListeners();
@@ -6795,9 +6803,29 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           visibleColorIDs,
           selectedColor: localStorage.getItem("selected-color"),
           events: this.placementGuardEvents,
+          spaceHeld: this.placementGuardSpaceHeld,
           tracker: document.documentElement?.dataset?.bmTilePixelAtPointer || "",
           flags: this.templateManager?.settingsManager?.userSettings?.flags ?? []
         });
+      }
+    }
+    /** Tracks Space because Wplace may use it for continuous manual placement.
+     * @param {KeyboardEvent} event - Keyboard event
+     * @param {boolean} isDown - Whether Space is pressed
+     * @since 0.92.39
+     */
+    handlePlacementGuardKeyEvent(event, isDown) {
+      if (event.code != "Space") {
+        return;
+      }
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) {
+        return;
+      }
+      const changed = this.placementGuardSpaceHeld != isDown;
+      this.placementGuardSpaceHeld = isDown;
+      if (changed) {
+        this.debugLog("guard", isDown ? "space-down" : "space-up", {}, 500);
       }
     }
     /** Checks whether the wrong-color placement guard is enabled.
@@ -6834,11 +6862,15 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
      * @since 0.92.35
      */
     handlePlacementGuardEvent(event) {
+      if (this.isMoveEvent(event) && !this.isPrimaryPlacementGesture(event)) {
+        return false;
+      }
       const target = event.target instanceof Element ? event.target : null;
       const baseDebug = {
         type: event.type,
         button: event.button,
         buttons: event.buttons,
+        spaceHeld: this.placementGuardSpaceHeld,
         target: this.describeElement(target),
         selectedColor: localStorage.getItem("selected-color")
       };
@@ -6925,11 +6957,19 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       if (event.type?.startsWith?.("touch")) {
         return true;
       }
-      if (event.type == "pointermove" || event.type == "mousemove") {
-        return !!(Number(event.buttons) & 1);
+      if (this.isMoveEvent(event)) {
+        return this.placementGuardSpaceHeld || !!(Number(event.buttons) & 1);
       }
       const button = Number(event.button);
       return !Number.isFinite(button) || button == 0;
+    }
+    /** Checks whether an event is a high-frequency pointer movement.
+     * @param {Event} event - Pointer/mouse/touch event
+     * @returns {boolean}
+     * @since 0.92.39
+     */
+    isMoveEvent(event) {
+      return event.type == "pointermove" || event.type == "mousemove" || event.type == "touchmove";
     }
     /** Gets the viewport coordinate for pointer/mouse/touch events.
      * @param {Event} event - DOM event
