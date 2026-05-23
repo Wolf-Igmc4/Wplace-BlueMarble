@@ -35,6 +35,8 @@ export default class ApiManager {
     this.placementGuardEvents = ['pointerdown', 'pointermove', 'pointerup', 'mousedown', 'mousemove', 'mouseup', 'click', 'touchstart', 'touchmove', 'touchend']; // Human map events that can start a placement
     this.placementGuardLastBlockAt = 0; // Throttles status noise when wrong-color clicks are blocked
     this.placementGuardSpaceHeld = false; // Wplace can place continuously while Space is held
+    this.placementGuardDragState = null; // Tracks whether a plain pointer gesture became map panning
+    this.placementGuardSuppressClickUntil = 0; // Ignores the synthetic click fired after a map pan
     this.debugLogLastAt = new Map(); // Throttles repeated picker/guard debug messages
     this.installTemplateEyedropperTracker();
     this.installPlacementGuard();
@@ -211,7 +213,12 @@ export default class ApiManager {
    * @since 0.92.35
    */
   handlePlacementGuardEvent(event) {
+    const dragState = this.updatePlacementGuardDragState(event);
+
+    if ((event.type == 'click') && (Date.now() < this.placementGuardSuppressClickUntil)) {return false;}
+    if (this.isMoveEvent(event) && !this.placementGuardSpaceHeld) {return false;}
     if (this.isMoveEvent(event) && !this.isPrimaryPlacementGesture(event)) {return false;}
+    if (this.isPlacementStartEvent(event) && !this.placementGuardSpaceHeld) {return false;}
 
     const target = event.target instanceof Element ? event.target : null;
     const baseDebug = {
@@ -237,6 +244,12 @@ export default class ApiManager {
     }
     if (!this.isPrimaryPlacementGesture(event)) {
       this.debugLog('guard', 'skip', {...baseDebug, reason: 'not-primary-placement-gesture'}, 1000);
+      return false;
+    }
+    if (this.isPlacementEndEvent(event) && dragState?.dragged && !dragState.spaceAtStart && !this.placementGuardSpaceHeld) {
+      this.placementGuardSuppressClickUntil = Date.now() + 400;
+      this.placementGuardDragState = null;
+      this.debugLog('guard', 'skip', {...baseDebug, reason: 'map-pan-drag'}, 1000);
       return false;
     }
 
@@ -320,6 +333,54 @@ export default class ApiManager {
 
     const button = Number(event.button);
     return !Number.isFinite(button) || button == 0;
+  }
+
+  /** Tracks pointer movement so map panning is not mistaken for wrong-color placement.
+   * @param {Event} event - Pointer/mouse/touch event
+   * @returns {{clientX: number, clientY: number, dragged: boolean, spaceAtStart: boolean} | null}
+   * @since 0.92.40
+   */
+  updatePlacementGuardDragState(event) {
+    const point = this.getEventClientPoint(event);
+
+    if (this.isPlacementStartEvent(event)) {
+      if (!point || !this.isPrimaryPlacementGesture(event)) {return this.placementGuardDragState;}
+      this.placementGuardDragState = {
+        clientX: point.clientX,
+        clientY: point.clientY,
+        dragged: false,
+        spaceAtStart: this.placementGuardSpaceHeld
+      };
+      return this.placementGuardDragState;
+    }
+
+    if (this.isMoveEvent(event) && this.placementGuardDragState && point) {
+      const deltaX = point.clientX - this.placementGuardDragState.clientX;
+      const deltaY = point.clientY - this.placementGuardDragState.clientY;
+      if (((deltaX * deltaX) + (deltaY * deltaY)) > 36) {
+        this.placementGuardDragState.dragged = true;
+      }
+    }
+
+    return this.placementGuardDragState;
+  }
+
+  /** Checks whether an event starts a pointer gesture.
+   * @param {Event} event - Pointer/mouse/touch event
+   * @returns {boolean}
+   * @since 0.92.40
+   */
+  isPlacementStartEvent(event) {
+    return event.type == 'pointerdown' || event.type == 'mousedown' || event.type == 'touchstart';
+  }
+
+  /** Checks whether an event ends a pointer gesture.
+   * @param {Event} event - Pointer/mouse/touch event
+   * @returns {boolean}
+   * @since 0.92.40
+   */
+  isPlacementEndEvent(event) {
+    return event.type == 'pointerup' || event.type == 'mouseup' || event.type == 'touchend' || event.type == 'click';
   }
 
   /** Checks whether an event is a high-frequency pointer movement.

@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.39
+// @version         0.92.40
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.39
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.40
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -6688,6 +6688,8 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.placementGuardEvents = ["pointerdown", "pointermove", "pointerup", "mousedown", "mousemove", "mouseup", "click", "touchstart", "touchmove", "touchend"];
       this.placementGuardLastBlockAt = 0;
       this.placementGuardSpaceHeld = false;
+      this.placementGuardDragState = null;
+      this.placementGuardSuppressClickUntil = 0;
       this.debugLogLastAt = /* @__PURE__ */ new Map();
       this.installTemplateEyedropperTracker();
       this.installPlacementGuard();
@@ -6862,7 +6864,17 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
      * @since 0.92.35
      */
     handlePlacementGuardEvent(event) {
+      const dragState = this.updatePlacementGuardDragState(event);
+      if (event.type == "click" && Date.now() < this.placementGuardSuppressClickUntil) {
+        return false;
+      }
+      if (this.isMoveEvent(event) && !this.placementGuardSpaceHeld) {
+        return false;
+      }
       if (this.isMoveEvent(event) && !this.isPrimaryPlacementGesture(event)) {
+        return false;
+      }
+      if (this.isPlacementStartEvent(event) && !this.placementGuardSpaceHeld) {
         return false;
       }
       const target = event.target instanceof Element ? event.target : null;
@@ -6888,6 +6900,12 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       }
       if (!this.isPrimaryPlacementGesture(event)) {
         this.debugLog("guard", "skip", { ...baseDebug, reason: "not-primary-placement-gesture" }, 1e3);
+        return false;
+      }
+      if (this.isPlacementEndEvent(event) && dragState?.dragged && !dragState.spaceAtStart && !this.placementGuardSpaceHeld) {
+        this.placementGuardSuppressClickUntil = Date.now() + 400;
+        this.placementGuardDragState = null;
+        this.debugLog("guard", "skip", { ...baseDebug, reason: "map-pan-drag" }, 1e3);
         return false;
       }
       if (!target || !this.isWplaceMapClickTarget(target)) {
@@ -6962,6 +6980,50 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       }
       const button = Number(event.button);
       return !Number.isFinite(button) || button == 0;
+    }
+    /** Tracks pointer movement so map panning is not mistaken for wrong-color placement.
+     * @param {Event} event - Pointer/mouse/touch event
+     * @returns {{clientX: number, clientY: number, dragged: boolean, spaceAtStart: boolean} | null}
+     * @since 0.92.40
+     */
+    updatePlacementGuardDragState(event) {
+      const point = this.getEventClientPoint(event);
+      if (this.isPlacementStartEvent(event)) {
+        if (!point || !this.isPrimaryPlacementGesture(event)) {
+          return this.placementGuardDragState;
+        }
+        this.placementGuardDragState = {
+          clientX: point.clientX,
+          clientY: point.clientY,
+          dragged: false,
+          spaceAtStart: this.placementGuardSpaceHeld
+        };
+        return this.placementGuardDragState;
+      }
+      if (this.isMoveEvent(event) && this.placementGuardDragState && point) {
+        const deltaX = point.clientX - this.placementGuardDragState.clientX;
+        const deltaY = point.clientY - this.placementGuardDragState.clientY;
+        if (deltaX * deltaX + deltaY * deltaY > 36) {
+          this.placementGuardDragState.dragged = true;
+        }
+      }
+      return this.placementGuardDragState;
+    }
+    /** Checks whether an event starts a pointer gesture.
+     * @param {Event} event - Pointer/mouse/touch event
+     * @returns {boolean}
+     * @since 0.92.40
+     */
+    isPlacementStartEvent(event) {
+      return event.type == "pointerdown" || event.type == "mousedown" || event.type == "touchstart";
+    }
+    /** Checks whether an event ends a pointer gesture.
+     * @param {Event} event - Pointer/mouse/touch event
+     * @returns {boolean}
+     * @since 0.92.40
+     */
+    isPlacementEndEvent(event) {
+      return event.type == "pointerup" || event.type == "mouseup" || event.type == "touchend" || event.type == "click";
     }
     /** Checks whether an event is a high-frequency pointer movement.
      * @param {Event} event - Pointer/mouse/touch event
