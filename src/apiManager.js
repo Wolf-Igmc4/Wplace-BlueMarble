@@ -37,6 +37,9 @@ export default class ApiManager {
     this.placementGuardSpaceHeld = false; // Wplace can place continuously while Space is held
     this.placementGuardDragState = null; // Tracks whether a plain pointer gesture became map panning
     this.placementGuardSuppressClickUntil = 0; // Ignores the synthetic click fired after a map pan
+    this.placementGuardLastPointerPoint = null; // Last pointer location for keyboard-triggered placement
+    this.placementGuardLastPointerOnMap = false; // Whether the last pointer location was on Wplace's map
+    this.placementGuardLastPointerAt = 0; // Timestamp for the last tracked pointer location
     this.debugLogLastAt = new Map(); // Throttles repeated picker/guard debug messages
     this.installTemplateEyedropperTracker();
     this.installPlacementGuard();
@@ -168,6 +171,12 @@ export default class ApiManager {
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) {return;}
 
+    if (isDown && this.shouldBlockPlacementGuardSpaceEvent(event)) {
+      this.placementGuardSpaceHeld = false;
+      this.blockPlacementEvent(event);
+      return;
+    }
+
     const changed = this.placementGuardSpaceHeld != isDown;
     this.placementGuardSpaceHeld = isDown;
     if (changed) {
@@ -213,6 +222,7 @@ export default class ApiManager {
    * @since 0.92.35
    */
   handlePlacementGuardEvent(event) {
+    this.updatePlacementGuardPointerState(event);
     const dragState = this.updatePlacementGuardDragState(event);
 
     if ((event.type == 'click') && (Date.now() < this.placementGuardSuppressClickUntil)) {return false;}
@@ -265,13 +275,6 @@ export default class ApiManager {
       return false;
     }
 
-    const selectedColorID = Number(localStorage.getItem('selected-color'));
-    if (Number.isInteger(selectedColorID) && (selectedColorID != activeColorID)) {
-      this.debugLog('guard', 'block', {...baseDebug, reason: 'selected-color-mismatch', activeColorID: activeColorID, selectedColorID: selectedColorID}, 500);
-      this.blockPlacementEvent(event);
-      return true;
-    }
-
     const point = this.getEventClientPoint(event);
     if (!point) {
       this.debugLog('guard', 'skip', {...baseDebug, reason: 'no-event-point', activeColorID: activeColorID}, 1000);
@@ -309,6 +312,21 @@ export default class ApiManager {
       return true;
     }
 
+    const selectedColorID = Number(localStorage.getItem('selected-color'));
+    if (Number.isInteger(selectedColorID) && (selectedColorID != activeColorID)) {
+      this.selectWplacePaletteColor(activeColorID);
+      this.debugLog('guard', 'block', {
+        ...baseDebug,
+        reason: 'selected-color-mismatch',
+        activeColorID: activeColorID,
+        selectedColorID: selectedColorID,
+        coords: coords,
+        templateColorID: templateColor.colorID
+      }, 500);
+      this.blockPlacementEvent(event);
+      return true;
+    }
+
     this.debugLog('guard', 'allow', {
       ...baseDebug,
       reason: 'matching-template-pixel',
@@ -317,6 +335,75 @@ export default class ApiManager {
       templateColorID: templateColor.colorID
     }, 500);
     return false;
+  }
+
+  /** Blocks Space-triggered placement before Wplace paints a wrong pixel.
+   * @param {KeyboardEvent} event - Keyboard event
+   * @returns {boolean} Whether Space should be blocked
+   * @since 0.92.41
+   */
+  shouldBlockPlacementGuardSpaceEvent(event) {
+    if (!event.isTrusted || !this.isPlacementGuardEnabled() || this.isWplaceColorPickerActive()) {return false;}
+    if (!this.placementGuardLastPointerOnMap || ((Date.now() - this.placementGuardLastPointerAt) > 1500)) {return false;}
+
+    const activeColorID = this.getSingleVisibleTemplateColorID();
+    if (activeColorID == null) {return false;}
+
+    const selectedColorID = Number(localStorage.getItem('selected-color'));
+    const selectedMismatch = Number.isInteger(selectedColorID) && (selectedColorID != activeColorID);
+    const point = this.placementGuardLastPointerPoint;
+    const coords = point ? getTrackedWplaceTilePixel(point.clientX, point.clientY) : null;
+    const templateColor = coords ? this.templateManager?.getTemplateColorAtTilePixel?.(
+      coords['tile']?.[0],
+      coords['tile']?.[1],
+      coords['pixel']?.[0],
+      coords['pixel']?.[1]
+    ) : null;
+
+    if (selectedMismatch) {
+      this.selectWplacePaletteColor(activeColorID);
+      this.debugLog('guard', 'block', {
+        type: event.type,
+        reason: 'space-selected-color-mismatch',
+        activeColorID: activeColorID,
+        selectedColorID: selectedColorID,
+        coords: coords,
+        templateColorID: templateColor?.colorID ?? null
+      }, 500);
+      return true;
+    }
+
+    if (!coords) {
+      this.debugLog('guard', 'skip', {type: event.type, reason: 'space-no-tracked-coords'}, 1000);
+      return false;
+    }
+
+    if (!templateColor || (templateColor.colorID != activeColorID)) {
+      this.debugLog('guard', 'block', {
+        type: event.type,
+        reason: 'space-non-matching-template-pixel',
+        activeColorID: activeColorID,
+        coords: coords,
+        templateColorID: templateColor?.colorID ?? null
+      }, 500);
+      return true;
+    }
+
+    return false;
+  }
+
+  /** Remembers whether the pointer is currently over the map for keyboard-triggered placement.
+   * @param {Event} event - Pointer/mouse/touch event
+   * @since 0.92.41
+   */
+  updatePlacementGuardPointerState(event) {
+    const point = this.getEventClientPoint(event);
+    if (!point) {return;}
+
+    const target = event.target instanceof Element ? event.target : null;
+    this.placementGuardLastPointerPoint = point;
+    this.placementGuardLastPointerOnMap = !!target && this.isWplaceMapClickTarget(target);
+    this.placementGuardLastPointerAt = Date.now();
   }
 
   /** Checks whether an event can be part of a human left-click or left-drag placement.
@@ -500,11 +587,35 @@ export default class ApiManager {
    * @since 0.92.35
    */
   isWplaceMapClickTarget(element) {
+    if (this.isWplaceInteractiveMapTarget(element)) {return false;}
+
     return !!(
       element.matches?.('.maplibregl-canvas')
       || element.closest?.('.maplibregl-canvas-container')
-      || element.closest?.('.maplibregl-map')
     );
+  }
+
+  /** Checks whether a map child is an interactive overlay rather than the paintable canvas.
+   * @param {Element} element - Click target or candidate element
+   * @returns {boolean}
+   * @since 0.92.42
+   */
+  isWplaceInteractiveMapTarget(element) {
+    if (element.matches?.('.maplibregl-canvas')) {return false;}
+
+    return !!element.closest?.([
+      'button',
+      'a',
+      'input',
+      'select',
+      'textarea',
+      '[role="button"]',
+      '.maplibregl-marker',
+      '.maplibregl-control-container',
+      '.maplibregl-ctrl',
+      '.maplibregl-popup',
+      '[class*="marker" i]'
+    ].join(','));
   }
 
   /** Checks whether an element looks like Wplace's color picker control.

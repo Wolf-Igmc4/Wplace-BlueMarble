@@ -290,7 +290,7 @@
 
   <h3>How do I tell colors apart?</h3>
   <p><b>A:</b> Find the color in the color filter list. Click the checkbox to turn the color on or off. If you want to work on only one color at a time (recommended), then click "Disable All" in the color filter. Finally, enable the checkbox next to the color you want to place. This way, only one color on your template will appear at a time.</p>
-  <p>If you enable <b>Guard clicks</b> in the Color Filter while exactly one paintable template color is visible, Blue Marble blocks manual map clicks and Space-drag placement gestures that do not match that visible template color, while leaving normal map panning alone. It does not place pixels, move clicks, or retry clicks automatically.</p>
+  <p>If you enable <b>Guard clicks</b> in the Color Filter while exactly one paintable template color is visible, Blue Marble blocks manual map clicks and Space-drag placement gestures that do not match that visible template color, while leaving normal map panning and map marker clicks alone. When a matching template pixel is clicked with the wrong Wplace color selected, it tries to select the visible template color before blocking the unsafe placement. It does not place pixels, move clicks, or retry clicks automatically.</p>
 
   <h3>How do get the color of a pixel?</h3>
   <p><b>A:</b> Use the eyedropper in the palette menu of wplace. If your template colors match the wplace palette, clicking a visible Blue Marble template pixel selects the template color for that pixel. If there is no visible template pixel there, Wplace keeps its normal eyedropper behavior.</p>

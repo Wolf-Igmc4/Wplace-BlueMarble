@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.40
+// @version         0.92.42
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.40
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.42
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -4125,6 +4125,7 @@
     const colorList = new Overlay(this.name, this.version);
     colorList.addDiv({ "id": this.colorListID });
     const colorStatistics = this.updateColorList();
+    const boughtColorIDs = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDs_fn).call(this);
     for (const color of this.palette) {
       const colorValueHex = "#" + rgbToHex(color.rgb).toUpperCase();
       const lumin = calculateRelativeLuminance(color.rgb);
@@ -4146,7 +4147,7 @@
         colorCompleted
       } = colorStatistics[color.id];
       const isColorHidden = !!(this.templateManager.shouldFilterColor.get(color.id) || false);
-      const colorBought = __privateMethod(this, _WindowFilter_instances, isColorBought_fn).call(this, color);
+      const colorBought = __privateMethod(this, _WindowFilter_instances, isColorBought_fn).call(this, color, boughtColorIDs);
       if (isWindowedMode) {
         const styleBackgroundStar = `background-size: auto 100%; background-repeat: repeat-x; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50,5L79,91L2,39L98,39L21,91' fill='${textColorForPaletteColorBackground}' fill-opacity='.1'/></svg>");`;
         colorList.addDiv({
@@ -6690,6 +6691,9 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.placementGuardSpaceHeld = false;
       this.placementGuardDragState = null;
       this.placementGuardSuppressClickUntil = 0;
+      this.placementGuardLastPointerPoint = null;
+      this.placementGuardLastPointerOnMap = false;
+      this.placementGuardLastPointerAt = 0;
       this.debugLogLastAt = /* @__PURE__ */ new Map();
       this.installTemplateEyedropperTracker();
       this.installPlacementGuard();
@@ -6824,6 +6828,11 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) {
         return;
       }
+      if (isDown && this.shouldBlockPlacementGuardSpaceEvent(event)) {
+        this.placementGuardSpaceHeld = false;
+        this.blockPlacementEvent(event);
+        return;
+      }
       const changed = this.placementGuardSpaceHeld != isDown;
       this.placementGuardSpaceHeld = isDown;
       if (changed) {
@@ -6864,6 +6873,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
      * @since 0.92.35
      */
     handlePlacementGuardEvent(event) {
+      this.updatePlacementGuardPointerState(event);
       const dragState = this.updatePlacementGuardDragState(event);
       if (event.type == "click" && Date.now() < this.placementGuardSuppressClickUntil) {
         return false;
@@ -6918,12 +6928,6 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         this.debugLog("guard", "skip", { ...baseDebug, reason: "not-exactly-one-visible-color", visibleColorIDs }, 1e3);
         return false;
       }
-      const selectedColorID = Number(localStorage.getItem("selected-color"));
-      if (Number.isInteger(selectedColorID) && selectedColorID != activeColorID) {
-        this.debugLog("guard", "block", { ...baseDebug, reason: "selected-color-mismatch", activeColorID, selectedColorID }, 500);
-        this.blockPlacementEvent(event);
-        return true;
-      }
       const point = this.getEventClientPoint(event);
       if (!point) {
         this.debugLog("guard", "skip", { ...baseDebug, reason: "no-event-point", activeColorID }, 1e3);
@@ -6957,6 +6961,20 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         this.blockPlacementEvent(event);
         return true;
       }
+      const selectedColorID = Number(localStorage.getItem("selected-color"));
+      if (Number.isInteger(selectedColorID) && selectedColorID != activeColorID) {
+        this.selectWplacePaletteColor(activeColorID);
+        this.debugLog("guard", "block", {
+          ...baseDebug,
+          reason: "selected-color-mismatch",
+          activeColorID,
+          selectedColorID,
+          coords: coords2,
+          templateColorID: templateColor.colorID
+        }, 500);
+        this.blockPlacementEvent(event);
+        return true;
+      }
       this.debugLog("guard", "allow", {
         ...baseDebug,
         reason: "matching-template-pixel",
@@ -6965,6 +6983,74 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         templateColorID: templateColor.colorID
       }, 500);
       return false;
+    }
+    /** Blocks Space-triggered placement before Wplace paints a wrong pixel.
+     * @param {KeyboardEvent} event - Keyboard event
+     * @returns {boolean} Whether Space should be blocked
+     * @since 0.92.41
+     */
+    shouldBlockPlacementGuardSpaceEvent(event) {
+      if (!event.isTrusted || !this.isPlacementGuardEnabled() || this.isWplaceColorPickerActive()) {
+        return false;
+      }
+      if (!this.placementGuardLastPointerOnMap || Date.now() - this.placementGuardLastPointerAt > 1500) {
+        return false;
+      }
+      const activeColorID = this.getSingleVisibleTemplateColorID();
+      if (activeColorID == null) {
+        return false;
+      }
+      const selectedColorID = Number(localStorage.getItem("selected-color"));
+      const selectedMismatch = Number.isInteger(selectedColorID) && selectedColorID != activeColorID;
+      const point = this.placementGuardLastPointerPoint;
+      const coords2 = point ? getTrackedWplaceTilePixel(point.clientX, point.clientY) : null;
+      const templateColor = coords2 ? this.templateManager?.getTemplateColorAtTilePixel?.(
+        coords2["tile"]?.[0],
+        coords2["tile"]?.[1],
+        coords2["pixel"]?.[0],
+        coords2["pixel"]?.[1]
+      ) : null;
+      if (selectedMismatch) {
+        this.selectWplacePaletteColor(activeColorID);
+        this.debugLog("guard", "block", {
+          type: event.type,
+          reason: "space-selected-color-mismatch",
+          activeColorID,
+          selectedColorID,
+          coords: coords2,
+          templateColorID: templateColor?.colorID ?? null
+        }, 500);
+        return true;
+      }
+      if (!coords2) {
+        this.debugLog("guard", "skip", { type: event.type, reason: "space-no-tracked-coords" }, 1e3);
+        return false;
+      }
+      if (!templateColor || templateColor.colorID != activeColorID) {
+        this.debugLog("guard", "block", {
+          type: event.type,
+          reason: "space-non-matching-template-pixel",
+          activeColorID,
+          coords: coords2,
+          templateColorID: templateColor?.colorID ?? null
+        }, 500);
+        return true;
+      }
+      return false;
+    }
+    /** Remembers whether the pointer is currently over the map for keyboard-triggered placement.
+     * @param {Event} event - Pointer/mouse/touch event
+     * @since 0.92.41
+     */
+    updatePlacementGuardPointerState(event) {
+      const point = this.getEventClientPoint(event);
+      if (!point) {
+        return;
+      }
+      const target = event.target instanceof Element ? event.target : null;
+      this.placementGuardLastPointerPoint = point;
+      this.placementGuardLastPointerOnMap = !!target && this.isWplaceMapClickTarget(target);
+      this.placementGuardLastPointerAt = Date.now();
     }
     /** Checks whether an event can be part of a human left-click or left-drag placement.
      * @param {Event} event - Pointer/mouse/touch event
@@ -7154,7 +7240,33 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
      * @since 0.92.35
      */
     isWplaceMapClickTarget(element) {
-      return !!(element.matches?.(".maplibregl-canvas") || element.closest?.(".maplibregl-canvas-container") || element.closest?.(".maplibregl-map"));
+      if (this.isWplaceInteractiveMapTarget(element)) {
+        return false;
+      }
+      return !!(element.matches?.(".maplibregl-canvas") || element.closest?.(".maplibregl-canvas-container"));
+    }
+    /** Checks whether a map child is an interactive overlay rather than the paintable canvas.
+     * @param {Element} element - Click target or candidate element
+     * @returns {boolean}
+     * @since 0.92.42
+     */
+    isWplaceInteractiveMapTarget(element) {
+      if (element.matches?.(".maplibregl-canvas")) {
+        return false;
+      }
+      return !!element.closest?.([
+        "button",
+        "a",
+        "input",
+        "select",
+        "textarea",
+        '[role="button"]',
+        ".maplibregl-marker",
+        ".maplibregl-control-container",
+        ".maplibregl-ctrl",
+        ".maplibregl-popup",
+        '[class*="marker" i]'
+      ].join(","));
     }
     /** Checks whether an element looks like Wplace's color picker control.
      * @param {Element} element - Click target or candidate element
