@@ -332,7 +332,9 @@ export async function screenToWplaceTilePixel(clientX, clientY, tileSize = 1000,
       if (!data || data['source'] != 'blue-marble' || data['endpoint'] != 'screen-to-tile-pixel-result' || data['requestID'] != requestID) {return;}
       clearTimeout(timeout);
       window.removeEventListener('message', onMessage);
-      resolve(data['ok'] ? data['coords'] : null);
+      const coords = data['ok'] ? data['coords'] : null;
+      if (coords && data['debug']) {coords['_debug'] = data['debug'];}
+      resolve(coords);
     };
 
     window.addEventListener('message', onMessage);
@@ -394,18 +396,25 @@ export async function installWplaceTilePixelTracker(tileSize = 1000, tileZoom = 
 export function getTrackedWplaceTilePixel(clientX, clientY, maxAgeMs = 500, maxDistancePx = 12) {
   try {
     const payload = JSON.parse(document.documentElement?.dataset?.bmTilePixelAtPointer || 'null');
-    if (!payload || !Array.isArray(payload.tile) || !Array.isArray(payload.pixel)) {return null;}
-    if ((Date.now() - Number(payload.updatedAt || 0)) > maxAgeMs) {return null;}
+    if (!payload || !Array.isArray(payload['tile']) || !Array.isArray(payload['pixel'])) {return null;}
+    if ((Date.now() - Number(payload['updatedAt'] || 0)) > maxAgeMs) {return null;}
 
-    const deltaX = Math.abs(Number(payload.clientX) - Number(clientX));
-    const deltaY = Math.abs(Number(payload.clientY) - Number(clientY));
+    const deltaX = Math.abs(Number(payload['clientX']) - Number(clientX));
+    const deltaY = Math.abs(Number(payload['clientY']) - Number(clientY));
     if ((deltaX > maxDistancePx) || (deltaY > maxDistancePx)) {return null;}
 
     return {
-      tile: payload.tile,
-      pixel: payload.pixel,
-      lat: payload.lat,
-      lng: payload.lng
+      'tile': payload['tile'],
+      'pixel': payload['pixel'],
+      'lat': payload['lat'],
+      'lng': payload['lng'],
+      '_debug': {
+        'updatedAt': payload['updatedAt'],
+        'clientX': payload['clientX'],
+        'clientY': payload['clientY'],
+        'mapPoint': payload['mapPoint'],
+        'canvasRect': payload['canvasRect']
+      }
     };
   } catch (error) {
     return null;
@@ -518,12 +527,25 @@ function installWplaceNavigatorBridge() {
         ? map.getCanvas()
         : document.querySelector('.maplibregl-canvas');
       const rect = canvas?.getBoundingClientRect?.();
-      if (!rect) {return [clientX, clientY];}
+      if (!rect) {
+        return {
+          point: [clientX, clientY],
+          canvasRect: null
+        };
+      }
 
-      return [
-        clientX - rect.left,
-        clientY - rect.top
-      ];
+      return {
+        point: [
+          clientX - rect.left,
+          clientY - rect.top
+        ],
+        canvasRect: {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height
+        }
+      };
     }
 
     function isMapEventTarget(target) {
@@ -544,7 +566,7 @@ function installWplaceNavigatorBridge() {
 
       try {
         const mapPoint = clientPointToMapPoint(map, point.clientX, point.clientY);
-        const lngLat = map.unproject(mapPoint);
+        const lngLat = map.unproject(mapPoint.point);
         const coords = latLngToTilePixel(
           Number(lngLat.lat),
           Number(lngLat.lng),
@@ -559,7 +581,9 @@ function installWplaceNavigatorBridge() {
           tile: coords.tile,
           pixel: coords.pixel,
           lat: coords.lat,
-          lng: coords.lng
+          lng: coords.lng,
+          mapPoint: mapPoint.point,
+          canvasRect: mapPoint.canvasRect
         });
       } catch (error) {}
     }
@@ -740,14 +764,27 @@ function installWplaceNavigatorBridge() {
 
       if (data.endpoint == 'screen-to-tile-pixel') {
         let coords = null;
+        const debug = {
+          mapFound: false,
+          hasUnproject: false,
+          clientX: Number(data.clientX),
+          clientY: Number(data.clientY),
+          mapPoint: null,
+          canvasRect: null,
+          error: null
+        };
 
         try {
           const map = await (state.searchPromise ||= findMap());
           state.searchPromise = null;
+          debug.mapFound = !!map;
+          debug.hasUnproject = typeof map?.unproject == 'function';
 
           if (map && typeof map.unproject == 'function') {
             const mapPoint = clientPointToMapPoint(map, Number(data.clientX), Number(data.clientY));
-            const lngLat = map.unproject(mapPoint);
+            debug.mapPoint = mapPoint.point;
+            debug.canvasRect = mapPoint.canvasRect;
+            const lngLat = map.unproject(mapPoint.point);
             coords = latLngToTilePixel(
               Number(lngLat.lat),
               Number(lngLat.lng),
@@ -757,6 +794,7 @@ function installWplaceNavigatorBridge() {
           }
         } catch (error) {
           state.searchPromise = null;
+          debug.error = error?.message || String(error);
         }
 
         window.postMessage({
@@ -764,7 +802,8 @@ function installWplaceNavigatorBridge() {
           endpoint: 'screen-to-tile-pixel-result',
           requestID: data.requestID,
           ok: !!coords,
-          coords: coords
+          coords: coords,
+          debug: debug
         }, '*');
         return;
       }

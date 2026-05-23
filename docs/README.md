@@ -294,6 +294,7 @@
 
   <h3>How do get the color of a pixel?</h3>
   <p><b>A:</b> Use the eyedropper in the palette menu of wplace. If your template colors match the wplace palette, clicking a visible Blue Marble template pixel selects the template color for that pixel. If there is no visible template pixel there, Wplace keeps its normal eyedropper behavior.</p>
+  <p>If the eyedropper or <b>Guard clicks</b> does not behave as expected, open the browser console and enable focused debug logs with <code>localStorage.setItem('bm-debug-picker', 'true')</code> or <code>localStorage.setItem('bm-debug-guard', 'true')</code>, then refresh Wplace and try the click again. Disable them later with <code>localStorage.removeItem('bm-debug-picker')</code> and <code>localStorage.removeItem('bm-debug-guard')</code>.</p>
 
   <h3>Why do game notifications appear on top of the overlay?</h3>
   <p><b>A:</b> Game notifications only appear when they need immediate attention. Therefore, they have priority over the overlay (which typically needs no attention).</p>

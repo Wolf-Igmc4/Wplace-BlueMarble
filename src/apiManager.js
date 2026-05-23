@@ -33,8 +33,57 @@ export default class ApiManager {
     this.placementGuardFlag = 'ftr-placeGuard'; // User setting flag for wrong-color click blocking
     this.placementGuardEvents = ['pointerdown', 'mousedown', 'click', 'touchstart', 'touchend']; // Human map events that can start a placement
     this.placementGuardLastBlockAt = 0; // Throttles status noise when wrong-color clicks are blocked
+    this.debugLogLastAt = new Map(); // Throttles repeated picker/guard debug messages
     this.installTemplateEyedropperTracker();
     this.installPlacementGuard();
+  }
+
+  /** Checks whether focused picker/guard debug logs are enabled.
+   * @param {'picker'|'guard'|'api'} channel - Debug channel
+   * @returns {boolean}
+   * @since 0.92.35
+   */
+  isDebugLoggingEnabled(channel = 'api') {
+    const flags = this.templateManager?.settingsManager?.userSettings?.flags ?? [];
+    const debugLogs = !!this.templateManager?.settingsManager?.userSettings?.debugLogs;
+    const localDebug = localStorage.getItem('bm-debug') == 'true';
+    const localChannelDebug = localStorage.getItem(`bm-debug-${channel}`) == 'true';
+    return debugLogs || flags.includes('bm-debug') || localDebug || localChannelDebug;
+  }
+
+  /** Writes a debug log when the focused debug channel is enabled.
+   * @param {'picker'|'guard'|'api'} channel - Debug channel
+   * @param {string} eventName - Short event name
+   * @param {Object} [details={}] - Structured details
+   * @param {number} [throttleMs=0] - Minimum time between identical events
+   * @since 0.92.35
+   */
+  debugLog(channel, eventName, details = {}, throttleMs = 0) {
+    if (!this.isDebugLoggingEnabled(channel)) {return;}
+
+    const throttleKey = `${channel}:${eventName}`;
+    const now = Date.now();
+    if (throttleMs && ((now - (this.debugLogLastAt.get(throttleKey) || 0)) < throttleMs)) {return;}
+    this.debugLogLastAt.set(throttleKey, now);
+
+    console.log(`[BM ${channel}] ${eventName}`, details);
+  }
+
+  /** Returns a small, readable description of an event target.
+   * @param {Element | null} element - DOM element
+   * @returns {Object | null}
+   * @since 0.92.35
+   */
+  describeElement(element) {
+    if (!element) {return null;}
+    return {
+      tag: element.tagName?.toLowerCase?.() || '',
+      id: element.id || '',
+      className: typeof element.className == 'string' ? element.className : '',
+      dataTip: element.getAttribute?.('data-tip') || '',
+      title: element.getAttribute?.('title') || '',
+      ariaLabel: element.getAttribute?.('aria-label') || ''
+    };
   }
 
   /** Tracks map coordinates and blocks wrong-color manual clicks when the placement guard is enabled.
@@ -44,7 +93,9 @@ export default class ApiManager {
     if (this.placementGuardTrackerInstalled) {return;}
     this.placementGuardTrackerInstalled = true;
 
-    void installWplaceTilePixelTracker(this.templateManager?.tileSize || 1000, 11);
+    void installWplaceTilePixelTracker(this.templateManager?.tileSize || 1000, 11).then(ok => {
+      this.debugLog('guard', 'tile-pixel-tracker-installed', {ok: ok}, 1000);
+    });
     for (const eventName of this.placementGuardEvents) {
       document.addEventListener(eventName, event => this.handlePlacementGuardEvent(event), true);
     }
@@ -88,40 +139,94 @@ export default class ApiManager {
    * @since 0.92.35
    */
   handlePlacementGuardEvent(event) {
-    if (!event.isTrusted || !this.isPlacementGuardEnabled()) {return false;}
-    if (this.isWplaceColorPickerActive()) {return false;}
-    if (event.button && event.button != 0) {return false;}
-
     const target = event.target instanceof Element ? event.target : null;
-    if (!target || !this.isWplaceMapClickTarget(target)) {return false;}
+    const baseDebug = {
+      type: event.type,
+      button: event.button,
+      target: this.describeElement(target),
+      selectedColor: localStorage.getItem('selected-color')
+    };
 
-    const activeColorID = this.getSingleVisibleTemplateColorID();
-    if (activeColorID == null) {return false;}
+    if (!event.isTrusted) {
+      this.debugLog('guard', 'skip', {...baseDebug, reason: 'untrusted-event'}, 1000);
+      return false;
+    }
+    if (!this.isPlacementGuardEnabled()) {
+      this.debugLog('guard', 'skip', {...baseDebug, reason: 'guard-disabled'}, 1000);
+      return false;
+    }
+    if (this.isWplaceColorPickerActive()) {
+      this.debugLog('guard', 'skip', {...baseDebug, reason: 'picker-active'}, 1000);
+      return false;
+    }
+    if (event.button && event.button != 0) {
+      this.debugLog('guard', 'skip', {...baseDebug, reason: 'non-left-button'}, 1000);
+      return false;
+    }
+
+    if (!target || !this.isWplaceMapClickTarget(target)) {
+      this.debugLog('guard', 'skip', {...baseDebug, reason: 'not-map-target'}, 1000);
+      return false;
+    }
+
+    const visibleColorIDs = this.templateManager?.getVisibleTemplateColorIDs?.({paintableOnly: true}) ?? [];
+    const activeColorID = (visibleColorIDs.length == 1) ? visibleColorIDs[0] : null;
+    if (activeColorID == null) {
+      this.debugLog('guard', 'skip', {...baseDebug, reason: 'not-exactly-one-visible-color', visibleColorIDs: visibleColorIDs}, 1000);
+      return false;
+    }
 
     const selectedColorID = Number(localStorage.getItem('selected-color'));
     if (Number.isInteger(selectedColorID) && (selectedColorID != activeColorID)) {
+      this.debugLog('guard', 'block', {...baseDebug, reason: 'selected-color-mismatch', activeColorID: activeColorID, selectedColorID: selectedColorID}, 500);
       this.blockPlacementEvent(event);
       return true;
     }
 
     const point = this.getEventClientPoint(event);
-    if (!point) {return false;}
+    if (!point) {
+      this.debugLog('guard', 'skip', {...baseDebug, reason: 'no-event-point', activeColorID: activeColorID}, 1000);
+      return false;
+    }
 
     const coords = getTrackedWplaceTilePixel(point.clientX, point.clientY);
-    if (!coords) {return false;}
+    if (!coords) {
+      this.debugLog('guard', 'skip', {
+        ...baseDebug,
+        reason: 'no-tracked-coords',
+        activeColorID: activeColorID,
+        point: point,
+        rawTracker: document.documentElement?.dataset?.bmTilePixelAtPointer || ''
+      }, 1000);
+      return false;
+    }
 
     const templateColor = this.templateManager?.getTemplateColorAtTilePixel?.(
-      coords.tile?.[0],
-      coords.tile?.[1],
-      coords.pixel?.[0],
-      coords.pixel?.[1]
+      coords['tile']?.[0],
+      coords['tile']?.[1],
+      coords['pixel']?.[0],
+      coords['pixel']?.[1]
     );
 
     if (!templateColor || (templateColor.colorID != activeColorID)) {
+      this.debugLog('guard', 'block', {
+        ...baseDebug,
+        reason: 'clicked-non-matching-template-pixel',
+        activeColorID: activeColorID,
+        coords: coords,
+        templateColorID: templateColor?.colorID ?? null
+      }, 500);
       this.blockPlacementEvent(event);
       return true;
     }
 
+    this.debugLog('guard', 'allow', {
+      ...baseDebug,
+      reason: 'matching-template-pixel',
+      activeColorID: activeColorID,
+      coords: coords,
+      templateColorID: templateColor.colorID
+    }, 500);
     return false;
   }
 
@@ -145,25 +250,27 @@ export default class ApiManager {
     if (this.templateEyedropperTrackerInstalled) {return;}
     this.templateEyedropperTrackerInstalled = true;
 
-    const markPickerActive = () => {
+    const markPickerActive = (source = 'unknown') => {
       this.templateEyedropperActiveUntil = Date.now() + this.templateEyedropperActivationWindowMs;
+      this.debugLog('picker', 'mark-active', {source: source, activeUntil: this.templateEyedropperActiveUntil}, 250);
     };
-    const clearPickerActive = () => {
+    const clearPickerActive = (source = 'unknown') => {
       this.templateEyedropperActiveUntil = 0;
+      this.debugLog('picker', 'clear-active', {source: source}, 250);
     };
 
     document.addEventListener('keydown', event => {
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) {return;}
-      if (event.code == 'KeyI') {markPickerActive();}
-      if (event.code == 'KeyE') {clearPickerActive();}
+      if (event.code == 'KeyI') {markPickerActive('keyboard-i');}
+      if (event.code == 'KeyE') {clearPickerActive('keyboard-e');}
     }, true);
 
     document.addEventListener('keypress', event => {
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) {return;}
-      if (event.code == 'KeyI') {markPickerActive();}
-      if (event.code == 'KeyE') {clearPickerActive();}
+      if (event.code == 'KeyI') {markPickerActive('keypress-i');}
+      if (event.code == 'KeyE') {clearPickerActive('keypress-e');}
     }, true);
 
     for (const eventName of ['pointerdown', 'mousedown', 'touchstart']) {
@@ -171,10 +278,10 @@ export default class ApiManager {
         const target = event.target instanceof Element ? event.target : null;
         if (!target) {return;}
         if (target.closest('[id^="color-"]')) {
-          clearPickerActive();
+          clearPickerActive('palette-color');
           return;
         }
-        if (this.isWplaceColorPickerControl(target)) {markPickerActive();}
+        if (this.isWplaceColorPickerControl(target)) {markPickerActive(`${eventName}-picker-control`);}
       }, true);
     }
 
@@ -184,15 +291,25 @@ export default class ApiManager {
       const selectedColorBeforeClick = localStorage.getItem('selected-color');
 
       if (target.closest('[id^="color-"]')) {
-        clearPickerActive();
+        clearPickerActive('palette-color-click');
         return;
       }
 
-      if (this.isWplaceColorPickerControl(target)) {markPickerActive();}
+      if (this.isWplaceColorPickerControl(target)) {markPickerActive('click-picker-control');}
 
-      if (!this.isWplaceMapClickTarget(target)) {return;}
+      if (!this.isWplaceMapClickTarget(target)) {
+        this.debugLog('picker', 'skip', {reason: 'not-map-target', target: this.describeElement(target)}, 1000);
+        return;
+      }
       const wasPickerActive = this.isWplaceColorPickerActive();
-      if (wasPickerActive) {markPickerActive();}
+      if (wasPickerActive) {markPickerActive('map-click-active');}
+
+      this.debugLog('picker', 'map-click', {
+        wasPickerActive: wasPickerActive,
+        selectedColorBeforeClick: selectedColorBeforeClick,
+        point: {clientX: event.clientX, clientY: event.clientY},
+        target: this.describeElement(target)
+      });
 
       void screenToWplaceTilePixel(
         event.clientX,
@@ -200,13 +317,17 @@ export default class ApiManager {
         this.templateManager?.tileSize || 1000,
         11
       ).then(coords => {
-        if (!coords) {return;}
+        if (!coords) {
+          this.debugLog('picker', 'screen-to-tile-failed', {point: {clientX: event.clientX, clientY: event.clientY}}, 500);
+          return;
+        }
+        this.debugLog('picker', 'screen-to-tile', {coords: coords});
         if (wasPickerActive || this.isWplaceColorPickerActive()) {
-          this.selectTemplateColorAtCoords(coords.tile, coords.pixel);
+          this.selectTemplateColorAtCoords(coords['tile'], coords['pixel']);
           return;
         }
 
-        this.selectTemplateColorAfterNativePickerChange(coords.tile, coords.pixel, selectedColorBeforeClick);
+        this.selectTemplateColorAfterNativePickerChange(coords['tile'], coords['pixel'], selectedColorBeforeClick);
       });
     }, true);
   }
@@ -295,25 +416,34 @@ export default class ApiManager {
    */
   selectWplacePaletteColor(colorID) {
     const wplaceColorID = (colorID == -1) ? 0 : Number(colorID);
-    if (!Number.isInteger(wplaceColorID) || (wplaceColorID < 0) || (wplaceColorID > 63)) {return false;}
+    if (!Number.isInteger(wplaceColorID) || (wplaceColorID < 0) || (wplaceColorID > 63)) {
+      this.debugLog('picker', 'palette-select-failed', {reason: 'invalid-color-id', colorID: colorID});
+      return false;
+    }
 
     const expectedColorID = wplaceColorID.toString();
     const select = (force = false) => {
       const colorElement = document.getElementById(`color-${expectedColorID}`);
       if (!colorElement) {
         localStorage.setItem('selected-color', expectedColorID);
+        this.debugLog('picker', 'palette-select-fallback-localstorage', {expectedColorID: expectedColorID, force: force}, 500);
         return false;
       }
 
       if (!force && (localStorage.getItem('selected-color') == expectedColorID)) {
         colorElement.focus?.();
+        this.debugLog('picker', 'palette-select-already-selected', {expectedColorID: expectedColorID, force: force}, 500);
         return true;
       }
 
-      if (colorElement instanceof HTMLButtonElement && colorElement.disabled) {return false;}
+      if (colorElement instanceof HTMLButtonElement && colorElement.disabled) {
+        this.debugLog('picker', 'palette-select-failed', {reason: 'button-disabled', expectedColorID: expectedColorID, force: force}, 500);
+        return false;
+      }
 
       colorElement.click();
       colorElement.focus?.();
+      this.debugLog('picker', 'palette-select-clicked', {expectedColorID: expectedColorID, force: force}, 500);
       return true;
     };
 
@@ -340,15 +470,44 @@ export default class ApiManager {
       coordsPixel?.[0],
       coordsPixel?.[1]
     );
-    if (!templateColor || (templateColor.colorID == -2)) {return false;}
+    if (!templateColor || (templateColor.colorID == -2)) {
+      this.debugLog('picker', 'native-fallback-not-scheduled', {
+        reason: !templateColor ? 'no-template-color' : 'unknown-template-color',
+        coordsTile: coordsTile,
+        coordsPixel: coordsPixel,
+        templateColorID: templateColor?.colorID ?? null
+      });
+      return false;
+    }
 
     const previousColor = selectedColorBeforeClick == null ? null : String(selectedColorBeforeClick);
     const expectedColor = String((templateColor.colorID == -1) ? 0 : templateColor.colorID);
+    this.debugLog('picker', 'native-fallback-scheduled', {
+      coordsTile: coordsTile,
+      coordsPixel: coordsPixel,
+      previousColor: previousColor,
+      expectedColor: expectedColor,
+      templateColorID: templateColor.colorID
+    });
 
     for (const delay of this.templateEyedropperNativeProbeDelays) {
       setTimeout(() => {
         const currentColor = localStorage.getItem('selected-color');
-        if (currentColor == null || currentColor == previousColor || currentColor == expectedColor) {return;}
+        if (currentColor == null || currentColor == previousColor || currentColor == expectedColor) {
+          this.debugLog('picker', 'native-fallback-probe-skip', {
+            delay: delay,
+            currentColor: currentColor,
+            previousColor: previousColor,
+            expectedColor: expectedColor
+          }, 250);
+          return;
+        }
+        this.debugLog('picker', 'native-fallback-correcting', {
+          delay: delay,
+          currentColor: currentColor,
+          expectedColor: expectedColor,
+          templateColorID: templateColor.colorID
+        }, 250);
         this.selectWplacePaletteColor(templateColor.colorID);
       }, delay);
     }
@@ -371,9 +530,24 @@ export default class ApiManager {
     );
     this.templateEyedropperActiveUntil = 0;
 
-    if (!templateColor || (templateColor.colorID == -2)) {return false;}
+    if (!templateColor || (templateColor.colorID == -2)) {
+      this.debugLog('picker', 'direct-select-failed', {
+        reason: !templateColor ? 'no-template-color' : 'unknown-template-color',
+        coordsTile: coordsTile,
+        coordsPixel: coordsPixel,
+        templateColorID: templateColor?.colorID ?? null
+      });
+      return false;
+    }
 
-    return this.selectWplacePaletteColor(templateColor.colorID);
+    const selected = this.selectWplacePaletteColor(templateColor.colorID);
+    this.debugLog('picker', 'direct-select', {
+      coordsTile: coordsTile,
+      coordsPixel: coordsPixel,
+      templateColorID: templateColor.colorID,
+      selected: selected
+    });
+    return selected;
   }
 
   /** Overrides Wplace's eyedropper result with the visible template pixel color when possible.
