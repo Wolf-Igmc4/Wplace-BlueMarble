@@ -128,6 +128,16 @@ export default class TemplateManager {
     this.fastTemplateOverlayActive = false; // Whether Wplace accepted the current overlay
     this.fastTemplateOverlaySyncPromise = null; // Prevents duplicate overlay syncs
     this.fastTemplateOverlayStateKey = ''; // Last requested overlay state
+    this.progressCacheStorageKey = 'bmTemplateProgressCache'; // Persisted correct-pixel counts survive page reloads
+    this.progressCacheVersion = 1; // Storage format version for persisted progress
+    this.progressCache = this.#loadProgressCache();
+    this.progressCacheDirtyTemplates = new Set();
+    this.progressCacheSaveTimeout = null;
+    this.progressRefreshIntervalMS = 30000; // Recheck currently visible map tiles while the page remains open
+    this.progressRefreshInterval = setInterval(() => {
+      if (!this.templatesArray.length || document.visibilityState == 'hidden') {return;}
+      void this.#refreshVisibleTiles();
+    }, this.progressRefreshIntervalMS);
   }
 
   /** Updates the stored instance of the main window.
@@ -249,6 +259,128 @@ export default class TemplateManager {
       .map(colorID => Number(colorID))
       .filter(colorID => Number.isFinite(colorID))
       .sort((a, b) => a - b);
+  }
+
+  /** Loads the saved correct-pixel cache independently from template storage.
+   * @returns {{version: number, templates: Object}} Persisted progress payload
+   * @since 0.92.45
+   */
+  #loadProgressCache() {
+    const emptyCache = {version: this.progressCacheVersion, templates: {}};
+
+    try {
+      const storedCache = JSON.parse(GM_getValue(this.progressCacheStorageKey, '{}'));
+      if (storedCache?.version !== this.progressCacheVersion || !storedCache?.templates || typeof storedCache.templates != 'object') {
+        return emptyCache;
+      }
+      return storedCache;
+    } catch (error) {
+      consoleWarn(`Could not load cached template progress: ${error?.message || error}`);
+      return emptyCache;
+    }
+  }
+
+  /** Creates a content fingerprint so cached counts are never applied to a replaced template.
+   * @param {Object} storedTemplate - Template object from userscript storage
+   * @returns {string} Stable compact fingerprint
+   * @since 0.92.45
+   */
+  #createProgressFingerprint(storedTemplate) {
+    let hash = 2166136261;
+    const feedHash = value => {
+      const stringValue = String(value ?? '');
+      for (let index = 0; index < stringValue.length; index++) {
+        hash ^= stringValue.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+      }
+    };
+
+    feedHash(JSON.stringify(storedTemplate?.pixels || {}));
+    for (const [tileKey, encodedTile] of Object.entries(storedTemplate?.tiles || {}).sort(([left], [right]) => left.localeCompare(right))) {
+      feedHash(tileKey);
+      feedHash(encodedTile);
+    }
+
+    return `${Number(storedTemplate?.pixels?.total) || 0}:${Object.keys(storedTemplate?.tiles || {}).length}:${(hash >>> 0).toString(16)}`;
+  }
+
+  /** Restores cached tile counts into a freshly loaded active template.
+   * @param {Template} template - Hydrated active template instance
+   * @since 0.92.45
+   */
+  #restoreProgressCache(template) {
+    const storageKey = template?.storageKey;
+    const storedTemplate = this.templatesJSON?.templates?.[storageKey];
+    if (!storageKey || !storedTemplate) {return;}
+
+    const fingerprint = this.#createProgressFingerprint(storedTemplate);
+    template.progressCacheFingerprint = fingerprint;
+    const cachedTemplate = this.progressCache.templates?.[storageKey];
+    if (!cachedTemplate || cachedTemplate.fingerprint != fingerprint || !cachedTemplate.correct) {return;}
+
+    const validTileCoords = new Set(
+      Object.keys(template.chunked || {}).map(tileKey => tileKey.split(',').slice(0, 2).join(','))
+    );
+    const correct = {};
+    for (const [tileCoords, colorCounts] of Object.entries(cachedTemplate.correct)) {
+      if (!validTileCoords.has(tileCoords) || !colorCounts || typeof colorCounts != 'object') {continue;}
+      correct[tileCoords] = new Map(
+        Object.entries(colorCounts)
+          .map(([colorID, count]) => [Number(colorID), Number(count)])
+          .filter(([colorID, count]) => Number.isFinite(colorID) && Number.isFinite(count) && count >= 0)
+      );
+    }
+
+    if (Object.keys(correct).length) {
+      template.pixelCount.correct = correct;
+    }
+  }
+
+  /** Queues persistence for templates whose tile counts changed.
+   * @param {Template[]} templates - Changed template instances
+   * @since 0.92.45
+   */
+  #queueProgressCacheSave(templates) {
+    for (const template of templates) {
+      if (template?.storageKey) {this.progressCacheDirtyTemplates.add(template);}
+    }
+    if (!this.progressCacheDirtyTemplates.size || this.progressCacheSaveTimeout) {return;}
+
+    this.progressCacheSaveTimeout = setTimeout(() => {
+      this.progressCacheSaveTimeout = null;
+      const changedTemplates = Array.from(this.progressCacheDirtyTemplates);
+      this.progressCacheDirtyTemplates.clear();
+
+      for (const template of changedTemplates) {
+        const storageKey = template.storageKey;
+        const storedTemplate = this.templatesJSON?.templates?.[storageKey];
+        if (!storedTemplate) {continue;}
+
+        const correct = {};
+        for (const [tileCoords, colorCounts] of Object.entries(template.pixelCount?.correct || {})) {
+          if (!(colorCounts instanceof Map)) {continue;}
+          correct[tileCoords] = Object.fromEntries(colorCounts);
+        }
+
+        this.progressCache.templates[storageKey] = {
+          fingerprint: template.progressCacheFingerprint || this.#createProgressFingerprint(storedTemplate),
+          updatedAt: Date.now(),
+          correct: correct
+        };
+      }
+
+      void GM.setValue(this.progressCacheStorageKey, JSON.stringify(this.progressCache));
+    }, 500);
+  }
+
+  /** Drops stale progress state for a removed template.
+   * @param {string} templateKey - Deleted template storage key
+   * @since 0.92.45
+   */
+  #removeProgressCache(templateKey) {
+    if (!this.progressCache.templates?.[templateKey]) {return;}
+    delete this.progressCache.templates[templateKey];
+    void GM.setValue(this.progressCacheStorageKey, JSON.stringify(this.progressCache));
   }
 
   /** Checks whether the current highlight config can be represented by raw template images.
@@ -565,6 +697,7 @@ export default class TemplateManager {
     };
 
     template.storageKey = templateKey;
+    template.progressCacheFingerprint = this.#createProgressFingerprint(this.templatesJSON.templates[templateKey]);
     this.templatesArray = []; // Remove this to enable multiple templates (2/2)
     this.templatesArray.push(template); // Pushes the Template object instance to the Template Array
     this.loadedTemplateKeys = new Set([templateKey]);
@@ -731,6 +864,7 @@ export default class TemplateManager {
 
     const deletedTemplateName = template.name || templateKey;
     delete templates[templateKey];
+    this.#removeProgressCache(templateKey);
     this.#normalizeActiveTemplate(templates);
 
     await this.#storeTemplates();
@@ -1266,6 +1400,84 @@ export default class TemplateManager {
     return false;
   }
 
+  /** Records newly checked counts and pending samples for one template tile.
+   * @param {Object} templateChunk - Indexed template chunk
+   * @param {string} tileCoords - Padded Wplace tile coordinates
+   * @param {Map<number, number>} correctPixels - Correct counts by palette ID
+   * @param {Map<number, Object>} pendingPixels - Remaining pixel samples by palette ID
+   * @since 0.92.45
+   */
+  #recordTemplateTileProgress(templateChunk, tileCoords, correctPixels, pendingPixels) {
+    const instance = templateChunk.instance;
+    instance.pixelCount.correct ??= {};
+    instance.pixelCount.correct[tileCoords] = correctPixels;
+    instance.pixelCount.pending ??= {};
+
+    const [tileX, tileY] = tileCoords.split(',').map(Number);
+    instance.pixelCount.pending[tileCoords] = Array.from(pendingPixels.values()).map(pixel => ({
+      tileX: tileX,
+      tileY: tileY,
+      pixelX: pixel.pixelX,
+      pixelY: pixel.pixelY,
+      colorID: pixel.colorID,
+      count: pixel.count,
+      samples: pixel.samples
+    }));
+  }
+
+  /** Scans progress without composing an overlay image.
+   * Used by the fast overlay and hidden template chunks, whose map tiles still need validation.
+   * @param {Blob} tileBlob - The current Wplace tile
+   * @param {string} tileCoords - Padded Wplace tile coordinates
+   * @param {Object[]} templateChunks - Chunks to inspect
+   * @since 0.92.45
+   */
+  async #scanTemplateProgressOnly(tileBlob, tileCoords, templateChunks) {
+    if (!templateChunks.length) {return;}
+
+    const drawSize = this.tileSize * this.drawMult;
+    const tileBitmap = await createImageBitmap(tileBlob);
+    const canvas = new OffscreenCanvas(drawSize, drawSize);
+    const context = canvas.getContext('2d');
+    context.imageSmoothingEnabled = false;
+    context.drawImage(tileBitmap, 0, 0, drawSize, drawSize);
+    const tile32 = new Uint32Array(context.getImageData(0, 0, drawSize, drawSize).data.buffer);
+    const changedTemplates = new Set();
+
+    for (const templateChunk of templateChunks) {
+      let template32 = templateChunk.chunked32?.slice();
+      if (!template32) {
+        const templateCanvas = new OffscreenCanvas(templateChunk.bitmap.width, templateChunk.bitmap.height);
+        const templateContext = templateCanvas.getContext('2d');
+        templateContext.drawImage(templateChunk.bitmap, 0, 0);
+        template32 = new Uint32Array(
+          templateContext.getImageData(0, 0, templateChunk.bitmap.width, templateChunk.bitmap.height).data.buffer
+        );
+      }
+
+      const {
+        correctPixels: pixelsCorrect,
+        pendingPixels: pixelsPending
+      } = this.#calculateCorrectPixelsOnTile_And_FilterTile({
+        tile: tile32,
+        template: template32,
+        templateInfo: [
+          Number(templateChunk.pixelCoords[0]) * this.drawMult,
+          Number(templateChunk.pixelCoords[1]) * this.drawMult,
+          templateChunk.bitmap.width,
+          templateChunk.bitmap.height
+        ],
+        highlightPattern: [[2, 0, 0]],
+        highlightDisabled: true
+      });
+
+      this.#recordTemplateTileProgress(templateChunk, tileCoords, pixelsCorrect, pixelsPending);
+      changedTemplates.add(templateChunk.instance);
+    }
+
+    this.#queueProgressCacheSave(Array.from(changedTemplates));
+  }
+
   /** Draws all templates on the specified tile.
    * This method handles the rendering of template overlays on individual tiles.
    * @param {File} tileBlob - The pixels that are placed on a tile
@@ -1300,6 +1512,7 @@ export default class TemplateManager {
     timings['indexMs'] = Number((performance.now() - indexStart).toFixed(2));
 
     if (this.fastTemplateOverlayActive && this.#canUseFastTemplateOverlay()) {
+      await this.#scanTemplateProgressOnly(tileBlob, tileCoords, templatesForTile);
       this.windowMain.handleDisplayStatus(`Displaying templates with fast overlay.\nVersion: ${this.version}`);
       this.#debugRenderPerf('tile-overlay-pass', {
         'tileCoords': tileCoords,
@@ -1315,6 +1528,11 @@ export default class TemplateManager {
     const templatesToDraw = templatesForTile.filter(templateChunk => this.#templateChunkHasVisibleColor(templateChunk));
     timings['visibleFilterMs'] = Number((performance.now() - visibleFilterStart).toFixed(2));
     const templateCount = templatesToDraw.length; // Number of templates to draw on this tile
+    const templatesHiddenFromDrawing = templatesForTile.filter(templateChunk => !templatesToDraw.includes(templateChunk));
+
+    if (templatesHiddenFromDrawing.length) {
+      await this.#scanTemplateProgressOnly(tileBlob, tileCoords, templatesHiddenFromDrawing);
+    }
 
     if (templateCount > 0) {
       
@@ -1467,34 +1685,10 @@ export default class TemplateManager {
         mutationDrawMs += performance.now() - mutationDrawStart;
       }
 
-      // If "correct" does not exist as a key of the object "pixelCount", we create it
-      if (typeof template.instance.pixelCount['correct'] == 'undefined') {
-        template.instance.pixelCount['correct'] = {};
-      }
-
-      // Adds the correct pixel Map to the template instance
-      template.instance.pixelCount['correct'][tileCoords] = pixelsCorrect;
-
-      // If "pending" does not exist as a key of the object "pixelCount", we create it
-      if (typeof template.instance.pixelCount['pending'] == 'undefined') {
-        template.instance.pixelCount['pending'] = {};
-      }
-
-      const [pendingTileX, pendingTileY] = tileCoords.split(',').map(Number);
-
-      // Adds compact pending pixel samples to the template instance.
-      // Each entry represents many pending pixels of the same color in this tile.
-      template.instance.pixelCount['pending'][tileCoords] = Array.from(pixelsPending.values()).map(pixel => ({
-        tileX: pendingTileX,
-        tileY: pendingTileY,
-        pixelX: pixel.pixelX,
-        pixelY: pixel.pixelY,
-        colorID: pixel.colorID,
-        count: pixel.count,
-        samples: pixel.samples
-      }));
+      this.#recordTemplateTileProgress(template, tileCoords, pixelsCorrect, pixelsPending);
     }
 
+    this.#queueProgressCacheSave(Array.from(new Set(templatesToDraw.map(template => template.instance))));
     timings['scanMs'] = Number(scanMs.toFixed(2));
     timings['mutationDrawMs'] = Number(mutationDrawMs.toFixed(2));
 
@@ -1646,6 +1840,9 @@ export default class TemplateManager {
         templatesArray: this.templatesArray,
         loadedTemplateKeys: this.loadedTemplateKeys
       });
+      for (const template of this.templatesArray) {
+        this.#restoreProgressCache(template);
+      }
       this.#invalidateTemplateRenderCaches();
       if (normalizedActiveTemplate) {
         await this.#storeTemplates();

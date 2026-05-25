@@ -36,8 +36,8 @@ export default class ApiManager {
     this.placementGuardLastBlockAt = 0; // Throttles status noise when wrong-color clicks are blocked
     this.placementGuardSpaceHeld = false; // Wplace can place continuously while Space is held
     this.placementGuardSpacePlacementAllowed = false; // Whether the current Space hold is still on a safe path
-    this.placementGuardSpaceCancelledUntilKeyup = false; // Requires releasing Space after leaving the safe path
-    this.placementGuardSyntheticSpaceReleaseUntil = 0; // Lets synthetic keyup reach Wplace without changing our state
+    this.placementGuardSpacePaused = false; // Pauses continuous placement until the held pointer returns to a safe path
+    this.placementGuardSyntheticSpaceEventUntil = 0; // Lets synthetic Space transitions reach Wplace without changing our state
     this.placementGuardDragState = null; // Tracks whether a plain pointer gesture became map panning
     this.placementGuardSuppressClickUntil = 0; // Ignores the synthetic click fired after a map pan
     this.placementGuardLastPointerPoint = null; // Last pointer location for keyboard-triggered placement
@@ -160,7 +160,7 @@ export default class ApiManager {
         events: this.placementGuardEvents,
         spaceHeld: this.placementGuardSpaceHeld,
         spacePlacementAllowed: this.placementGuardSpacePlacementAllowed,
-        spaceCancelledUntilKeyup: this.placementGuardSpaceCancelledUntilKeyup,
+        spacePaused: this.placementGuardSpacePaused,
         tracker: document.documentElement?.dataset?.bmTilePixelAtPointer || '',
         flags: this.templateManager?.settingsManager?.userSettings?.flags ?? []
       });
@@ -174,24 +174,24 @@ export default class ApiManager {
    */
   handlePlacementGuardKeyEvent(event, isDown) {
     if (event.code != 'Space') {return;}
-    if (!event.isTrusted && (Date.now() < this.placementGuardSyntheticSpaceReleaseUntil)) {return;}
+    if (!event.isTrusted && (Date.now() < this.placementGuardSyntheticSpaceEventUntil)) {return;}
 
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) {return;}
 
     if (!isDown) {
-      const changed = this.placementGuardSpaceHeld || this.placementGuardSpacePlacementAllowed || this.placementGuardSpaceCancelledUntilKeyup;
+      const changed = this.placementGuardSpaceHeld || this.placementGuardSpacePlacementAllowed || this.placementGuardSpacePaused;
       this.placementGuardSpaceHeld = false;
       this.placementGuardSpacePlacementAllowed = false;
-      this.placementGuardSpaceCancelledUntilKeyup = false;
+      this.placementGuardSpacePaused = false;
       if (changed) {
         this.debugLog('guard', 'space-up', {}, 500);
       }
       return;
     }
 
-    if (this.placementGuardSpaceCancelledUntilKeyup) {
-      this.debugLog('guard', 'block', {type: event.type, reason: 'space-session-cancelled-until-keyup'}, 500);
+    if (this.placementGuardSpacePaused) {
+      this.debugLog('guard', 'block', {type: event.type, reason: 'space-session-paused-until-safe-move'}, 500);
       this.blockPlacementEvent(event);
       return;
     }
@@ -206,6 +206,7 @@ export default class ApiManager {
     const changed = this.placementGuardSpaceHeld != isDown;
     this.placementGuardSpaceHeld = true;
     this.placementGuardSpacePlacementAllowed = true;
+    this.placementGuardSpacePaused = false;
     if (changed) {
       this.debugLog('guard', 'space-down', {}, 500);
     }
@@ -284,11 +285,7 @@ export default class ApiManager {
       this.debugLog('guard', 'skip', {...baseDebug, reason: 'not-primary-placement-gesture'}, 1000);
       return false;
     }
-    if (this.isMoveEvent(event) && this.placementGuardSpaceHeld && !this.placementGuardSpacePlacementAllowed) {
-      this.debugLog('guard', 'block', {...baseDebug, reason: 'space-session-cancelled'}, 500);
-      this.blockPlacementEvent(event);
-      return true;
-    }
+    const isPausedSpaceMove = this.isMoveEvent(event) && this.placementGuardSpaceHeld && !this.placementGuardSpacePlacementAllowed;
     if (this.isPlacementEndEvent(event) && dragState?.dragged && !dragState.spaceAtStart && !this.placementGuardSpaceHeld) {
       this.placementGuardSuppressClickUntil = Date.now() + 400;
       this.placementGuardDragState = null;
@@ -297,6 +294,11 @@ export default class ApiManager {
     }
 
     if (!target || !this.isWplaceMapClickTarget(target)) {
+      if (isPausedSpaceMove) {
+        this.debugLog('guard', 'block', {...baseDebug, reason: 'space-paused-not-map-target'}, 500);
+        this.blockPlacementEvent(event);
+        return true;
+      }
       this.debugLog('guard', 'skip', {...baseDebug, reason: 'not-map-target'}, 1000);
       return false;
     }
@@ -304,18 +306,33 @@ export default class ApiManager {
     const visibleColorIDs = this.templateManager?.getVisibleTemplateColorIDs?.({paintableOnly: true}) ?? [];
     const activeColorID = (visibleColorIDs.length == 1) ? visibleColorIDs[0] : null;
     if (activeColorID == null) {
+      if (isPausedSpaceMove) {
+        this.debugLog('guard', 'block', {...baseDebug, reason: 'space-paused-not-exactly-one-visible-color', visibleColorIDs: visibleColorIDs}, 500);
+        this.blockPlacementEvent(event);
+        return true;
+      }
       this.debugLog('guard', 'skip', {...baseDebug, reason: 'not-exactly-one-visible-color', visibleColorIDs: visibleColorIDs}, 1000);
       return false;
     }
 
     const point = this.getEventClientPoint(event);
     if (!point) {
+      if (isPausedSpaceMove) {
+        this.debugLog('guard', 'block', {...baseDebug, reason: 'space-paused-no-event-point', activeColorID: activeColorID}, 500);
+        this.blockPlacementEvent(event);
+        return true;
+      }
       this.debugLog('guard', 'skip', {...baseDebug, reason: 'no-event-point', activeColorID: activeColorID}, 1000);
       return false;
     }
 
     const coords = getTrackedWplaceTilePixel(point.clientX, point.clientY);
     if (!coords) {
+      if (isPausedSpaceMove) {
+        this.debugLog('guard', 'block', {...baseDebug, reason: 'space-paused-no-tracked-coords', activeColorID: activeColorID, point: point}, 500);
+        this.blockPlacementEvent(event);
+        return true;
+      }
       this.debugLog('guard', 'skip', {
         ...baseDebug,
         reason: 'no-tracked-coords',
@@ -326,6 +343,11 @@ export default class ApiManager {
       return false;
     }
     if (this.isPlacementGuardBelowPixelZoom(coords)) {
+      if (isPausedSpaceMove) {
+        this.debugLog('guard', 'block', {...baseDebug, reason: 'space-paused-below-pixel-zoom', coords: coords}, 500);
+        this.blockPlacementEvent(event);
+        return true;
+      }
       this.debugLog('guard', 'skip', {...baseDebug, reason: 'below-pixel-zoom', coords: coords}, 1000);
       return false;
     }
@@ -346,7 +368,7 @@ export default class ApiManager {
         templateColorID: templateColor?.colorID ?? null
       }, 500);
       if (this.isMoveEvent(event) && this.placementGuardSpaceHeld) {
-        this.cancelPlacementGuardSpaceSession('moved-over-non-matching-template-pixel', {
+        this.pausePlacementGuardSpaceSession('moved-over-non-matching-template-pixel', {
           activeColorID: activeColorID,
           coords: coords,
           templateColorID: templateColor?.colorID ?? null
@@ -368,7 +390,7 @@ export default class ApiManager {
         templateColorID: templateColor.colorID
       }, 500);
       if (this.isMoveEvent(event) && this.placementGuardSpaceHeld) {
-        this.cancelPlacementGuardSpaceSession('moved-with-selected-color-mismatch', {
+        this.pausePlacementGuardSpaceSession('moved-with-selected-color-mismatch', {
           activeColorID: activeColorID,
           selectedColorID: selectedColorID,
           coords: coords,
@@ -377,6 +399,14 @@ export default class ApiManager {
       }
       this.blockPlacementEvent(event);
       return true;
+    }
+
+    if (isPausedSpaceMove) {
+      this.resumePlacementGuardSpaceSession('returned-to-matching-template-pixel', {
+        activeColorID: activeColorID,
+        coords: coords,
+        templateColorID: templateColor.colorID
+      });
     }
 
     this.debugLog('guard', 'allow', {
@@ -389,25 +419,25 @@ export default class ApiManager {
     return false;
   }
 
-  /** Cancels continuous Space placement until the user physically releases Space.
+  /** Pauses continuous Space placement while the held pointer is outside the safe path.
    * @param {string} reason - Cancellation reason
    * @param {Object} [details={}] - Debug details
-   * @since 0.92.44
+   * @since 0.92.46
    */
-  cancelPlacementGuardSpaceSession(reason, details = {}) {
-    if (this.placementGuardSpaceCancelledUntilKeyup) {return;}
+  pausePlacementGuardSpaceSession(reason, details = {}) {
+    if (this.placementGuardSpacePaused) {return;}
     this.placementGuardSpacePlacementAllowed = false;
-    this.placementGuardSpaceCancelledUntilKeyup = true;
-    this.debugLog('guard', 'space-cancelled', {reason: reason, ...details}, 500);
+    this.placementGuardSpacePaused = true;
+    this.debugLog('guard', 'space-paused', {reason: reason, ...details}, 500);
     this.dispatchPlacementGuardSyntheticSpaceRelease(reason);
   }
 
   /** Sends a best-effort Space keyup so Wplace leaves continuous placement mode.
    * @param {string} reason - Cancellation reason
-   * @since 0.92.44
+   * @since 0.92.46
    */
   dispatchPlacementGuardSyntheticSpaceRelease(reason) {
-    this.placementGuardSyntheticSpaceReleaseUntil = Date.now() + 100;
+    this.placementGuardSyntheticSpaceEventUntil = Date.now() + 100;
     const targets = [document.activeElement, document, window].filter(Boolean);
 
     for (const target of targets) {
@@ -423,6 +453,40 @@ export default class ApiManager {
     }
 
     this.debugLog('guard', 'space-release-sent', {reason: reason}, 500);
+  }
+
+  /** Resumes continuous Space placement after returning to a confirmed safe pixel.
+   * @param {string} reason - Resume reason
+   * @param {Object} [details={}] - Debug details
+   * @since 0.92.46
+   */
+  resumePlacementGuardSpaceSession(reason, details = {}) {
+    if (!this.placementGuardSpaceHeld || this.placementGuardSpacePlacementAllowed) {return;}
+    this.placementGuardSpacePlacementAllowed = true;
+    this.placementGuardSpacePaused = false;
+    this.debugLog('guard', 'space-resumed', {reason: reason, ...details}, 500);
+    this.dispatchPlacementGuardSyntheticSpacePress(reason);
+  }
+
+  /** Sends a best-effort Space keydown so Wplace resumes continuous placement.
+   * @param {string} reason - Resume reason
+   * @since 0.92.46
+   */
+  dispatchPlacementGuardSyntheticSpacePress(reason) {
+    this.placementGuardSyntheticSpaceEventUntil = Date.now() + 100;
+    const target = document.activeElement || document;
+
+    try {
+      const event = new KeyboardEvent('keydown', {
+        key: ' ',
+        code: 'Space',
+        bubbles: true,
+        cancelable: true
+      });
+      target.dispatchEvent(event);
+    } catch (error) {}
+
+    this.debugLog('guard', 'space-press-sent', {reason: reason}, 500);
   }
 
   /** Blocks Space-triggered placement before Wplace paints a wrong pixel.

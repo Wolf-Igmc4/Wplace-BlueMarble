@@ -28,6 +28,7 @@ export default class WindowMain extends Overlay {
     this.windowParent = document.body; // The parent of the window DOM tree
     this.upstreamPackageURL = 'https://raw.githubusercontent.com/SwingTheVine/Wplace-BlueMarble/main/package.json';
     this.upstreamRepositoryURL = 'https://github.com/SwingTheVine/Wplace-BlueMarble';
+    this.upstreamBaseVersion = '0.92.0';
   }
 
   /** Creates the main Blue Marble window.
@@ -240,7 +241,7 @@ export default class WindowMain extends Overlay {
     filterButton.disabled = !hasTemplates;
   }
 
-  /** Checks the original Blue Marble repository and shows an update button when it is newer than this fork.
+  /** Checks the original Blue Marble repository and shows an update button when it is newer than the fork base.
    * @since 0.92.4
    */
   #checkUpstreamUpdate() {
@@ -260,10 +261,10 @@ export default class WindowMain extends Overlay {
           return;
         }
 
-        if (!upstreamVersion || this.#compareVersions(upstreamVersion, this.version) <= 0) {return;}
+        if (!upstreamVersion || this.#compareVersions(upstreamVersion, this.upstreamBaseVersion) <= 0) {return;}
 
         updateButton.style.display = '';
-        updateButton.title = `Original Blue Marble ${upstreamVersion} is available. Your fork is ${this.version}.`;
+        updateButton.title = `Original Blue Marble ${upstreamVersion} is available. This fork is based on ${this.upstreamBaseVersion}. Your fork is ${this.version}.`;
         updateButton.ariaLabel = updateButton.title;
       },
       onerror: () => {},

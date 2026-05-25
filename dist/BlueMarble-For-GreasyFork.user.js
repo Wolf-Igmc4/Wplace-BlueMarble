@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.44
+// @version         0.92.46
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.44
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.46
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -4873,6 +4873,7 @@
       this.windowParent = document.body;
       this.upstreamPackageURL = "https://raw.githubusercontent.com/SwingTheVine/Wplace-BlueMarble/main/package.json";
       this.upstreamRepositoryURL = "https://github.com/SwingTheVine/Wplace-BlueMarble";
+      this.upstreamBaseVersion = "0.92.0";
     }
     /** Creates the main Blue Marble window.
      * Parent/child relationships in the DOM structure below are indicated by indentation.
@@ -5037,7 +5038,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
     }
   };
   _WindowMain_instances = new WeakSet();
-  /** Checks the original Blue Marble repository and shows an update button when it is newer than this fork.
+  /** Checks the original Blue Marble repository and shows an update button when it is newer than the fork base.
    * @since 0.92.4
    */
   checkUpstreamUpdate_fn = function() {
@@ -5058,11 +5059,11 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
         } catch {
           return;
         }
-        if (!upstreamVersion || __privateMethod(this, _WindowMain_instances, compareVersions_fn).call(this, upstreamVersion, this.version) <= 0) {
+        if (!upstreamVersion || __privateMethod(this, _WindowMain_instances, compareVersions_fn).call(this, upstreamVersion, this.upstreamBaseVersion) <= 0) {
           return;
         }
         updateButton.style.display = "";
-        updateButton.title = `Original Blue Marble ${upstreamVersion} is available. Your fork is ${this.version}.`;
+        updateButton.title = `Original Blue Marble ${upstreamVersion} is available. This fork is based on ${this.upstreamBaseVersion}. Your fork is ${this.version}.`;
         updateButton.ariaLabel = updateButton.title;
       },
       onerror: () => {
@@ -5138,7 +5139,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
   };
 
   // src/templateManager.js
-  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, isHighlightDisabled_fn, tilePixelCornerToLatLng_fn, normalizeTemplateChunkURL_fn, canUseFastTemplateOverlay_fn, buildFastTemplateOverlayPayload_fn, syncFastTemplateOverlay_fn, loadTemplate_fn, storeTemplates_fn, getNextTemplateSortID_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, invalidateTemplateRenderCaches_fn, debugRenderPerf_fn, convertCanvasToTileBlob_fn, clearTileRenderCache_fn, setTileRenderCache_fn, getTileRenderCache_fn, getColorFilterKey_fn, createTileRenderCacheKey_fn, getSortedTemplates_fn, getTemplateChunkColorIDs_fn, getTemplateTileIndex_fn, ensureTemplateChunkColorIDs_fn, getTemplateChunkColorAtPixel_fn, templateChunkHasVisibleColor_fn, templateChunkNeedsMutation_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
+  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, loadProgressCache_fn, createProgressFingerprint_fn, restoreProgressCache_fn, queueProgressCacheSave_fn, removeProgressCache_fn, isHighlightDisabled_fn, tilePixelCornerToLatLng_fn, normalizeTemplateChunkURL_fn, canUseFastTemplateOverlay_fn, buildFastTemplateOverlayPayload_fn, syncFastTemplateOverlay_fn, loadTemplate_fn, storeTemplates_fn, getNextTemplateSortID_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, invalidateTemplateRenderCaches_fn, debugRenderPerf_fn, convertCanvasToTileBlob_fn, clearTileRenderCache_fn, setTileRenderCache_fn, getTileRenderCache_fn, getColorFilterKey_fn, createTileRenderCacheKey_fn, getSortedTemplates_fn, getTemplateChunkColorIDs_fn, getTemplateTileIndex_fn, ensureTemplateChunkColorIDs_fn, getTemplateChunkColorAtPixel_fn, templateChunkHasVisibleColor_fn, templateChunkNeedsMutation_fn, recordTemplateTileProgress_fn, scanTemplateProgressOnly_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
   var TemplateManager = class {
     /** The constructor for the {@link TemplateManager} class.
      * @param {string} name - The name of the userscript
@@ -5179,6 +5180,18 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       this.fastTemplateOverlayActive = false;
       this.fastTemplateOverlaySyncPromise = null;
       this.fastTemplateOverlayStateKey = "";
+      this.progressCacheStorageKey = "bmTemplateProgressCache";
+      this.progressCacheVersion = 1;
+      this.progressCache = __privateMethod(this, _TemplateManager_instances, loadProgressCache_fn).call(this);
+      this.progressCacheDirtyTemplates = /* @__PURE__ */ new Set();
+      this.progressCacheSaveTimeout = null;
+      this.progressRefreshIntervalMS = 3e4;
+      this.progressRefreshInterval = setInterval(() => {
+        if (!this.templatesArray.length || document.visibilityState == "hidden") {
+          return;
+        }
+        void __privateMethod(this, _TemplateManager_instances, refreshVisibleTiles_fn).call(this);
+      }, this.progressRefreshIntervalMS);
     }
     /** Updates the stored instance of the main window.
      * @param {WindowMain} windowMain - The main window instance
@@ -5411,6 +5424,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
         // Stores the chunked tile buffers
       };
       template.storageKey = templateKey;
+      template.progressCacheFingerprint = __privateMethod(this, _TemplateManager_instances, createProgressFingerprint_fn).call(this, this.templatesJSON.templates[templateKey]);
       this.templatesArray = [];
       this.templatesArray.push(template);
       this.loadedTemplateKeys = /* @__PURE__ */ new Set([templateKey]);
@@ -5464,6 +5478,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       }
       const deletedTemplateName = template.name || templateKey;
       delete templates[templateKey];
+      __privateMethod(this, _TemplateManager_instances, removeProgressCache_fn).call(this, templateKey);
       __privateMethod(this, _TemplateManager_instances, normalizeActiveTemplate_fn).call(this, templates);
       await __privateMethod(this, _TemplateManager_instances, storeTemplates_fn).call(this);
       await this.importJSON(this.templatesJSON);
@@ -5667,6 +5682,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       const templatesForTile = __privateMethod(this, _TemplateManager_instances, getTemplateTileIndex_fn).call(this).get(tileCoords) ?? [];
       timings["indexMs"] = Number((performance.now() - indexStart).toFixed(2));
       if (this.fastTemplateOverlayActive && __privateMethod(this, _TemplateManager_instances, canUseFastTemplateOverlay_fn).call(this)) {
+        await __privateMethod(this, _TemplateManager_instances, scanTemplateProgressOnly_fn).call(this, tileBlob, tileCoords, templatesForTile);
         this.windowMain.handleDisplayStatus(`Displaying templates with fast overlay.
 Version: ${this.version}`);
         __privateMethod(this, _TemplateManager_instances, debugRenderPerf_fn).call(this, "tile-overlay-pass", {
@@ -5682,6 +5698,10 @@ Version: ${this.version}`);
       const templatesToDraw = templatesForTile.filter((templateChunk) => __privateMethod(this, _TemplateManager_instances, templateChunkHasVisibleColor_fn).call(this, templateChunk));
       timings["visibleFilterMs"] = Number((performance.now() - visibleFilterStart).toFixed(2));
       const templateCount = templatesToDraw.length;
+      const templatesHiddenFromDrawing = templatesForTile.filter((templateChunk) => !templatesToDraw.includes(templateChunk));
+      if (templatesHiddenFromDrawing.length) {
+        await __privateMethod(this, _TemplateManager_instances, scanTemplateProgressOnly_fn).call(this, tileBlob, tileCoords, templatesHiddenFromDrawing);
+      }
       if (templateCount > 0) {
         const templatesDisplayed = new Set(templatesToDraw.map((template) => template.instance));
         const totalPixels = Array.from(templatesDisplayed).reduce((sum, template) => sum + (template.pixelCount.total || 0), 0);
@@ -5778,24 +5798,9 @@ Version: ${this.version}`);
           context.drawImage(await createImageBitmap(new ImageData(new Uint8ClampedArray(templateAfterFilter.buffer), template.bitmap.width, template.bitmap.height)), coordXtoDrawAt, coordYtoDrawAt);
           mutationDrawMs += performance.now() - mutationDrawStart;
         }
-        if (typeof template.instance.pixelCount["correct"] == "undefined") {
-          template.instance.pixelCount["correct"] = {};
-        }
-        template.instance.pixelCount["correct"][tileCoords] = pixelsCorrect;
-        if (typeof template.instance.pixelCount["pending"] == "undefined") {
-          template.instance.pixelCount["pending"] = {};
-        }
-        const [pendingTileX, pendingTileY] = tileCoords.split(",").map(Number);
-        template.instance.pixelCount["pending"][tileCoords] = Array.from(pixelsPending.values()).map((pixel) => ({
-          tileX: pendingTileX,
-          tileY: pendingTileY,
-          pixelX: pixel.pixelX,
-          pixelY: pixel.pixelY,
-          colorID: pixel.colorID,
-          count: pixel.count,
-          samples: pixel.samples
-        }));
+        __privateMethod(this, _TemplateManager_instances, recordTemplateTileProgress_fn).call(this, template, tileCoords, pixelsCorrect, pixelsPending);
       }
+      __privateMethod(this, _TemplateManager_instances, queueProgressCacheSave_fn).call(this, Array.from(new Set(templatesToDraw.map((template) => template.instance))));
       timings["scanMs"] = Number(scanMs.toFixed(2));
       timings["mutationDrawMs"] = Number(mutationDrawMs.toFixed(2));
       const blobStart = performance.now();
@@ -5909,6 +5914,126 @@ Version: ${this.version}`);
       return;
     }
     this.settingsManager.userSettings.filter = Array.from(this.shouldFilterColor.keys()).map((colorID) => Number(colorID)).filter((colorID) => Number.isFinite(colorID)).sort((a, b) => a - b);
+  };
+  /** Loads the saved correct-pixel cache independently from template storage.
+   * @returns {{version: number, templates: Object}} Persisted progress payload
+   * @since 0.92.45
+   */
+  loadProgressCache_fn = function() {
+    const emptyCache = { version: this.progressCacheVersion, templates: {} };
+    try {
+      const storedCache = JSON.parse(GM_getValue(this.progressCacheStorageKey, "{}"));
+      if (storedCache?.version !== this.progressCacheVersion || !storedCache?.templates || typeof storedCache.templates != "object") {
+        return emptyCache;
+      }
+      return storedCache;
+    } catch (error) {
+      consoleWarn(`Could not load cached template progress: ${error?.message || error}`);
+      return emptyCache;
+    }
+  };
+  /** Creates a content fingerprint so cached counts are never applied to a replaced template.
+   * @param {Object} storedTemplate - Template object from userscript storage
+   * @returns {string} Stable compact fingerprint
+   * @since 0.92.45
+   */
+  createProgressFingerprint_fn = function(storedTemplate) {
+    let hash = 2166136261;
+    const feedHash = (value) => {
+      const stringValue = String(value ?? "");
+      for (let index = 0; index < stringValue.length; index++) {
+        hash ^= stringValue.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+      }
+    };
+    feedHash(JSON.stringify(storedTemplate?.pixels || {}));
+    for (const [tileKey, encodedTile] of Object.entries(storedTemplate?.tiles || {}).sort(([left], [right]) => left.localeCompare(right))) {
+      feedHash(tileKey);
+      feedHash(encodedTile);
+    }
+    return `${Number(storedTemplate?.pixels?.total) || 0}:${Object.keys(storedTemplate?.tiles || {}).length}:${(hash >>> 0).toString(16)}`;
+  };
+  /** Restores cached tile counts into a freshly loaded active template.
+   * @param {Template} template - Hydrated active template instance
+   * @since 0.92.45
+   */
+  restoreProgressCache_fn = function(template) {
+    const storageKey = template?.storageKey;
+    const storedTemplate = this.templatesJSON?.templates?.[storageKey];
+    if (!storageKey || !storedTemplate) {
+      return;
+    }
+    const fingerprint = __privateMethod(this, _TemplateManager_instances, createProgressFingerprint_fn).call(this, storedTemplate);
+    template.progressCacheFingerprint = fingerprint;
+    const cachedTemplate = this.progressCache.templates?.[storageKey];
+    if (!cachedTemplate || cachedTemplate.fingerprint != fingerprint || !cachedTemplate.correct) {
+      return;
+    }
+    const validTileCoords = new Set(
+      Object.keys(template.chunked || {}).map((tileKey) => tileKey.split(",").slice(0, 2).join(","))
+    );
+    const correct = {};
+    for (const [tileCoords, colorCounts] of Object.entries(cachedTemplate.correct)) {
+      if (!validTileCoords.has(tileCoords) || !colorCounts || typeof colorCounts != "object") {
+        continue;
+      }
+      correct[tileCoords] = new Map(
+        Object.entries(colorCounts).map(([colorID, count]) => [Number(colorID), Number(count)]).filter(([colorID, count]) => Number.isFinite(colorID) && Number.isFinite(count) && count >= 0)
+      );
+    }
+    if (Object.keys(correct).length) {
+      template.pixelCount.correct = correct;
+    }
+  };
+  /** Queues persistence for templates whose tile counts changed.
+   * @param {Template[]} templates - Changed template instances
+   * @since 0.92.45
+   */
+  queueProgressCacheSave_fn = function(templates) {
+    for (const template of templates) {
+      if (template?.storageKey) {
+        this.progressCacheDirtyTemplates.add(template);
+      }
+    }
+    if (!this.progressCacheDirtyTemplates.size || this.progressCacheSaveTimeout) {
+      return;
+    }
+    this.progressCacheSaveTimeout = setTimeout(() => {
+      this.progressCacheSaveTimeout = null;
+      const changedTemplates = Array.from(this.progressCacheDirtyTemplates);
+      this.progressCacheDirtyTemplates.clear();
+      for (const template of changedTemplates) {
+        const storageKey = template.storageKey;
+        const storedTemplate = this.templatesJSON?.templates?.[storageKey];
+        if (!storedTemplate) {
+          continue;
+        }
+        const correct = {};
+        for (const [tileCoords, colorCounts] of Object.entries(template.pixelCount?.correct || {})) {
+          if (!(colorCounts instanceof Map)) {
+            continue;
+          }
+          correct[tileCoords] = Object.fromEntries(colorCounts);
+        }
+        this.progressCache.templates[storageKey] = {
+          fingerprint: template.progressCacheFingerprint || __privateMethod(this, _TemplateManager_instances, createProgressFingerprint_fn).call(this, storedTemplate),
+          updatedAt: Date.now(),
+          correct
+        };
+      }
+      void GM.setValue(this.progressCacheStorageKey, JSON.stringify(this.progressCache));
+    }, 500);
+  };
+  /** Drops stale progress state for a removed template.
+   * @param {string} templateKey - Deleted template storage key
+   * @since 0.92.45
+   */
+  removeProgressCache_fn = function(templateKey) {
+    if (!this.progressCache.templates?.[templateKey]) {
+      return;
+    }
+    delete this.progressCache.templates[templateKey];
+    void GM.setValue(this.progressCacheStorageKey, JSON.stringify(this.progressCache));
   };
   /** Checks whether the current highlight config can be represented by raw template images.
    * @returns {boolean} Whether highlighting is disabled
@@ -6419,6 +6544,72 @@ Version: ${this.version}`);
     }
     return false;
   };
+  /** Records newly checked counts and pending samples for one template tile.
+   * @param {Object} templateChunk - Indexed template chunk
+   * @param {string} tileCoords - Padded Wplace tile coordinates
+   * @param {Map<number, number>} correctPixels - Correct counts by palette ID
+   * @param {Map<number, Object>} pendingPixels - Remaining pixel samples by palette ID
+   * @since 0.92.45
+   */
+  recordTemplateTileProgress_fn = function(templateChunk, tileCoords, correctPixels, pendingPixels) {
+    var _a, _b;
+    const instance = templateChunk.instance;
+    (_a = instance.pixelCount).correct ?? (_a.correct = {});
+    instance.pixelCount.correct[tileCoords] = correctPixels;
+    (_b = instance.pixelCount).pending ?? (_b.pending = {});
+    const [tileX, tileY] = tileCoords.split(",").map(Number);
+    instance.pixelCount.pending[tileCoords] = Array.from(pendingPixels.values()).map((pixel) => ({
+      tileX,
+      tileY,
+      pixelX: pixel.pixelX,
+      pixelY: pixel.pixelY,
+      colorID: pixel.colorID,
+      count: pixel.count,
+      samples: pixel.samples
+    }));
+  };
+  scanTemplateProgressOnly_fn = async function(tileBlob, tileCoords, templateChunks) {
+    if (!templateChunks.length) {
+      return;
+    }
+    const drawSize = this.tileSize * this.drawMult;
+    const tileBitmap = await createImageBitmap(tileBlob);
+    const canvas = new OffscreenCanvas(drawSize, drawSize);
+    const context = canvas.getContext("2d");
+    context.imageSmoothingEnabled = false;
+    context.drawImage(tileBitmap, 0, 0, drawSize, drawSize);
+    const tile32 = new Uint32Array(context.getImageData(0, 0, drawSize, drawSize).data.buffer);
+    const changedTemplates = /* @__PURE__ */ new Set();
+    for (const templateChunk of templateChunks) {
+      let template32 = templateChunk.chunked32?.slice();
+      if (!template32) {
+        const templateCanvas = new OffscreenCanvas(templateChunk.bitmap.width, templateChunk.bitmap.height);
+        const templateContext = templateCanvas.getContext("2d");
+        templateContext.drawImage(templateChunk.bitmap, 0, 0);
+        template32 = new Uint32Array(
+          templateContext.getImageData(0, 0, templateChunk.bitmap.width, templateChunk.bitmap.height).data.buffer
+        );
+      }
+      const {
+        correctPixels: pixelsCorrect,
+        pendingPixels: pixelsPending
+      } = __privateMethod(this, _TemplateManager_instances, calculateCorrectPixelsOnTile_And_FilterTile_fn).call(this, {
+        tile: tile32,
+        template: template32,
+        templateInfo: [
+          Number(templateChunk.pixelCoords[0]) * this.drawMult,
+          Number(templateChunk.pixelCoords[1]) * this.drawMult,
+          templateChunk.bitmap.width,
+          templateChunk.bitmap.height
+        ],
+        highlightPattern: [[2, 0, 0]],
+        highlightDisabled: true
+      });
+      __privateMethod(this, _TemplateManager_instances, recordTemplateTileProgress_fn).call(this, templateChunk, tileCoords, pixelsCorrect, pixelsPending);
+      changedTemplates.add(templateChunk.instance);
+    }
+    __privateMethod(this, _TemplateManager_instances, queueProgressCacheSave_fn).call(this, Array.from(changedTemplates));
+  };
   /** Checks whether a saved template payload belongs to Blue Marble.
    * Forked builds used names such as "BlueMarble X", so normalize the marker
    * instead of requiring one exact string.
@@ -6457,6 +6648,9 @@ Version: ${this.version}`);
         templatesArray: this.templatesArray,
         loadedTemplateKeys: this.loadedTemplateKeys
       });
+      for (const template of this.templatesArray) {
+        __privateMethod(this, _TemplateManager_instances, restoreProgressCache_fn).call(this, template);
+      }
       __privateMethod(this, _TemplateManager_instances, invalidateTemplateRenderCaches_fn).call(this);
       if (normalizedActiveTemplate) {
         await __privateMethod(this, _TemplateManager_instances, storeTemplates_fn).call(this);
@@ -6693,8 +6887,8 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.placementGuardLastBlockAt = 0;
       this.placementGuardSpaceHeld = false;
       this.placementGuardSpacePlacementAllowed = false;
-      this.placementGuardSpaceCancelledUntilKeyup = false;
-      this.placementGuardSyntheticSpaceReleaseUntil = 0;
+      this.placementGuardSpacePaused = false;
+      this.placementGuardSyntheticSpaceEventUntil = 0;
       this.placementGuardDragState = null;
       this.placementGuardSuppressClickUntil = 0;
       this.placementGuardLastPointerPoint = null;
@@ -6818,7 +7012,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           events: this.placementGuardEvents,
           spaceHeld: this.placementGuardSpaceHeld,
           spacePlacementAllowed: this.placementGuardSpacePlacementAllowed,
-          spaceCancelledUntilKeyup: this.placementGuardSpaceCancelledUntilKeyup,
+          spacePaused: this.placementGuardSpacePaused,
           tracker: document.documentElement?.dataset?.bmTilePixelAtPointer || "",
           flags: this.templateManager?.settingsManager?.userSettings?.flags ?? []
         });
@@ -6833,7 +7027,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       if (event.code != "Space") {
         return;
       }
-      if (!event.isTrusted && Date.now() < this.placementGuardSyntheticSpaceReleaseUntil) {
+      if (!event.isTrusted && Date.now() < this.placementGuardSyntheticSpaceEventUntil) {
         return;
       }
       const target = event.target instanceof Element ? event.target : null;
@@ -6841,17 +7035,17 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         return;
       }
       if (!isDown) {
-        const changed2 = this.placementGuardSpaceHeld || this.placementGuardSpacePlacementAllowed || this.placementGuardSpaceCancelledUntilKeyup;
+        const changed2 = this.placementGuardSpaceHeld || this.placementGuardSpacePlacementAllowed || this.placementGuardSpacePaused;
         this.placementGuardSpaceHeld = false;
         this.placementGuardSpacePlacementAllowed = false;
-        this.placementGuardSpaceCancelledUntilKeyup = false;
+        this.placementGuardSpacePaused = false;
         if (changed2) {
           this.debugLog("guard", "space-up", {}, 500);
         }
         return;
       }
-      if (this.placementGuardSpaceCancelledUntilKeyup) {
-        this.debugLog("guard", "block", { type: event.type, reason: "space-session-cancelled-until-keyup" }, 500);
+      if (this.placementGuardSpacePaused) {
+        this.debugLog("guard", "block", { type: event.type, reason: "space-session-paused-until-safe-move" }, 500);
         this.blockPlacementEvent(event);
         return;
       }
@@ -6864,6 +7058,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       const changed = this.placementGuardSpaceHeld != isDown;
       this.placementGuardSpaceHeld = true;
       this.placementGuardSpacePlacementAllowed = true;
+      this.placementGuardSpacePaused = false;
       if (changed) {
         this.debugLog("guard", "space-down", {}, 500);
       }
@@ -6942,11 +7137,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         this.debugLog("guard", "skip", { ...baseDebug, reason: "not-primary-placement-gesture" }, 1e3);
         return false;
       }
-      if (this.isMoveEvent(event) && this.placementGuardSpaceHeld && !this.placementGuardSpacePlacementAllowed) {
-        this.debugLog("guard", "block", { ...baseDebug, reason: "space-session-cancelled" }, 500);
-        this.blockPlacementEvent(event);
-        return true;
-      }
+      const isPausedSpaceMove = this.isMoveEvent(event) && this.placementGuardSpaceHeld && !this.placementGuardSpacePlacementAllowed;
       if (this.isPlacementEndEvent(event) && dragState?.dragged && !dragState.spaceAtStart && !this.placementGuardSpaceHeld) {
         this.placementGuardSuppressClickUntil = Date.now() + 400;
         this.placementGuardDragState = null;
@@ -6954,22 +7145,42 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         return false;
       }
       if (!target || !this.isWplaceMapClickTarget(target)) {
+        if (isPausedSpaceMove) {
+          this.debugLog("guard", "block", { ...baseDebug, reason: "space-paused-not-map-target" }, 500);
+          this.blockPlacementEvent(event);
+          return true;
+        }
         this.debugLog("guard", "skip", { ...baseDebug, reason: "not-map-target" }, 1e3);
         return false;
       }
       const visibleColorIDs = this.templateManager?.getVisibleTemplateColorIDs?.({ paintableOnly: true }) ?? [];
       const activeColorID = visibleColorIDs.length == 1 ? visibleColorIDs[0] : null;
       if (activeColorID == null) {
+        if (isPausedSpaceMove) {
+          this.debugLog("guard", "block", { ...baseDebug, reason: "space-paused-not-exactly-one-visible-color", visibleColorIDs }, 500);
+          this.blockPlacementEvent(event);
+          return true;
+        }
         this.debugLog("guard", "skip", { ...baseDebug, reason: "not-exactly-one-visible-color", visibleColorIDs }, 1e3);
         return false;
       }
       const point = this.getEventClientPoint(event);
       if (!point) {
+        if (isPausedSpaceMove) {
+          this.debugLog("guard", "block", { ...baseDebug, reason: "space-paused-no-event-point", activeColorID }, 500);
+          this.blockPlacementEvent(event);
+          return true;
+        }
         this.debugLog("guard", "skip", { ...baseDebug, reason: "no-event-point", activeColorID }, 1e3);
         return false;
       }
       const coords2 = getTrackedWplaceTilePixel(point.clientX, point.clientY);
       if (!coords2) {
+        if (isPausedSpaceMove) {
+          this.debugLog("guard", "block", { ...baseDebug, reason: "space-paused-no-tracked-coords", activeColorID, point }, 500);
+          this.blockPlacementEvent(event);
+          return true;
+        }
         this.debugLog("guard", "skip", {
           ...baseDebug,
           reason: "no-tracked-coords",
@@ -6980,6 +7191,11 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         return false;
       }
       if (this.isPlacementGuardBelowPixelZoom(coords2)) {
+        if (isPausedSpaceMove) {
+          this.debugLog("guard", "block", { ...baseDebug, reason: "space-paused-below-pixel-zoom", coords: coords2 }, 500);
+          this.blockPlacementEvent(event);
+          return true;
+        }
         this.debugLog("guard", "skip", { ...baseDebug, reason: "below-pixel-zoom", coords: coords2 }, 1e3);
         return false;
       }
@@ -6998,7 +7214,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           templateColorID: templateColor?.colorID ?? null
         }, 500);
         if (this.isMoveEvent(event) && this.placementGuardSpaceHeld) {
-          this.cancelPlacementGuardSpaceSession("moved-over-non-matching-template-pixel", {
+          this.pausePlacementGuardSpaceSession("moved-over-non-matching-template-pixel", {
             activeColorID,
             coords: coords2,
             templateColorID: templateColor?.colorID ?? null
@@ -7019,7 +7235,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           templateColorID: templateColor.colorID
         }, 500);
         if (this.isMoveEvent(event) && this.placementGuardSpaceHeld) {
-          this.cancelPlacementGuardSpaceSession("moved-with-selected-color-mismatch", {
+          this.pausePlacementGuardSpaceSession("moved-with-selected-color-mismatch", {
             activeColorID,
             selectedColorID,
             coords: coords2,
@@ -7028,6 +7244,13 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         }
         this.blockPlacementEvent(event);
         return true;
+      }
+      if (isPausedSpaceMove) {
+        this.resumePlacementGuardSpaceSession("returned-to-matching-template-pixel", {
+          activeColorID,
+          coords: coords2,
+          templateColorID: templateColor.colorID
+        });
       }
       this.debugLog("guard", "allow", {
         ...baseDebug,
@@ -7038,26 +7261,26 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       }, 500);
       return false;
     }
-    /** Cancels continuous Space placement until the user physically releases Space.
+    /** Pauses continuous Space placement while the held pointer is outside the safe path.
      * @param {string} reason - Cancellation reason
      * @param {Object} [details={}] - Debug details
-     * @since 0.92.44
+     * @since 0.92.46
      */
-    cancelPlacementGuardSpaceSession(reason, details = {}) {
-      if (this.placementGuardSpaceCancelledUntilKeyup) {
+    pausePlacementGuardSpaceSession(reason, details = {}) {
+      if (this.placementGuardSpacePaused) {
         return;
       }
       this.placementGuardSpacePlacementAllowed = false;
-      this.placementGuardSpaceCancelledUntilKeyup = true;
-      this.debugLog("guard", "space-cancelled", { reason, ...details }, 500);
+      this.placementGuardSpacePaused = true;
+      this.debugLog("guard", "space-paused", { reason, ...details }, 500);
       this.dispatchPlacementGuardSyntheticSpaceRelease(reason);
     }
     /** Sends a best-effort Space keyup so Wplace leaves continuous placement mode.
      * @param {string} reason - Cancellation reason
-     * @since 0.92.44
+     * @since 0.92.46
      */
     dispatchPlacementGuardSyntheticSpaceRelease(reason) {
-      this.placementGuardSyntheticSpaceReleaseUntil = Date.now() + 100;
+      this.placementGuardSyntheticSpaceEventUntil = Date.now() + 100;
       const targets = [document.activeElement, document, window].filter(Boolean);
       for (const target of targets) {
         try {
@@ -7072,6 +7295,39 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         }
       }
       this.debugLog("guard", "space-release-sent", { reason }, 500);
+    }
+    /** Resumes continuous Space placement after returning to a confirmed safe pixel.
+     * @param {string} reason - Resume reason
+     * @param {Object} [details={}] - Debug details
+     * @since 0.92.46
+     */
+    resumePlacementGuardSpaceSession(reason, details = {}) {
+      if (!this.placementGuardSpaceHeld || this.placementGuardSpacePlacementAllowed) {
+        return;
+      }
+      this.placementGuardSpacePlacementAllowed = true;
+      this.placementGuardSpacePaused = false;
+      this.debugLog("guard", "space-resumed", { reason, ...details }, 500);
+      this.dispatchPlacementGuardSyntheticSpacePress(reason);
+    }
+    /** Sends a best-effort Space keydown so Wplace resumes continuous placement.
+     * @param {string} reason - Resume reason
+     * @since 0.92.46
+     */
+    dispatchPlacementGuardSyntheticSpacePress(reason) {
+      this.placementGuardSyntheticSpaceEventUntil = Date.now() + 100;
+      const target = document.activeElement || document;
+      try {
+        const event = new KeyboardEvent("keydown", {
+          key: " ",
+          code: "Space",
+          bubbles: true,
+          cancelable: true
+        });
+        target.dispatchEvent(event);
+      } catch (error) {
+      }
+      this.debugLog("guard", "space-press-sent", { reason }, 500);
     }
     /** Blocks Space-triggered placement before Wplace paints a wrong pixel.
      * @param {KeyboardEvent} event - Keyboard event

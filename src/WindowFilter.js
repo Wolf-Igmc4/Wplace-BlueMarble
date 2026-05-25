@@ -75,7 +75,7 @@ export default class WindowFilter extends Overlay {
     this.palette = palette;
 
     // Tile quantity information
-    this.tilesLoadedTotal = 0; // Number of tiles that have been loaded in this session
+    this.tilesLoadedTotal = 0; // Number of tiles verified now or restored from the progress cache
     this.tilesTotal = 0; // Number of tiles total, across all templates
 
     // Pixel statistics
@@ -1784,12 +1784,12 @@ export default class WindowFilter extends Overlay {
       // Object that contains the tiles which contain Maps as correct pixels per tile as the value in the key-value pair
       const correctObject = template.pixelCount?.correct ?? {};
 
-      this.tilesLoadedTotal += Object.keys(correctObject).length; // Sums the total loaded tiles per template
+      this.tilesLoadedTotal += Object.keys(correctObject).length; // Sums verified or cached tiles per template
       this.tilesTotal += Object.keys(template.chunked).length; // Sums the total tiles per template
 
       // Sums the pixels placed as "correct" per color ID
-      for (const map of Object.values(correctObject)) { // Per (loaded) tile per template
-        for (const [colorID, correctPixels] of map) { // Per color per (loaded) tile per template
+      for (const map of Object.values(correctObject)) { // Per verified or cached tile per template
+        for (const [colorID, correctPixels] of map) { // Per color per verified or cached tile per template
           const _correctPixels = Number(correctPixels) || 0; // Boilerplate
           this.allPixelsCorrectTotal += _correctPixels; // Sums the pixels placed as "correct" per everything
           const allPixelsCorrectSoFar = this.allPixelsCorrect.get(colorID) ?? 0; // The total correct pixels for this color ID so far, or zero if none counted so far
@@ -1798,7 +1798,7 @@ export default class WindowFilter extends Overlay {
       }
     }
 
-    // If the template is complete, and the pixel count is non-zero, and at least 1 template exists, and all template tiles have been loaded this session...
+    // If the template is complete, non-empty, and every tile has a verified or cached count...
     if ((this.allPixelsCorrectTotal >= this.allPixelsTotal) && !!this.allPixelsTotal && (this.tilesLoadedTotal == this.tilesTotal)) {
       // Basically, only run if Blue Marble can confirm with 100% certanty that all (>0) templates are complete.
       
