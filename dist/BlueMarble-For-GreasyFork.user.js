@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.46
+// @version         0.92.47
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.46
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.47
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -6887,8 +6887,8 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.placementGuardLastBlockAt = 0;
       this.placementGuardSpaceHeld = false;
       this.placementGuardSpacePlacementAllowed = false;
-      this.placementGuardSpacePaused = false;
-      this.placementGuardSyntheticSpaceEventUntil = 0;
+      this.placementGuardSpaceCancelledUntilKeyup = false;
+      this.placementGuardSyntheticSpaceReleaseUntil = 0;
       this.placementGuardDragState = null;
       this.placementGuardSuppressClickUntil = 0;
       this.placementGuardLastPointerPoint = null;
@@ -6965,6 +6965,8 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       document.addEventListener("keyup", (event) => this.handlePlacementGuardKeyEvent(event, false), true);
       window.addEventListener("blur", () => {
         this.placementGuardSpaceHeld = false;
+        this.placementGuardSpacePlacementAllowed = false;
+        this.placementGuardSpaceCancelledUntilKeyup = false;
       }, true);
       void installWplaceTilePixelTracker(this.templateManager?.tileSize || 1e3, 11).then((ok) => {
         this.debugLog("guard", "tile-pixel-tracker-installed", { ok }, 1e3);
@@ -7012,7 +7014,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           events: this.placementGuardEvents,
           spaceHeld: this.placementGuardSpaceHeld,
           spacePlacementAllowed: this.placementGuardSpacePlacementAllowed,
-          spacePaused: this.placementGuardSpacePaused,
+          spaceCancelledUntilKeyup: this.placementGuardSpaceCancelledUntilKeyup,
           tracker: document.documentElement?.dataset?.bmTilePixelAtPointer || "",
           flags: this.templateManager?.settingsManager?.userSettings?.flags ?? []
         });
@@ -7027,7 +7029,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       if (event.code != "Space") {
         return;
       }
-      if (!event.isTrusted && Date.now() < this.placementGuardSyntheticSpaceEventUntil) {
+      if (!event.isTrusted && Date.now() < this.placementGuardSyntheticSpaceReleaseUntil) {
         return;
       }
       const target = event.target instanceof Element ? event.target : null;
@@ -7035,17 +7037,17 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         return;
       }
       if (!isDown) {
-        const changed2 = this.placementGuardSpaceHeld || this.placementGuardSpacePlacementAllowed || this.placementGuardSpacePaused;
+        const changed2 = this.placementGuardSpaceHeld || this.placementGuardSpacePlacementAllowed || this.placementGuardSpaceCancelledUntilKeyup;
         this.placementGuardSpaceHeld = false;
         this.placementGuardSpacePlacementAllowed = false;
-        this.placementGuardSpacePaused = false;
+        this.placementGuardSpaceCancelledUntilKeyup = false;
         if (changed2) {
           this.debugLog("guard", "space-up", {}, 500);
         }
         return;
       }
-      if (this.placementGuardSpacePaused) {
-        this.debugLog("guard", "block", { type: event.type, reason: "space-session-paused-until-safe-move" }, 500);
+      if (this.placementGuardSpaceCancelledUntilKeyup) {
+        this.debugLog("guard", "block", { type: event.type, reason: "space-session-cancelled-until-keyup" }, 500);
         this.blockPlacementEvent(event);
         return;
       }
@@ -7058,7 +7060,6 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       const changed = this.placementGuardSpaceHeld != isDown;
       this.placementGuardSpaceHeld = true;
       this.placementGuardSpacePlacementAllowed = true;
-      this.placementGuardSpacePaused = false;
       if (changed) {
         this.debugLog("guard", "space-down", {}, 500);
       }
@@ -7137,7 +7138,11 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         this.debugLog("guard", "skip", { ...baseDebug, reason: "not-primary-placement-gesture" }, 1e3);
         return false;
       }
-      const isPausedSpaceMove = this.isMoveEvent(event) && this.placementGuardSpaceHeld && !this.placementGuardSpacePlacementAllowed;
+      if (this.isMoveEvent(event) && this.placementGuardSpaceHeld && !this.placementGuardSpacePlacementAllowed) {
+        this.debugLog("guard", "block", { ...baseDebug, reason: "space-session-cancelled" }, 500);
+        this.blockPlacementEvent(event);
+        return true;
+      }
       if (this.isPlacementEndEvent(event) && dragState?.dragged && !dragState.spaceAtStart && !this.placementGuardSpaceHeld) {
         this.placementGuardSuppressClickUntil = Date.now() + 400;
         this.placementGuardDragState = null;
@@ -7145,42 +7150,22 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         return false;
       }
       if (!target || !this.isWplaceMapClickTarget(target)) {
-        if (isPausedSpaceMove) {
-          this.debugLog("guard", "block", { ...baseDebug, reason: "space-paused-not-map-target" }, 500);
-          this.blockPlacementEvent(event);
-          return true;
-        }
         this.debugLog("guard", "skip", { ...baseDebug, reason: "not-map-target" }, 1e3);
         return false;
       }
       const visibleColorIDs = this.templateManager?.getVisibleTemplateColorIDs?.({ paintableOnly: true }) ?? [];
       const activeColorID = visibleColorIDs.length == 1 ? visibleColorIDs[0] : null;
       if (activeColorID == null) {
-        if (isPausedSpaceMove) {
-          this.debugLog("guard", "block", { ...baseDebug, reason: "space-paused-not-exactly-one-visible-color", visibleColorIDs }, 500);
-          this.blockPlacementEvent(event);
-          return true;
-        }
         this.debugLog("guard", "skip", { ...baseDebug, reason: "not-exactly-one-visible-color", visibleColorIDs }, 1e3);
         return false;
       }
       const point = this.getEventClientPoint(event);
       if (!point) {
-        if (isPausedSpaceMove) {
-          this.debugLog("guard", "block", { ...baseDebug, reason: "space-paused-no-event-point", activeColorID }, 500);
-          this.blockPlacementEvent(event);
-          return true;
-        }
         this.debugLog("guard", "skip", { ...baseDebug, reason: "no-event-point", activeColorID }, 1e3);
         return false;
       }
       const coords2 = getTrackedWplaceTilePixel(point.clientX, point.clientY);
       if (!coords2) {
-        if (isPausedSpaceMove) {
-          this.debugLog("guard", "block", { ...baseDebug, reason: "space-paused-no-tracked-coords", activeColorID, point }, 500);
-          this.blockPlacementEvent(event);
-          return true;
-        }
         this.debugLog("guard", "skip", {
           ...baseDebug,
           reason: "no-tracked-coords",
@@ -7191,11 +7176,6 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         return false;
       }
       if (this.isPlacementGuardBelowPixelZoom(coords2)) {
-        if (isPausedSpaceMove) {
-          this.debugLog("guard", "block", { ...baseDebug, reason: "space-paused-below-pixel-zoom", coords: coords2 }, 500);
-          this.blockPlacementEvent(event);
-          return true;
-        }
         this.debugLog("guard", "skip", { ...baseDebug, reason: "below-pixel-zoom", coords: coords2 }, 1e3);
         return false;
       }
@@ -7214,7 +7194,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           templateColorID: templateColor?.colorID ?? null
         }, 500);
         if (this.isMoveEvent(event) && this.placementGuardSpaceHeld) {
-          this.pausePlacementGuardSpaceSession("moved-over-non-matching-template-pixel", {
+          this.cancelPlacementGuardSpaceSession("moved-over-non-matching-template-pixel", {
             activeColorID,
             coords: coords2,
             templateColorID: templateColor?.colorID ?? null
@@ -7235,7 +7215,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
           templateColorID: templateColor.colorID
         }, 500);
         if (this.isMoveEvent(event) && this.placementGuardSpaceHeld) {
-          this.pausePlacementGuardSpaceSession("moved-with-selected-color-mismatch", {
+          this.cancelPlacementGuardSpaceSession("moved-with-selected-color-mismatch", {
             activeColorID,
             selectedColorID,
             coords: coords2,
@@ -7244,13 +7224,6 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         }
         this.blockPlacementEvent(event);
         return true;
-      }
-      if (isPausedSpaceMove) {
-        this.resumePlacementGuardSpaceSession("returned-to-matching-template-pixel", {
-          activeColorID,
-          coords: coords2,
-          templateColorID: templateColor.colorID
-        });
       }
       this.debugLog("guard", "allow", {
         ...baseDebug,
@@ -7261,26 +7234,26 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       }, 500);
       return false;
     }
-    /** Pauses continuous Space placement while the held pointer is outside the safe path.
+    /** Cancels continuous Space placement until the user releases Space.
      * @param {string} reason - Cancellation reason
      * @param {Object} [details={}] - Debug details
-     * @since 0.92.46
+     * @since 0.92.47
      */
-    pausePlacementGuardSpaceSession(reason, details = {}) {
-      if (this.placementGuardSpacePaused) {
+    cancelPlacementGuardSpaceSession(reason, details = {}) {
+      if (this.placementGuardSpaceCancelledUntilKeyup) {
         return;
       }
       this.placementGuardSpacePlacementAllowed = false;
-      this.placementGuardSpacePaused = true;
-      this.debugLog("guard", "space-paused", { reason, ...details }, 500);
+      this.placementGuardSpaceCancelledUntilKeyup = true;
+      this.debugLog("guard", "space-cancelled", { reason, ...details }, 500);
       this.dispatchPlacementGuardSyntheticSpaceRelease(reason);
     }
     /** Sends a best-effort Space keyup so Wplace leaves continuous placement mode.
      * @param {string} reason - Cancellation reason
-     * @since 0.92.46
+     * @since 0.92.47
      */
     dispatchPlacementGuardSyntheticSpaceRelease(reason) {
-      this.placementGuardSyntheticSpaceEventUntil = Date.now() + 100;
+      this.placementGuardSyntheticSpaceReleaseUntil = Date.now() + 100;
       const targets = [document.activeElement, document, window].filter(Boolean);
       for (const target of targets) {
         try {
@@ -7295,39 +7268,6 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         }
       }
       this.debugLog("guard", "space-release-sent", { reason }, 500);
-    }
-    /** Resumes continuous Space placement after returning to a confirmed safe pixel.
-     * @param {string} reason - Resume reason
-     * @param {Object} [details={}] - Debug details
-     * @since 0.92.46
-     */
-    resumePlacementGuardSpaceSession(reason, details = {}) {
-      if (!this.placementGuardSpaceHeld || this.placementGuardSpacePlacementAllowed) {
-        return;
-      }
-      this.placementGuardSpacePlacementAllowed = true;
-      this.placementGuardSpacePaused = false;
-      this.debugLog("guard", "space-resumed", { reason, ...details }, 500);
-      this.dispatchPlacementGuardSyntheticSpacePress(reason);
-    }
-    /** Sends a best-effort Space keydown so Wplace resumes continuous placement.
-     * @param {string} reason - Resume reason
-     * @since 0.92.46
-     */
-    dispatchPlacementGuardSyntheticSpacePress(reason) {
-      this.placementGuardSyntheticSpaceEventUntil = Date.now() + 100;
-      const target = document.activeElement || document;
-      try {
-        const event = new KeyboardEvent("keydown", {
-          key: " ",
-          code: "Space",
-          bubbles: true,
-          cancelable: true
-        });
-        target.dispatchEvent(event);
-      } catch (error) {
-      }
-      this.debugLog("guard", "space-press-sent", { reason }, 500);
     }
     /** Blocks Space-triggered placement before Wplace paints a wrong pixel.
      * @param {KeyboardEvent} event - Keyboard event
