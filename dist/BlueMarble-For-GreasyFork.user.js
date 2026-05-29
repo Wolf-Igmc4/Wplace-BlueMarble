@@ -2,7 +2,7 @@
 // @name            Blue Marble X
 // @name:en         Blue Marble X
 // @namespace       https://github.com/Wolf-Igmc4/
-// @version         0.92.47
+// @version         0.92.48
 // @description     A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @description:en  A userscript to enhance the user experience on Wplace.live. This includes, but is not limited to: uploading images to display locally on a canvas, adding a button to move the Wplace color palette menu, and other QoL features.
 // @author          SwingTheVine
@@ -23,7 +23,7 @@
 // @connect         telemetry.thebluecorner.net
 // @connect         raw.githubusercontent.com
 // @connect         backend.wplace.live
-// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.47
+// @resource        CSS-BM-File https://raw.githubusercontent.com/Wolf-Igmc4/Wplace-BlueMarble/main/dist/BlueMarble-For-GreasyFork.user.css?v=0.92.48
 // @antifeature     tracking Anonymous opt-in telemetry data
 // @noframes
 // ==/UserScript==
@@ -50,57 +50,6 @@
   var __privateAdd = (obj, member, value) => member.has(obj) ? __typeError("Cannot add the same private member more than once") : member instanceof WeakSet ? member.add(obj) : member.set(obj, value);
   var __privateSet = (obj, member, value, setter) => (__accessCheck(obj, member, "write to private field"), setter ? setter.call(obj, value) : member.set(obj, value), value);
   var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
-
-  // src/observers.js
-  var Observers = class {
-    /** The constructor for the observer class
-     * @since 0.43.2
-     */
-    constructor() {
-      this.observerBody = null;
-      this.observerBodyTarget = null;
-      this.targetDisplayCoords = "#bm-display-coords";
-    }
-    /** Creates the MutationObserver for document.body
-     * @param {HTMLElement} target - Targeted element to watch
-     * @returns {Observers} this (Observers class)
-     * @since 0.43.2
-     */
-    createObserverBody(target) {
-      this.observerBodyTarget = target;
-      this.observerBody = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-          for (const node of mutation.addedNodes) {
-            if (!(node instanceof HTMLElement)) {
-              continue;
-            }
-            if (node.matches?.(this.targetDisplayCoords)) {
-            }
-          }
-        }
-      });
-      return this;
-    }
-    /** Retrieves the MutationObserver that watches document.body
-     * @returns {MutationObserver}
-     * @since 0.43.2
-     */
-    getObserverBody() {
-      return this.observerBody;
-    }
-    /** Observe a MutationObserver
-     * @param {MutationObserver} observer - The MutationObserver
-     * @param {boolean} watchChildList - (Optional) Should childList be watched? False by default
-     * @param {boolean} watchSubtree - (Optional) Should childList be watched? False by default
-     * @since 0.43.2
-     */
-    observe(observer, watchChildList = false, watchSubtree = false) {
-      observer.observe(this.observerBodyTarget, {
-        childList: watchChildList,
-        subtree: watchSubtree
-      });
-    }
-  };
 
   // src/utils.js
   function getWplaceVersion() {
@@ -987,11 +936,11 @@
      * @since 0.0.2
      * @see {@link Overlay}
      */
-    constructor(name2, version2) {
+    constructor(name, version) {
       __privateAdd(this, _Overlay_instances);
       var _a;
-      this.name = name2;
-      this.version = version2;
+      this.name = name;
+      this.version = version;
       this.apiManager = null;
       this.settingsManager = null;
       this.outputStatusId = "bm-output-status";
@@ -1004,15 +953,15 @@
      * @param {ApiManager} apiManager - The apiManager class instance
      * @since 0.41.4
      */
-    setApiManager(apiManager2) {
-      this.apiManager = apiManager2;
+    setApiManager(apiManager) {
+      this.apiManager = apiManager;
     }
     /** Populates the settingsManager variable with the settingsManager class.
      * @param {SettingsManager} settingsManager - The settingsManager class instance
      * @since 0.91.11
      */
-    setSettingsManager(settingsManager2) {
-      this.settingsManager = settingsManager2;
+    setSettingsManager(settingsManager) {
+      this.settingsManager = settingsManager;
     }
     /** Finishes building an element.
      * Call this after you are finished adding children.
@@ -2451,8 +2400,8 @@
      * @since 0.91.11
      * @see {@link Overlay#constructor} for examples
      */
-    constructor(name2, version2) {
-      super(name2, version2);
+    constructor(name, version) {
+      super(name, version);
       __privateAdd(this, _WindowSettings_instances);
       this.window = null;
       this.windowID = "bm-window-settings";
@@ -2506,9 +2455,59 @@
    * @param {string} name - The name of the category
    * @since 0.91.11
    */
-  errorOverrideFailure_fn = function(name2) {
-    this.window = this.addDiv({ "class": "bm-container" }).addHeader(2, { "textContent": name2 }).buildElement().addHr().buildElement().addP({ "innerHTML": `An error occured loading the ${name2} category. <code>SettingsManager</code> failed to override the ${name2} function inside <code>WindowSettings</code>.` }).buildElement().buildElement();
+  errorOverrideFailure_fn = function(name) {
+    this.window = this.addDiv({ "class": "bm-container" }).addHeader(2, { "textContent": name }).buildElement().addHr().buildElement().addP({ "innerHTML": `An error occured loading the ${name} category. <code>SettingsManager</code> failed to override the ${name} function inside <code>WindowSettings</code>.` }).buildElement().buildElement();
   };
+
+  // src/infrastructure/userscript/userscriptRuntime.js
+  function getScriptInfo() {
+    return {
+      name: GM_info.script.name.toString(),
+      version: GM_info.script.version.toString()
+    };
+  }
+  function getValue(key, fallback = "") {
+    return GM_getValue(key, fallback);
+  }
+  async function setValue(key, value) {
+    return await GM.setValue(key, value);
+  }
+  function getJSON(key, fallback = null) {
+    try {
+      return JSON.parse(getValue(key, JSON.stringify(fallback)));
+    } catch {
+      return fallback;
+    }
+  }
+  async function setJSON(key, value) {
+    return await setValue(key, JSON.stringify(value));
+  }
+  function deleteValue(key) {
+    if (typeof GM_deleteValue != "function") {
+      return false;
+    }
+    GM_deleteValue(key);
+    return true;
+  }
+  function getResourceText(resourceName) {
+    return GM_getResourceText(resourceName);
+  }
+  function addStyle(cssText) {
+    GM_addStyle(cssText);
+  }
+  function canRequest() {
+    return typeof GM_xmlhttpRequest == "function";
+  }
+  function request(options) {
+    if (!canRequest()) {
+      return false;
+    }
+    GM_xmlhttpRequest(options);
+    return true;
+  }
+  async function download(options) {
+    return await GM.download(options);
+  }
 
   // src/settingsManager.js
   var _SettingsManager_instances, updateHighlightSettings_fn, updateHighlightToPreset_fn;
@@ -2519,11 +2518,11 @@
      * @param {Object} userSettings - The user settings as an object
      * @since 0.91.11
      */
-    constructor(name2, version2, userSettings2) {
+    constructor(name, version, userSettings) {
       var _a;
-      super(name2, version2);
+      super(name, version);
       __privateAdd(this, _SettingsManager_instances);
-      this.userSettings = userSettings2;
+      this.userSettings = userSettings;
       (_a = this.userSettings).flags ?? (_a.flags = []);
       this.userSettingsOld = structuredClone(this.userSettings);
       this.userSettingsSaveLocation = "bmUserSettings";
@@ -2538,7 +2537,7 @@
       const userSettingsCurrent = JSON.stringify(this.userSettings);
       const userSettingsOld = JSON.stringify(this.userSettingsOld);
       if (userSettingsCurrent != userSettingsOld && Date.now() - this.lastUpdateTime > this.updateFrequency) {
-        await GM.setValue(this.userSettingsSaveLocation, userSettingsCurrent);
+        await setValue(this.userSettingsSaveLocation, userSettingsCurrent);
         this.userSettingsOld = structuredClone(this.userSettings);
         this.lastUpdateTime = Date.now();
       }
@@ -2548,7 +2547,7 @@
      */
     async saveUserStorageNow() {
       const userSettingsCurrent = JSON.stringify(this.userSettings);
-      await GM.setValue(this.userSettingsSaveLocation, userSettingsCurrent);
+      await setValue(this.userSettingsSaveLocation, userSettingsCurrent);
       this.userSettingsOld = structuredClone(this.userSettings);
       this.lastUpdateTime = Date.now();
     }
@@ -3046,8 +3045,8 @@
      * @since 0.90.9
      * @see {@link Overlay#constructor} for examples
      */
-    constructor(name2, version2) {
-      super(name2, version2);
+    constructor(name, version) {
+      super(name, version);
       this.window = null;
       this.windowID = "bm-window-credits";
       this.windowParent = document.body;
@@ -3095,10 +3094,7 @@
     }
   };
 
-  // src/WindowFilter.js
-  var closeIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
-  var fullscreenIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.5 4.5H4.5v4M15.5 4.5h4v4M19.5 15.5v4h-4M8.5 19.5h-4v-4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.8 4.8l5.2 5.2M19.2 4.8L14 10M19.2 19.2L14 14M4.8 19.2L10 14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>';
-  var windowedIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.8 4.8l5.2 5.2M19.2 4.8L14 10M19.2 19.2L14 14M4.8 19.2L10 14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M10 7.5V10H7.5M16.5 10H14V7.5M14 16.5V14h2.5M7.5 14H10v2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  // src/domain/colorFilter/ColorFilterStats.js
   function localizeCompactDate(date) {
     const month = date.getMonth() + 1;
     const day = date.getDate();
@@ -3115,7 +3111,307 @@
     }
     return `${day}/${month}/${year} ${hour}:${minute}${period}`;
   }
-  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, initializePlacementGuardToggle_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, shouldDefaultToWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, startColorPickerObserver_fn, stopColorPickerObserver_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, applyWindowStatePosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, snapWindowedFilterToDefaultPosition_fn, isColorBought_fn, getBoughtColorIDsFromDOM_fn, getBoughtColorIDs_fn, getBoughtColorIDsFromUserData_fn, collectBoughtColorIDs_fn, findBoughtColorPayloadCandidates_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, selectFilteredColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
+  function calculateColorFilterStats({ templatesArray, palette }) {
+    const stats = {
+      tilesLoadedTotal: 0,
+      tilesTotal: 0,
+      allPixelsTotal: 0,
+      allPixelsCorrectTotal: 0,
+      allPixelsCorrect: /* @__PURE__ */ new Map(),
+      allPixelsColor: /* @__PURE__ */ new Map(),
+      timeRemaining: null,
+      timeRemainingLocalized: "",
+      colorStatistics: {}
+    };
+    for (const template of templatesArray) {
+      const total = template.pixelCount?.total ?? 0;
+      stats.allPixelsTotal += total ?? 0;
+      const colors = template.pixelCount?.colors ?? /* @__PURE__ */ new Map();
+      for (const [colorID, colorPixels] of colors) {
+        const numericPixels = Number(colorPixels) || 0;
+        const allPixelsColorSoFar = stats.allPixelsColor.get(colorID) ?? 0;
+        stats.allPixelsColor.set(colorID, allPixelsColorSoFar + numericPixels);
+      }
+      const correctObject = template.pixelCount?.correct ?? {};
+      stats.tilesLoadedTotal += Object.keys(correctObject).length;
+      stats.tilesTotal += Object.keys(template.chunked).length;
+      for (const map of Object.values(correctObject)) {
+        for (const [colorID, correctPixels] of map) {
+          const numericCorrectPixels = Number(correctPixels) || 0;
+          stats.allPixelsCorrectTotal += numericCorrectPixels;
+          const allPixelsCorrectSoFar = stats.allPixelsCorrect.get(colorID) ?? 0;
+          stats.allPixelsCorrect.set(colorID, allPixelsCorrectSoFar + numericCorrectPixels);
+        }
+      }
+    }
+    stats.timeRemaining = new Date((stats.allPixelsTotal - stats.allPixelsCorrectTotal) * 30 * 1e3 + Date.now());
+    stats.timeRemainingLocalized = localizeCompactDate(stats.timeRemaining);
+    for (const color of palette) {
+      const colorTotal = stats.allPixelsColor.get(color.id) ?? 0;
+      let colorCorrect = 0;
+      if (colorTotal != 0) {
+        colorCorrect = stats.allPixelsCorrect.get(color.id) ?? "???";
+        if (typeof colorCorrect != "number" && stats.tilesLoadedTotal == stats.tilesTotal && !!color.id) {
+          colorCorrect = 0;
+        }
+      }
+      const colorIncorrect = parseInt(colorTotal) - parseInt(colorCorrect);
+      const colorCompleted = colorTotal > 0 && typeof colorCorrect == "number" && colorIncorrect <= 0;
+      stats.colorStatistics[color.id] = {
+        colorTotal,
+        colorCorrect,
+        colorIncorrect,
+        colorCompleted
+      };
+    }
+    return stats;
+  }
+
+  // src/domain/colorFilter/ColorFilterViewSettings.js
+  var allowedPrimarySorts = /* @__PURE__ */ new Set(["id", "name", "premium", "percent", "correct", "incorrect", "total"]);
+  var allowedSecondarySorts = /* @__PURE__ */ new Set(["ascending", "descending"]);
+  var ColorFilterViewSettings = class {
+    constructor({ settingsManager, version = 2 }) {
+      this.settingsManager = settingsManager;
+      this.version = version;
+    }
+    load(defaults) {
+      const state = { ...defaults };
+      const filterView = this.settingsManager?.userSettings?.filterView;
+      if (!filterView || typeof filterView != "object") {
+        return state;
+      }
+      const shouldMigrateBoughtSort = filterView.sortPrimary == "bought";
+      const shouldMigrateDefaultSort = filterView.defaultSortVersion !== this.version && (filterView.sortPrimary == "total" || shouldMigrateBoughtSort) && filterView.sortSecondary == "descending";
+      if (shouldMigrateBoughtSort || shouldMigrateDefaultSort) {
+        filterView.sortPrimary = "total";
+        filterView.sortSecondary = "descending";
+        filterView.sortBought = true;
+        filterView.defaultSortVersion = this.version;
+      }
+      if (allowedPrimarySorts.has(filterView.sortPrimary)) {
+        state.sortPrimary = filterView.sortPrimary;
+      }
+      if (allowedSecondarySorts.has(filterView.sortSecondary)) {
+        state.sortSecondary = filterView.sortSecondary;
+      }
+      if (typeof filterView.sortBought == "boolean") {
+        state.sortBought = filterView.sortBought;
+      } else if (shouldMigrateBoughtSort) {
+        state.sortBought = true;
+      }
+      for (const key of ["showUnused", "showCompleted", "showFree", "showPremium"]) {
+        if (typeof filterView[key] == "boolean") {
+          state[key] = filterView[key];
+        }
+      }
+      return state;
+    }
+    persist(state, shouldSaveNow = false) {
+      if (!this.settingsManager?.userSettings) {
+        return;
+      }
+      this.settingsManager.userSettings.filterView = {
+        sortPrimary: state.sortPrimary,
+        sortSecondary: state.sortSecondary,
+        sortBought: state.sortBought,
+        showUnused: state.showUnused,
+        showCompleted: state.showCompleted,
+        showFree: state.showFree,
+        showPremium: state.showPremium,
+        defaultSortVersion: this.version
+      };
+      if (shouldSaveNow) {
+        void this.settingsManager.saveUserStorageNow();
+      }
+    }
+  };
+
+  // src/domain/colorFilter/BoughtColorDetector.js
+  var BoughtColorDetector = class {
+    constructor({ palette, apiManager }) {
+      this.palette = palette;
+      this.apiManager = apiManager;
+    }
+    isColorBought(color, boughtColorIDs = this.getBoughtColorIDs()) {
+      if (!color?.premium) {
+        return false;
+      }
+      if (boughtColorIDs) {
+        return boughtColorIDs.has(Number(color.id));
+      }
+      const colorElement = document.querySelector(`#color-${color.id}`);
+      if (!colorElement) {
+        return false;
+      }
+      const isBought = !colorElement.querySelector("svg");
+      if (window?.blueMarbleDebugBoughtColors) {
+        console.log("[Blue Marble] bought color state", {
+          id: color.id,
+          name: color.name,
+          bought: isBought,
+          source: "dom-lock-icon",
+          outerHTML: colorElement.outerHTML.slice(0, 1e3)
+        });
+      }
+      return isBought;
+    }
+    getBoughtColorIDsFromDOM() {
+      const ids = /* @__PURE__ */ new Set();
+      let foundPremiumButton = false;
+      for (const color of this.palette.filter((color2) => color2?.premium)) {
+        const colorElement = document.querySelector(`#color-${color.id}`);
+        if (!colorElement) {
+          continue;
+        }
+        foundPremiumButton = true;
+        if (!colorElement.querySelector("svg")) {
+          ids.add(Number(color.id));
+        }
+      }
+      if (!foundPremiumButton) {
+        return null;
+      }
+      this.apiManager?.saveBoughtColorIDs?.(ids, "color-picker");
+      return ids;
+    }
+    getBoughtColorIDs() {
+      const userDataIDs = this.getBoughtColorIDsFromUserData();
+      if (userDataIDs) {
+        return userDataIDs;
+      }
+      const domIDs = this.getBoughtColorIDsFromDOM();
+      if (domIDs) {
+        return domIDs;
+      }
+      return this.apiManager?.boughtColorIDsCache ?? null;
+    }
+    getBoughtColorIDsFromUserData() {
+      const payloads = [
+        { payload: this.apiManager?.userData, isUserData: true },
+        ...Array.from(this.apiManager?.jsonResponses?.values?.() || []).map((payload) => ({ payload, isUserData: false }))
+      ].filter(({ payload }) => payload && typeof payload == "object");
+      if (!payloads.length) {
+        return null;
+      }
+      const ids = /* @__PURE__ */ new Set();
+      for (const { payload, isUserData } of payloads) {
+        if (isUserData && Array.isArray(payload?.unlocked_colors)) {
+          this.collectBoughtColorIDs(payload, ids, isUserData);
+          return ids;
+        }
+      }
+      for (const { payload, isUserData } of payloads) {
+        this.collectBoughtColorIDs(payload, ids, isUserData);
+      }
+      return ids.size ? ids : null;
+    }
+    collectBoughtColorIDs(payload, ids, isUserData) {
+      if (Array.isArray(payload?.unlocked_colors)) {
+        for (const id of payload.unlocked_colors) {
+          const colorID = Number(id);
+          if (Number.isInteger(colorID) && colorID >= 32 && colorID <= 63) {
+            ids.add(colorID);
+          }
+        }
+      }
+      const visited = /* @__PURE__ */ new WeakSet();
+      const visit = (value, path = "", depth = 0) => {
+        if (depth > 5 || value == null) {
+          return;
+        }
+        if (typeof value != "object") {
+          return;
+        }
+        if (visited.has(value)) {
+          return;
+        }
+        visited.add(value);
+        if (Array.isArray(value)) {
+          const pathLooksPurchased = /\b(color|colour|palette|premium).*(own|purchase|unlock|bought|available)|\b(own|purchase|unlock|bought|available).*(color|colour|palette|premium)|unlocked[_-]?colors/i.test(path);
+          const pathLooksLikeUserColors = isUserData && /(^|\.)((colors?|colours?|palette|premiumColors?|unlocked_colors))$/i.test(path);
+          if (pathLooksPurchased || pathLooksLikeUserColors) {
+            for (const entry of value) {
+              const id = typeof entry == "object" ? Number(entry?.id ?? entry?.color ?? entry?.colorId ?? entry?.colourId) : Number(entry);
+              if (Number.isInteger(id) && id >= 32 && id <= 63) {
+                ids.add(id);
+              }
+            }
+          }
+        }
+        for (const [key, child] of Object.entries(value)) {
+          const id = Number(child);
+          const keyLooksLikeColorID = isUserData && /\b(color|colour|palette|premium).*(id)?$/i.test(key);
+          if (keyLooksLikeColorID && Number.isInteger(id) && id >= 32 && id <= 63) {
+            ids.add(id);
+          }
+          visit(child, path ? `${path}.${key}` : key, depth + 1);
+        }
+      };
+      visit(payload);
+    }
+    findBoughtColorPayloadCandidates() {
+      const payloads = [
+        { name: "me", payload: this.apiManager?.userData, isUserData: true },
+        ...Array.from(this.apiManager?.jsonResponses?.entries?.() || []).map(([name, payload]) => ({ name, payload, isUserData: false }))
+      ].filter(({ payload }) => payload && typeof payload == "object");
+      const candidates = [];
+      const visited = /* @__PURE__ */ new WeakSet();
+      const visit = (sourceName, value, path = "", depth = 0) => {
+        if (depth > 5 || value == null) {
+          return;
+        }
+        if (typeof value != "object") {
+          return;
+        }
+        if (visited.has(value)) {
+          return;
+        }
+        visited.add(value);
+        if (Array.isArray(value)) {
+          const ids = value.map(
+            (entry) => typeof entry == "object" ? Number(entry?.id ?? entry?.color ?? entry?.colorId ?? entry?.colourId) : Number(entry)
+          ).filter((id) => Number.isInteger(id) && id >= 32 && id <= 63);
+          if (ids.length) {
+            candidates.push({ source: sourceName, path, ids: ids.join(", ") });
+          }
+        }
+        for (const [key, child] of Object.entries(value)) {
+          visit(sourceName, child, path ? `${path}.${key}` : key, depth + 1);
+        }
+      };
+      for (const { name, payload } of payloads) {
+        visit(name, payload);
+      }
+      return candidates;
+    }
+    dumpDetection() {
+      const rows = this.palette.filter((color) => color?.premium).map((color) => {
+        const colorElement = document.querySelector(`#color-${color.id}`);
+        return {
+          id: color.id,
+          name: color.name,
+          bought: this.isColorBought(color),
+          exists: !!colorElement,
+          text: colorElement?.textContent?.trim()?.replace(/\s+/g, " ").slice(0, 120) || "",
+          className: colorElement?.className || "",
+          ariaLabel: colorElement?.getAttribute?.("aria-label") || "",
+          title: colorElement?.getAttribute?.("title") || "",
+          disabled: colorElement?.matches?.(":disabled, [disabled]") || false
+        };
+      });
+      const candidates = this.findBoughtColorPayloadCandidates();
+      console.table(rows);
+      console.table(candidates);
+      return rows;
+    }
+  };
+
+  // src/WindowFilter.js
+  var closeIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
+  var fullscreenIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.5 4.5H4.5v4M15.5 4.5h4v4M19.5 15.5v4h-4M8.5 19.5h-4v-4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.8 4.8l5.2 5.2M19.2 4.8L14 10M19.2 19.2L14 14M4.8 19.2L10 14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>';
+  var windowedIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.8 4.8l5.2 5.2M19.2 4.8L14 10M19.2 19.2L14 14M4.8 19.2L10 14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M10 7.5V10H7.5M16.5 10H14V7.5M14 16.5V14h2.5M7.5 14H10v2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, initializePlacementGuardToggle_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, shouldDefaultToWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, startColorPickerObserver_fn, stopColorPickerObserver_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, applyWindowStatePosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, snapWindowedFilterToDefaultPosition_fn, isColorBought_fn, getBoughtColorIDs_fn, getBoughtColorIDsFromUserData_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, selectFilteredColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
   var WindowFilter = class extends Overlay {
     /** Constructor for the color filter window
      * @param {*} executor - The executing class
@@ -3145,6 +3441,10 @@
       this.windowMaxWidth = 1e3;
       this.windowMaxHeight = 1400;
       this.filterViewSettingsVersion = 2;
+      this.filterViewSettings = new ColorFilterViewSettings({
+        settingsManager: this.settingsManager,
+        version: this.filterViewSettingsVersion
+      });
       this.templateManager = executor.apiManager?.templateManager;
       this.apiManager = executor.apiManager ?? null;
       this.eyeOpen = '<svg class="bm-filter-eye-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.8 12s3.1-5 8.2-5 8.2 5 8.2 5-3.1 5-8.2 5-8.2-5-8.2-5Z"/><circle cx="12" cy="12" r="2.5"/></svg>';
@@ -3152,6 +3452,10 @@
       this.locationIcon = '<svg class="bm-filter-locate-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.75"/></svg>';
       const { palette, LUT: _ } = this.templateManager.paletteBM;
       this.palette = palette;
+      this.boughtColorDetector = new BoughtColorDetector({
+        palette: this.palette,
+        apiManager: this.apiManager
+      });
       this.tilesLoadedTotal = 0;
       this.tilesTotal = 0;
       this.allPixelsColor = /* @__PURE__ */ new Map();
@@ -3452,65 +3756,30 @@
    * @since 0.92.11
    */
   loadFilterViewSettings_fn = function() {
-    const filterView = this.settingsManager?.userSettings?.filterView;
-    if (!filterView || typeof filterView != "object") {
-      return;
-    }
-    const allowedPrimarySorts = /* @__PURE__ */ new Set(["id", "name", "premium", "percent", "correct", "incorrect", "total"]);
-    const allowedSecondarySorts = /* @__PURE__ */ new Set(["ascending", "descending"]);
-    const shouldMigrateBoughtSort = filterView.sortPrimary == "bought";
-    const shouldMigrateDefaultSort = filterView.defaultSortVersion !== this.filterViewSettingsVersion && (filterView.sortPrimary == "total" || shouldMigrateBoughtSort) && filterView.sortSecondary == "descending";
-    if (shouldMigrateBoughtSort || shouldMigrateDefaultSort) {
-      filterView.sortPrimary = "total";
-      filterView.sortSecondary = "descending";
-      filterView.sortBought = true;
-      filterView.defaultSortVersion = this.filterViewSettingsVersion;
-    }
-    if (allowedPrimarySorts.has(filterView.sortPrimary)) {
-      this.sortPrimary = filterView.sortPrimary;
-    }
-    if (allowedSecondarySorts.has(filterView.sortSecondary)) {
-      this.sortSecondary = filterView.sortSecondary;
-    }
-    if (typeof filterView.sortBought == "boolean") {
-      this.sortBought = filterView.sortBought;
-    } else if (shouldMigrateBoughtSort) {
-      this.sortBought = true;
-    }
-    if (typeof filterView.showUnused == "boolean") {
-      this.showUnused = filterView.showUnused;
-    }
-    if (typeof filterView.showCompleted == "boolean") {
-      this.showCompleted = filterView.showCompleted;
-    }
-    if (typeof filterView.showFree == "boolean") {
-      this.showFree = filterView.showFree;
-    }
-    if (typeof filterView.showPremium == "boolean") {
-      this.showPremium = filterView.showPremium;
-    }
-  };
-  /** Saves current sort and show/hide controls in user settings.
-   * @param {boolean} [shouldSaveNow=false] - Whether to flush userscript storage immediately
-   * @since 0.92.11
-   */
-  persistFilterViewSettings_fn = function(shouldSaveNow = false) {
-    if (!this.settingsManager?.userSettings) {
-      return;
-    }
-    this.settingsManager.userSettings.filterView = {
+    Object.assign(this, this.filterViewSettings.load({
       sortPrimary: this.sortPrimary,
       sortSecondary: this.sortSecondary,
       sortBought: this.sortBought,
       showUnused: this.showUnused,
       showCompleted: this.showCompleted,
       showFree: this.showFree,
-      showPremium: this.showPremium,
-      defaultSortVersion: this.filterViewSettingsVersion
-    };
-    if (shouldSaveNow) {
-      void this.settingsManager.saveUserStorageNow();
-    }
+      showPremium: this.showPremium
+    }));
+  };
+  /** Saves current sort and show/hide controls in user settings.
+   * @param {boolean} [shouldSaveNow=false] - Whether to flush userscript storage immediately
+   * @since 0.92.11
+   */
+  persistFilterViewSettings_fn = function(shouldSaveNow = false) {
+    this.filterViewSettings.persist({
+      sortPrimary: this.sortPrimary,
+      sortSecondary: this.sortSecondary,
+      sortBought: this.sortBought,
+      showUnused: this.showUnused,
+      showCompleted: this.showCompleted,
+      showFree: this.showFree,
+      showPremium: this.showPremium
+    }, shouldSaveNow);
   };
   /** Returns whether the filter should open in windowed mode.
    * Defaults to the original fullscreen view unless the user chose windowed mode.
@@ -3923,201 +4192,27 @@
    * @since 0.92.15
    */
   isColorBought_fn = function(color, boughtColorIDs = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDs_fn).call(this)) {
-    if (!color?.premium) {
-      return false;
-    }
-    if (boughtColorIDs) {
-      return boughtColorIDs.has(Number(color.id));
-    }
-    const colorElement = document.querySelector(`#color-${color.id}`);
-    if (!colorElement) {
-      return false;
-    }
-    const isBought = !colorElement.querySelector("svg");
-    if (window?.blueMarbleDebugBoughtColors) {
-      console.log("[Blue Marble] bought color state", {
-        id: color.id,
-        name: color.name,
-        bought: isBought,
-        source: "dom-lock-icon",
-        outerHTML: colorElement.outerHTML.slice(0, 1e3)
-      });
-    }
-    return isBought;
-  };
-  /** Finds bought premium color IDs from the live Wplace color picker.
-   * @returns {Set<number> | null}
-   * @since 0.92.21
-   */
-  getBoughtColorIDsFromDOM_fn = function() {
-    const ids = /* @__PURE__ */ new Set();
-    let foundPremiumButton = false;
-    for (const color of this.palette.filter((color2) => color2?.premium)) {
-      const colorElement = document.querySelector(`#color-${color.id}`);
-      if (!colorElement) {
-        continue;
-      }
-      foundPremiumButton = true;
-      if (!colorElement.querySelector("svg")) {
-        ids.add(Number(color.id));
-      }
-    }
-    if (!foundPremiumButton) {
-      return null;
-    }
-    this.apiManager?.saveBoughtColorIDs?.(ids, "color-picker");
-    return ids;
+    return this.boughtColorDetector.isColorBought(color, boughtColorIDs);
   };
   /** Finds bought premium color IDs from the best available source.
    * @returns {Set<number> | null}
    * @since 0.92.22
    */
   getBoughtColorIDs_fn = function() {
-    const userDataIDs = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDsFromUserData_fn).call(this);
-    if (userDataIDs) {
-      return userDataIDs;
-    }
-    const domIDs = __privateMethod(this, _WindowFilter_instances, getBoughtColorIDsFromDOM_fn).call(this);
-    if (domIDs) {
-      return domIDs;
-    }
-    return this.apiManager?.boughtColorIDsCache ?? null;
+    return this.boughtColorDetector.getBoughtColorIDs();
   };
   /** Finds purchased premium color IDs from Wplace user data, when the payload exposes them.
    * @returns {Set<number> | null}
    * @since 0.92.16
    */
   getBoughtColorIDsFromUserData_fn = function() {
-    const payloads = [
-      { payload: this.apiManager?.userData, isUserData: true },
-      ...Array.from(this.apiManager?.jsonResponses?.values?.() || []).map((payload) => ({ payload, isUserData: false }))
-    ].filter(({ payload }) => payload && typeof payload == "object");
-    if (!payloads.length) {
-      return null;
-    }
-    const ids = /* @__PURE__ */ new Set();
-    for (const { payload, isUserData } of payloads) {
-      if (isUserData && Array.isArray(payload?.unlocked_colors)) {
-        __privateMethod(this, _WindowFilter_instances, collectBoughtColorIDs_fn).call(this, payload, ids, isUserData);
-        return ids;
-      }
-    }
-    for (const { payload, isUserData } of payloads) {
-      __privateMethod(this, _WindowFilter_instances, collectBoughtColorIDs_fn).call(this, payload, ids, isUserData);
-    }
-    return ids.size ? ids : null;
-  };
-  /** Collects purchased color IDs from a Wplace JSON payload.
-   * @param {Object} payload - JSON payload to scan
-   * @param {Set<number>} ids - Destination set for color IDs
-   * @param {boolean} isUserData - Whether the payload came from /me
-   * @since 0.92.16
-   */
-  collectBoughtColorIDs_fn = function(payload, ids, isUserData) {
-    if (Array.isArray(payload?.unlocked_colors)) {
-      for (const id of payload.unlocked_colors) {
-        const colorID = Number(id);
-        if (Number.isInteger(colorID) && colorID >= 32 && colorID <= 63) {
-          ids.add(colorID);
-        }
-      }
-    }
-    const visited = /* @__PURE__ */ new WeakSet();
-    const visit = (value, path = "", depth = 0) => {
-      if (depth > 5 || value == null) {
-        return;
-      }
-      if (typeof value != "object") {
-        return;
-      }
-      if (visited.has(value)) {
-        return;
-      }
-      visited.add(value);
-      if (Array.isArray(value)) {
-        const pathLooksPurchased = /\b(color|colour|palette|premium).*(own|purchase|unlock|bought|available)|\b(own|purchase|unlock|bought|available).*(color|colour|palette|premium)|unlocked[_-]?colors/i.test(path);
-        const pathLooksLikeUserColors = isUserData && /(^|\.)((colors?|colours?|palette|premiumColors?|unlocked_colors))$/i.test(path);
-        if (pathLooksPurchased || pathLooksLikeUserColors) {
-          for (const entry of value) {
-            const id = typeof entry == "object" ? Number(entry?.id ?? entry?.color ?? entry?.colorId ?? entry?.colourId) : Number(entry);
-            if (Number.isInteger(id) && id >= 32 && id <= 63) {
-              ids.add(id);
-            }
-          }
-        }
-      }
-      for (const [key, child] of Object.entries(value)) {
-        const id = Number(child);
-        const keyLooksLikeColorID = isUserData && /\b(color|colour|palette|premium).*(id)?$/i.test(key);
-        if (keyLooksLikeColorID && Number.isInteger(id) && id >= 32 && id <= 63) {
-          ids.add(id);
-        }
-        visit(child, path ? `${path}.${key}` : key, depth + 1);
-      }
-    };
-    visit(payload);
-  };
-  /** Finds possible premium color ID arrays in Wplace JSON payloads for debugging.
-   * @returns {Array<Object>}
-   * @since 0.92.16
-   */
-  findBoughtColorPayloadCandidates_fn = function() {
-    const payloads = [
-      { name: "me", payload: this.apiManager?.userData, isUserData: true },
-      ...Array.from(this.apiManager?.jsonResponses?.entries?.() || []).map(([name2, payload]) => ({ name: name2, payload, isUserData: false }))
-    ].filter((payload) => payload && typeof payload == "object");
-    const candidates = [];
-    const visited = /* @__PURE__ */ new WeakSet();
-    const visit = (sourceName, value, path = "", depth = 0) => {
-      if (depth > 5 || value == null) {
-        return;
-      }
-      if (typeof value != "object") {
-        return;
-      }
-      if (visited.has(value)) {
-        return;
-      }
-      visited.add(value);
-      if (Array.isArray(value)) {
-        const ids = value.map(
-          (entry) => typeof entry == "object" ? Number(entry?.id ?? entry?.color ?? entry?.colorId ?? entry?.colourId) : Number(entry)
-        ).filter((id) => Number.isInteger(id) && id >= 32 && id <= 63);
-        if (ids.length) {
-          candidates.push({ source: sourceName, path, ids: ids.join(", ") });
-        }
-      }
-      for (const [key, child] of Object.entries(value)) {
-        visit(sourceName, child, path ? `${path}.${key}` : key, depth + 1);
-      }
-    };
-    for (const { name: name2, payload } of payloads) {
-      visit(name2, payload);
-    }
-    return candidates;
+    return this.boughtColorDetector.getBoughtColorIDsFromUserData();
   };
   /** Dumps premium color purchase detection details to the console.
    * @since 0.92.16
    */
   dumpBoughtColorDetection_fn = function() {
-    const rows = this.palette.filter((color) => color?.premium).map((color) => {
-      const colorElement = document.querySelector(`#color-${color.id}`);
-      return {
-        id: color.id,
-        name: color.name,
-        bought: __privateMethod(this, _WindowFilter_instances, isColorBought_fn).call(this, color),
-        exists: !!colorElement,
-        text: colorElement?.textContent?.trim()?.replace(/\s+/g, " ").slice(0, 120) || "",
-        className: colorElement?.className || "",
-        ariaLabel: colorElement?.getAttribute?.("aria-label") || "",
-        title: colorElement?.getAttribute?.("title") || "",
-        disabled: colorElement?.matches?.(":disabled, [disabled]") || false
-      };
-    });
-    const candidates = __privateMethod(this, _WindowFilter_instances, findBoughtColorPayloadCandidates_fn).call(this);
-    console.table(rows);
-    console.table(candidates);
-    return rows;
+    return this.boughtColorDetector.dumpDetection();
   };
   /** Creates the color list container.
    * @param {HTMLElement} parentElement - Parent element to add the color list to as a child
@@ -4239,16 +4334,16 @@
    * @since 0.88.222
    */
   sortColorList_fn = function(sortPrimary, sortSecondary, showUnused, showCompleted = this.showCompleted, showFree = this.showFree, showPremium = this.showPremium, sortBought = this.sortBought) {
-    const allowedPrimarySorts = /* @__PURE__ */ new Set(["id", "name", "premium", "percent", "correct", "incorrect", "total"]);
-    const allowedSecondarySorts = /* @__PURE__ */ new Set(["ascending", "descending"]);
+    const allowedPrimarySorts2 = /* @__PURE__ */ new Set(["id", "name", "premium", "percent", "correct", "incorrect", "total"]);
+    const allowedSecondarySorts2 = /* @__PURE__ */ new Set(["ascending", "descending"]);
     if (sortPrimary == "bought") {
       sortPrimary = "total";
       sortBought = true;
     }
-    if (!allowedPrimarySorts.has(sortPrimary)) {
+    if (!allowedPrimarySorts2.has(sortPrimary)) {
       sortPrimary = this.sortPrimary;
     }
-    if (!allowedSecondarySorts.has(sortSecondary)) {
+    if (!allowedSecondarySorts2.has(sortSecondary)) {
       sortSecondary = this.sortSecondary;
     }
     sortBought = !!sortBought;
@@ -4528,39 +4623,22 @@
    * @since 0.90.34
    */
   calculatePixelStatistics_fn = function() {
-    this.tilesLoadedTotal = 0;
-    this.tilesTotal = 0;
-    this.allPixelsTotal = 0;
-    this.allPixelsCorrectTotal = 0;
-    this.allPixelsCorrect = /* @__PURE__ */ new Map();
-    this.allPixelsColor = /* @__PURE__ */ new Map();
-    for (const template of this.templateManager.templatesArray) {
-      const total = template.pixelCount?.total ?? 0;
-      this.allPixelsTotal += total ?? 0;
-      const colors = template.pixelCount?.colors ?? /* @__PURE__ */ new Map();
-      for (const [colorID, colorPixels] of colors) {
-        const _colorPixels = Number(colorPixels) || 0;
-        const allPixelsColorSoFar = this.allPixelsColor.get(colorID) ?? 0;
-        this.allPixelsColor.set(colorID, allPixelsColorSoFar + _colorPixels);
-      }
-      const correctObject = template.pixelCount?.correct ?? {};
-      this.tilesLoadedTotal += Object.keys(correctObject).length;
-      this.tilesTotal += Object.keys(template.chunked).length;
-      for (const map of Object.values(correctObject)) {
-        for (const [colorID, correctPixels] of map) {
-          const _correctPixels = Number(correctPixels) || 0;
-          this.allPixelsCorrectTotal += _correctPixels;
-          const allPixelsCorrectSoFar = this.allPixelsCorrect.get(colorID) ?? 0;
-          this.allPixelsCorrect.set(colorID, allPixelsCorrectSoFar + _correctPixels);
-        }
-      }
-    }
+    const stats = calculateColorFilterStats({
+      templatesArray: this.templateManager.templatesArray,
+      palette: this.palette
+    });
+    this.tilesLoadedTotal = stats.tilesLoadedTotal;
+    this.tilesTotal = stats.tilesTotal;
+    this.allPixelsTotal = stats.allPixelsTotal;
+    this.allPixelsCorrectTotal = stats.allPixelsCorrectTotal;
+    this.allPixelsCorrect = stats.allPixelsCorrect;
+    this.allPixelsColor = stats.allPixelsColor;
+    this.timeRemaining = stats.timeRemaining;
+    this.timeRemainingLocalized = stats.timeRemainingLocalized;
     if (this.allPixelsCorrectTotal >= this.allPixelsTotal && !!this.allPixelsTotal && this.tilesLoadedTotal == this.tilesTotal) {
       const confettiManager = new ConfettiManager();
       confettiManager.createConfetti(document.querySelector(`#${this.windowID}`));
     }
-    this.timeRemaining = new Date((this.allPixelsTotal - this.allPixelsCorrectTotal) * 30 * 1e3 + Date.now());
-    this.timeRemainingLocalized = localizeCompactDate(this.timeRemaining);
   };
 
   // src/WindowWizard.js
@@ -4574,18 +4652,18 @@
      * @since 0.88.434
      * @see {@link Overlay#constructor} for examples
      */
-    constructor(name2, version2, schemaVersionBleedingEdge, templateManager2 = void 0) {
-      super(name2, version2);
+    constructor(name, version, schemaVersionBleedingEdge, templateManager = void 0) {
+      super(name, version);
       __privateAdd(this, _WindowWizard_instances);
       this.window = null;
       this.windowID = "bm-window-wizard";
       this.windowParent = document.body;
-      this.currentJSON = JSON.parse(GM_getValue("bmTemplates", "{}"));
+      this.currentJSON = getJSON("bmTemplates", {});
       this.scriptVersion = this.currentJSON?.scriptVersion;
       this.schemaVersion = this.currentJSON?.schemaVersion;
       this.schemaHealth = void 0;
       this.schemaVersionBleedingEdge = schemaVersionBleedingEdge;
-      this.templateManager = templateManager2;
+      this.templateManager = templateManager;
     }
     /** Spawns a Template Wizard window.
      * If another template wizard window already exists, we DON'T spawn another!
@@ -4673,7 +4751,7 @@
    * @since 0.92.34
    */
   refreshTemplateList_fn = function() {
-    this.currentJSON = JSON.parse(GM_getValue("bmTemplates", "{}"));
+    this.currentJSON = getJSON("bmTemplates", {});
     document.querySelector(`#${this.windowID} #bm-wizard-tlist`)?.remove();
     document.querySelector(`#${this.windowID} .bm-wizard-empty`)?.remove();
     __privateMethod(this, _WindowWizard_instances, displayTemplateList_fn).call(this);
@@ -4833,7 +4911,7 @@
       const loadingScreen = new Overlay(this.name, this.version);
       loadingScreen.addDiv({ "class": "bm-container" }).addDiv({ "class": "bm-container bm-center-vertically" }).addHeader(1, { "textContent": "Template Wizard" }).buildElement().buildElement().addHr().buildElement().addDiv({ "class": "bm-container" }).addHeader(2, { "textContent": "Status" }).buildElement().addP({ "textContent": "Updating template storage. Please wait..." }).buildElement().buildElement().buildElement().buildOverlay(windowContent);
     }
-    GM_deleteValue("bmCoords");
+    deleteValue("bmCoords");
     const templates = this.currentJSON?.templates;
     if (Object.keys(templates).length > 0) {
       for (const [key, template] of Object.entries(templates)) {
@@ -4865,8 +4943,8 @@
      * @since 0.88.326
      * @see {@link Overlay#constructor}
      */
-    constructor(name2, version2) {
-      super(name2, version2);
+    constructor(name, version) {
+      super(name, version);
       __privateAdd(this, _WindowMain_instances);
       this.window = null;
       this.windowID = "bm-window-main";
@@ -4994,8 +5072,8 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
         };
       }).buildElement().addButton({ "class": "bm-button-circle", "innerHTML": "\u{1F9D9}", "title": "Template Wizard" }, (instance, button) => {
         button.onclick = () => {
-          const templateManager2 = instance.apiManager?.templateManager;
-          const wizard = new WindowWizard(this.name, this.version, templateManager2?.schemaVersion, templateManager2);
+          const templateManager = instance.apiManager?.templateManager;
+          const wizard = new WindowWizard(this.name, this.version, templateManager?.schemaVersion, templateManager);
           wizard.buildWindow();
         };
       }).buildElement().addButton({ "class": "bm-button-circle", "innerHTML": "\u{1F3A8}", "title": "Template Color Converter" }, (instance, button) => {
@@ -5043,10 +5121,10 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
    */
   checkUpstreamUpdate_fn = function() {
     const updateButton = document.getElementById("bm-button-upstream-update");
-    if (!updateButton || typeof GM_xmlhttpRequest != "function") {
+    if (!updateButton || !canRequest()) {
       return;
     }
-    GM_xmlhttpRequest({
+    request({
       method: "GET",
       url: `${this.upstreamPackageURL}?t=${Date.now()}`,
       onload: (response) => {
@@ -5138,21 +5216,274 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
     instance.handleDisplayStatus(`Loaded coordinates from filename: ${coords2.join(", ")}`);
   };
 
+  // src/domain/templates/TemplateProgressCache.js
+  var _TemplateProgressCache_instances, load_fn;
+  var TemplateProgressCache = class {
+    constructor({ storageKey, version, warn = () => {
+    } }) {
+      __privateAdd(this, _TemplateProgressCache_instances);
+      this.storageKey = storageKey;
+      this.version = version;
+      this.warn = warn;
+      this.cache = __privateMethod(this, _TemplateProgressCache_instances, load_fn).call(this);
+      this.dirtyTemplates = /* @__PURE__ */ new Set();
+      this.saveTimeout = null;
+    }
+    createFingerprint(storedTemplate) {
+      let hash = 2166136261;
+      const feedHash = (value) => {
+        const stringValue = String(value ?? "");
+        for (let index = 0; index < stringValue.length; index++) {
+          hash ^= stringValue.charCodeAt(index);
+          hash = Math.imul(hash, 16777619);
+        }
+      };
+      feedHash(JSON.stringify(storedTemplate?.pixels || {}));
+      for (const [tileKey, encodedTile] of Object.entries(storedTemplate?.tiles || {}).sort(([left], [right]) => left.localeCompare(right))) {
+        feedHash(tileKey);
+        feedHash(encodedTile);
+      }
+      return `${Number(storedTemplate?.pixels?.total) || 0}:${Object.keys(storedTemplate?.tiles || {}).length}:${(hash >>> 0).toString(16)}`;
+    }
+    restore(template, templatesJSON) {
+      const storageKey = template?.storageKey;
+      const storedTemplate = templatesJSON?.templates?.[storageKey];
+      if (!storageKey || !storedTemplate) {
+        return;
+      }
+      const fingerprint = this.createFingerprint(storedTemplate);
+      template.progressCacheFingerprint = fingerprint;
+      const cachedTemplate = this.cache.templates?.[storageKey];
+      if (!cachedTemplate || cachedTemplate.fingerprint != fingerprint || !cachedTemplate.correct) {
+        return;
+      }
+      const validTileCoords = new Set(
+        Object.keys(template.chunked || {}).map((tileKey) => tileKey.split(",").slice(0, 2).join(","))
+      );
+      const correct = {};
+      for (const [tileCoords, colorCounts] of Object.entries(cachedTemplate.correct)) {
+        if (!validTileCoords.has(tileCoords) || !colorCounts || typeof colorCounts != "object") {
+          continue;
+        }
+        correct[tileCoords] = new Map(
+          Object.entries(colorCounts).map(([colorID, count]) => [Number(colorID), Number(count)]).filter(([colorID, count]) => Number.isFinite(colorID) && Number.isFinite(count) && count >= 0)
+        );
+      }
+      if (Object.keys(correct).length) {
+        template.pixelCount.correct = correct;
+      }
+    }
+    queueSave(templates, templatesJSON) {
+      for (const template of templates) {
+        if (template?.storageKey) {
+          this.dirtyTemplates.add(template);
+        }
+      }
+      if (!this.dirtyTemplates.size || this.saveTimeout) {
+        return;
+      }
+      this.saveTimeout = setTimeout(() => {
+        this.saveTimeout = null;
+        const changedTemplates = Array.from(this.dirtyTemplates);
+        this.dirtyTemplates.clear();
+        for (const template of changedTemplates) {
+          const storageKey = template.storageKey;
+          const storedTemplate = templatesJSON?.templates?.[storageKey];
+          if (!storedTemplate) {
+            continue;
+          }
+          const correct = {};
+          for (const [tileCoords, colorCounts] of Object.entries(template.pixelCount?.correct || {})) {
+            if (!(colorCounts instanceof Map)) {
+              continue;
+            }
+            correct[tileCoords] = Object.fromEntries(colorCounts);
+          }
+          this.cache.templates[storageKey] = {
+            fingerprint: template.progressCacheFingerprint || this.createFingerprint(storedTemplate),
+            updatedAt: Date.now(),
+            correct
+          };
+        }
+        void setJSON(this.storageKey, this.cache);
+      }, 500);
+    }
+    remove(templateKey) {
+      if (!this.cache.templates?.[templateKey]) {
+        return;
+      }
+      delete this.cache.templates[templateKey];
+      void setJSON(this.storageKey, this.cache);
+    }
+  };
+  _TemplateProgressCache_instances = new WeakSet();
+  load_fn = function() {
+    const emptyCache = { version: this.version, templates: {} };
+    try {
+      const storedCache = getJSON(this.storageKey, {});
+      if (storedCache?.version !== this.version || !storedCache?.templates || typeof storedCache.templates != "object") {
+        return emptyCache;
+      }
+      return storedCache;
+    } catch (error) {
+      this.warn(`Could not load cached template progress: ${error?.message || error}`);
+      return emptyCache;
+    }
+  };
+
+  // src/domain/templates/TemplateRenderCache.js
+  var TemplateRenderCache = class {
+    constructor({
+      maxEntries = 48,
+      outputType = "image/webp",
+      outputQuality = 0.98,
+      getTransparentHighlightKey = () => "trans"
+    } = {}) {
+      this.cache = /* @__PURE__ */ new Map();
+      this.maxEntries = maxEntries;
+      this.outputType = outputType;
+      this.outputQuality = outputQuality;
+      this.getTransparentHighlightKey = getTransparentHighlightKey;
+    }
+    clear() {
+      this.cache.clear();
+    }
+    set(cacheKey, blob) {
+      if (!cacheKey || !blob) {
+        return;
+      }
+      this.cache.set(cacheKey, blob);
+      while (this.cache.size > this.maxEntries) {
+        const oldestKey = this.cache.keys().next().value;
+        this.cache.delete(oldestKey);
+      }
+    }
+    get(cacheKey) {
+      const cachedBlob = this.cache.get(cacheKey);
+      if (!cachedBlob) {
+        return void 0;
+      }
+      this.cache.delete(cacheKey);
+      this.cache.set(cacheKey, cachedBlob);
+      return cachedBlob;
+    }
+    async encodeCanvas(canvas) {
+      if (this.outputType) {
+        const preferredBlob = await canvas.convertToBlob({
+          type: this.outputType,
+          quality: this.outputQuality
+        });
+        if (preferredBlob?.type == this.outputType) {
+          return preferredBlob;
+        }
+      }
+      return await canvas.convertToBlob({ type: "image/png" });
+    }
+    async createKey(tileBlob, tileCoords, highlightDisabled, highlightPattern, renderStateVersion, filterKey) {
+      const hashStart = performance.now();
+      const tileBuffer = await tileBlob.arrayBuffer();
+      const tileHashBuffer = await crypto.subtle.digest("SHA-1", tileBuffer);
+      const tileHash = Array.from(new Uint8Array(tileHashBuffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      const highlightKey = highlightDisabled ? "none" : JSON.stringify(highlightPattern);
+      const cacheKey = JSON.stringify({
+        tileCoords,
+        tileHash,
+        renderStateVersion,
+        highlight: highlightKey,
+        transparentHighlight: this.getTransparentHighlightKey(),
+        filter: filterKey
+      });
+      return {
+        cacheKey,
+        hashMs: Number((performance.now() - hashStart).toFixed(2))
+      };
+    }
+  };
+
+  // src/domain/templates/TemplateStorageRepository.js
+  var TemplateStorageRepository = class {
+    constructor({ storageKey = "bmTemplates", schemaVersion, scriptVersion }) {
+      this.storageKey = storageKey;
+      this.schemaVersion = schemaVersion;
+      this.scriptVersion = scriptVersion;
+    }
+    createEmpty() {
+      return {
+        "whoami": "BlueMarble",
+        "scriptVersion": this.scriptVersion,
+        "schemaVersion": this.schemaVersion,
+        "templates": {}
+      };
+    }
+    load() {
+      return getJSON(this.storageKey, {});
+    }
+    async save(templatesJSON) {
+      await setJSON(this.storageKey, templatesJSON);
+    }
+    getNextSortID(templates, authorID) {
+      const sortIDs = Object.keys(templates || {}).map((templateKey) => Number.parseInt(templateKey.split(" ")?.[0], 10)).filter(Number.isFinite);
+      let sortID = sortIDs.length ? Math.max(...sortIDs) + 1 : 0;
+      while (templates?.[`${sortID} ${authorID}`]) {
+        sortID++;
+      }
+      return sortID;
+    }
+    getActiveTemplateKey(templates) {
+      const entries = Object.entries(templates || {});
+      if (!entries.length) {
+        return null;
+      }
+      entries.sort(([keyA], [keyB]) => keyA.localeCompare(keyB, void 0, { numeric: true }));
+      const explicitlyEnabled = entries.find(([, template]) => template?.enabled === true);
+      if (explicitlyEnabled) {
+        return explicitlyEnabled[0];
+      }
+      const implicitlyEnabled = entries.find(([, template]) => template?.enabled !== false);
+      if (implicitlyEnabled) {
+        return implicitlyEnabled[0];
+      }
+      return entries[0][0];
+    }
+    normalizeActiveTemplate(templates) {
+      const activeTemplateKey = this.getActiveTemplateKey(templates);
+      if (!activeTemplateKey) {
+        return false;
+      }
+      let changed = false;
+      for (const [key, template] of Object.entries(templates)) {
+        if (!template || typeof template != "object") {
+          continue;
+        }
+        const shouldBeEnabled = key == activeTemplateKey;
+        if (template.enabled !== shouldBeEnabled) {
+          template.enabled = shouldBeEnabled;
+          changed = true;
+        }
+      }
+      return changed;
+    }
+  };
+
   // src/templateManager.js
-  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, loadProgressCache_fn, createProgressFingerprint_fn, restoreProgressCache_fn, queueProgressCacheSave_fn, removeProgressCache_fn, isHighlightDisabled_fn, tilePixelCornerToLatLng_fn, normalizeTemplateChunkURL_fn, canUseFastTemplateOverlay_fn, buildFastTemplateOverlayPayload_fn, syncFastTemplateOverlay_fn, loadTemplate_fn, storeTemplates_fn, getNextTemplateSortID_fn, getActiveTemplateKey_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, invalidateTemplateRenderCaches_fn, debugRenderPerf_fn, convertCanvasToTileBlob_fn, clearTileRenderCache_fn, setTileRenderCache_fn, getTileRenderCache_fn, getColorFilterKey_fn, createTileRenderCacheKey_fn, getSortedTemplates_fn, getTemplateChunkColorIDs_fn, getTemplateTileIndex_fn, ensureTemplateChunkColorIDs_fn, getTemplateChunkColorAtPixel_fn, templateChunkHasVisibleColor_fn, templateChunkNeedsMutation_fn, recordTemplateTileProgress_fn, scanTemplateProgressOnly_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
+  var _TemplateManager_instances, loadColorFilterSettings_fn, persistColorFilterSettings_fn, createProgressFingerprint_fn, restoreProgressCache_fn, queueProgressCacheSave_fn, removeProgressCache_fn, isHighlightDisabled_fn, tilePixelCornerToLatLng_fn, normalizeTemplateChunkURL_fn, canUseFastTemplateOverlay_fn, buildFastTemplateOverlayPayload_fn, syncFastTemplateOverlay_fn, loadTemplate_fn, storeTemplates_fn, getNextTemplateSortID_fn, normalizeActiveTemplate_fn, refreshVisibleTiles_fn, invalidateTemplateRenderCaches_fn, debugRenderPerf_fn, convertCanvasToTileBlob_fn, clearTileRenderCache_fn, setTileRenderCache_fn, getTileRenderCache_fn, getColorFilterKey_fn, createTileRenderCacheKey_fn, getSortedTemplates_fn, getTemplateChunkColorIDs_fn, getTemplateTileIndex_fn, ensureTemplateChunkColorIDs_fn, getTemplateChunkColorAtPixel_fn, templateChunkHasVisibleColor_fn, templateChunkNeedsMutation_fn, recordTemplateTileProgress_fn, scanTemplateProgressOnly_fn, isBlueMarbleTemplateJSON_fn, parseBlueMarble_fn, parseOSU_fn, calculateCorrectPixelsOnTile_And_FilterTile_fn;
   var TemplateManager = class {
     /** The constructor for the {@link TemplateManager} class.
      * @param {string} name - The name of the userscript
      * @param {string} version - The version of the userscript (SemVer as string)
      * @since 0.55.8
      */
-    constructor(name2, version2) {
+    constructor(name, version) {
       __privateAdd(this, _TemplateManager_instances);
-      this.name = name2;
-      this.version = version2;
+      this.name = name;
+      this.version = version;
       this.windowMain = null;
       this.settingsManager = null;
       this.schemaVersion = "2.0.0";
+      this.templateStorage = new TemplateStorageRepository({
+        schemaVersion: this.schemaVersion,
+        scriptVersion: this.version
+      });
       this.userID = null;
       this.encodingBase = "!#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~";
       this.tileSize = 1e3;
@@ -5172,7 +5503,6 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       this.templateTileIndex = null;
       this.renderStateVersion = 0;
       this.renderPerfDebug = !!this.settingsManager?.userSettings?.flags?.includes("bm-debug");
-      this.tileRenderCache = /* @__PURE__ */ new Map();
       this.tileRenderCacheMaxEntries = 48;
       this.tileRenderOutputType = "image/webp";
       this.tileRenderOutputQuality = 0.98;
@@ -5182,9 +5512,18 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       this.fastTemplateOverlayStateKey = "";
       this.progressCacheStorageKey = "bmTemplateProgressCache";
       this.progressCacheVersion = 1;
-      this.progressCache = __privateMethod(this, _TemplateManager_instances, loadProgressCache_fn).call(this);
-      this.progressCacheDirtyTemplates = /* @__PURE__ */ new Set();
-      this.progressCacheSaveTimeout = null;
+      this.progressCacheService = new TemplateProgressCache({
+        storageKey: this.progressCacheStorageKey,
+        version: this.progressCacheVersion,
+        warn: consoleWarn
+      });
+      this.progressCache = this.progressCacheService.cache;
+      this.tileRenderCacheService = new TemplateRenderCache({
+        maxEntries: this.tileRenderCacheMaxEntries,
+        outputType: this.tileRenderOutputType,
+        outputQuality: this.tileRenderOutputQuality,
+        getTransparentHighlightKey: () => this.settingsManager?.userSettings?.flags?.includes("hl-noTrans") ? "no-trans" : "trans"
+      });
       this.progressRefreshIntervalMS = 3e4;
       this.progressRefreshInterval = setInterval(() => {
         if (!this.templatesArray.length || document.visibilityState == "hidden") {
@@ -5197,15 +5536,15 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
      * @param {WindowMain} windowMain - The main window instance
      * @since 0.91.54
      */
-    setWindowMain(windowMain2) {
-      this.windowMain = windowMain2;
+    setWindowMain(windowMain) {
+      this.windowMain = windowMain;
     }
     /** Updates the stored instance of the SettingsManager.
      * @param {SettingsManager} settingsManager - The settings manager instance
      * @since 0.91.54
      */
-    setSettingsManager(settingsManager2) {
-      this.settingsManager = settingsManager2;
+    setSettingsManager(settingsManager) {
+      this.settingsManager = settingsManager;
       this.renderPerfDebug = !!this.settingsManager?.userSettings?.flags?.includes("bm-debug");
       __privateMethod(this, _TemplateManager_instances, loadColorFilterSettings_fn).call(this);
     }
@@ -5368,16 +5707,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
      * @since 0.65.4
      */
     async createJSON() {
-      return {
-        "whoami": "BlueMarble",
-        // Canonical storage identifier shared by Blue Marble forks
-        "scriptVersion": this.version,
-        // Version of userscript
-        "schemaVersion": this.schemaVersion,
-        // Version of JSON schema
-        "templates": {}
-        // The templates
-      };
+      return this.templateStorage.createEmpty();
     }
     /** Creates the template from the inputed file blob
      * @param {File} blob - The file blob to create a template from
@@ -5385,7 +5715,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
      * @param {Array<number, number, number, number>} coords - The coordinates of the top left corner of the template
      * @since 0.65.77
      */
-    async createTemplate(blob, name2, coords2) {
+    async createTemplate(blob, name, coords2) {
       if (!this.templatesJSON) {
         this.templatesJSON = await this.createJSON();
       }
@@ -5394,7 +5724,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       const authorID = numberToEncoded(this.userID || 0, this.encodingBase);
       const sortID = __privateMethod(this, _TemplateManager_instances, getNextTemplateSortID_fn).call(this, authorID);
       const template = new Template({
-        displayName: name2,
+        displayName: name,
         sortID,
         authorID,
         file: blob,
@@ -5441,7 +5771,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
      */
     async setActiveTemplate(templateKey) {
       if (!this.templatesJSON) {
-        this.templatesJSON = JSON.parse(GM_getValue("bmTemplates", "{}"));
+        this.templatesJSON = this.templateStorage.load();
       }
       this.templatesJSON.templates = this.templatesJSON.templates || {};
       const templates = this.templatesJSON?.templates || {};
@@ -5468,7 +5798,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
      */
     async deleteTemplate(templateKey) {
       if (!this.templatesJSON) {
-        this.templatesJSON = JSON.parse(GM_getValue("bmTemplates", "{}"));
+        this.templatesJSON = this.templateStorage.load();
       }
       this.templatesJSON.templates = this.templatesJSON.templates || {};
       const templates = this.templatesJSON.templates;
@@ -5492,13 +5822,13 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
      * @returns {Promise<boolean>} Whether the template was found and renamed
      * @since 0.92.34
      */
-    async renameTemplate(templateKey, name2) {
+    async renameTemplate(templateKey, name) {
       if (!this.templatesJSON) {
-        this.templatesJSON = JSON.parse(GM_getValue("bmTemplates", "{}"));
+        this.templatesJSON = this.templateStorage.load();
       }
       this.templatesJSON.templates = this.templatesJSON.templates || {};
       const template = this.templatesJSON.templates[templateKey];
-      const displayName = String(name2 || "").trim();
+      const displayName = String(name || "").trim();
       if (!template || !displayName) {
         return false;
       }
@@ -5519,7 +5849,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
      * @since 0.92.34
      */
     async downloadTemplateFromStorage(templateKey) {
-      const templates = JSON.parse(GM_getValue("bmTemplates", "{}"))?.templates || {};
+      const templates = this.templateStorage.load()?.templates || {};
       const template = templates[templateKey];
       if (!template) {
         return false;
@@ -5554,7 +5884,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
      * @since 0.88.474
      */
     async downloadAllTemplatesFromStorage() {
-      const templates = JSON.parse(GM_getValue("bmTemplates", "{}"))?.templates;
+      const templates = this.templateStorage.load()?.templates;
       if (Object.keys(templates).length > 0) {
         for (const [key, template] of Object.entries(templates)) {
           if (templates.hasOwnProperty(key)) {
@@ -5572,7 +5902,7 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       template.calculateCoordsFromChunked();
       const templateFileName = `${template.coords.join("-")}_${template.displayName.replaceAll(" ", "-")}`;
       const blob = await this.convertTemplateToBlob(template);
-      await GM.download({
+      await download({
         url: URL.createObjectURL(blob),
         name: templateFileName + ".png",
         conflictAction: "uniquify",
@@ -5915,125 +6245,34 @@ Version: ${this.version}`);
     }
     this.settingsManager.userSettings.filter = Array.from(this.shouldFilterColor.keys()).map((colorID) => Number(colorID)).filter((colorID) => Number.isFinite(colorID)).sort((a, b) => a - b);
   };
-  /** Loads the saved correct-pixel cache independently from template storage.
-   * @returns {{version: number, templates: Object}} Persisted progress payload
-   * @since 0.92.45
-   */
-  loadProgressCache_fn = function() {
-    const emptyCache = { version: this.progressCacheVersion, templates: {} };
-    try {
-      const storedCache = JSON.parse(GM_getValue(this.progressCacheStorageKey, "{}"));
-      if (storedCache?.version !== this.progressCacheVersion || !storedCache?.templates || typeof storedCache.templates != "object") {
-        return emptyCache;
-      }
-      return storedCache;
-    } catch (error) {
-      consoleWarn(`Could not load cached template progress: ${error?.message || error}`);
-      return emptyCache;
-    }
-  };
   /** Creates a content fingerprint so cached counts are never applied to a replaced template.
    * @param {Object} storedTemplate - Template object from userscript storage
    * @returns {string} Stable compact fingerprint
    * @since 0.92.45
    */
   createProgressFingerprint_fn = function(storedTemplate) {
-    let hash = 2166136261;
-    const feedHash = (value) => {
-      const stringValue = String(value ?? "");
-      for (let index = 0; index < stringValue.length; index++) {
-        hash ^= stringValue.charCodeAt(index);
-        hash = Math.imul(hash, 16777619);
-      }
-    };
-    feedHash(JSON.stringify(storedTemplate?.pixels || {}));
-    for (const [tileKey, encodedTile] of Object.entries(storedTemplate?.tiles || {}).sort(([left], [right]) => left.localeCompare(right))) {
-      feedHash(tileKey);
-      feedHash(encodedTile);
-    }
-    return `${Number(storedTemplate?.pixels?.total) || 0}:${Object.keys(storedTemplate?.tiles || {}).length}:${(hash >>> 0).toString(16)}`;
+    return this.progressCacheService.createFingerprint(storedTemplate);
   };
   /** Restores cached tile counts into a freshly loaded active template.
    * @param {Template} template - Hydrated active template instance
    * @since 0.92.45
    */
   restoreProgressCache_fn = function(template) {
-    const storageKey = template?.storageKey;
-    const storedTemplate = this.templatesJSON?.templates?.[storageKey];
-    if (!storageKey || !storedTemplate) {
-      return;
-    }
-    const fingerprint = __privateMethod(this, _TemplateManager_instances, createProgressFingerprint_fn).call(this, storedTemplate);
-    template.progressCacheFingerprint = fingerprint;
-    const cachedTemplate = this.progressCache.templates?.[storageKey];
-    if (!cachedTemplate || cachedTemplate.fingerprint != fingerprint || !cachedTemplate.correct) {
-      return;
-    }
-    const validTileCoords = new Set(
-      Object.keys(template.chunked || {}).map((tileKey) => tileKey.split(",").slice(0, 2).join(","))
-    );
-    const correct = {};
-    for (const [tileCoords, colorCounts] of Object.entries(cachedTemplate.correct)) {
-      if (!validTileCoords.has(tileCoords) || !colorCounts || typeof colorCounts != "object") {
-        continue;
-      }
-      correct[tileCoords] = new Map(
-        Object.entries(colorCounts).map(([colorID, count]) => [Number(colorID), Number(count)]).filter(([colorID, count]) => Number.isFinite(colorID) && Number.isFinite(count) && count >= 0)
-      );
-    }
-    if (Object.keys(correct).length) {
-      template.pixelCount.correct = correct;
-    }
+    this.progressCacheService.restore(template, this.templatesJSON);
   };
   /** Queues persistence for templates whose tile counts changed.
    * @param {Template[]} templates - Changed template instances
    * @since 0.92.45
    */
   queueProgressCacheSave_fn = function(templates) {
-    for (const template of templates) {
-      if (template?.storageKey) {
-        this.progressCacheDirtyTemplates.add(template);
-      }
-    }
-    if (!this.progressCacheDirtyTemplates.size || this.progressCacheSaveTimeout) {
-      return;
-    }
-    this.progressCacheSaveTimeout = setTimeout(() => {
-      this.progressCacheSaveTimeout = null;
-      const changedTemplates = Array.from(this.progressCacheDirtyTemplates);
-      this.progressCacheDirtyTemplates.clear();
-      for (const template of changedTemplates) {
-        const storageKey = template.storageKey;
-        const storedTemplate = this.templatesJSON?.templates?.[storageKey];
-        if (!storedTemplate) {
-          continue;
-        }
-        const correct = {};
-        for (const [tileCoords, colorCounts] of Object.entries(template.pixelCount?.correct || {})) {
-          if (!(colorCounts instanceof Map)) {
-            continue;
-          }
-          correct[tileCoords] = Object.fromEntries(colorCounts);
-        }
-        this.progressCache.templates[storageKey] = {
-          fingerprint: template.progressCacheFingerprint || __privateMethod(this, _TemplateManager_instances, createProgressFingerprint_fn).call(this, storedTemplate),
-          updatedAt: Date.now(),
-          correct
-        };
-      }
-      void GM.setValue(this.progressCacheStorageKey, JSON.stringify(this.progressCache));
-    }, 500);
+    this.progressCacheService.queueSave(templates, this.templatesJSON);
   };
   /** Drops stale progress state for a removed template.
    * @param {string} templateKey - Deleted template storage key
    * @since 0.92.45
    */
   removeProgressCache_fn = function(templateKey) {
-    if (!this.progressCache.templates?.[templateKey]) {
-      return;
-    }
-    delete this.progressCache.templates[templateKey];
-    void GM.setValue(this.progressCacheStorageKey, JSON.stringify(this.progressCache));
+    this.progressCacheService.remove(templateKey);
   };
   /** Checks whether the current highlight config can be represented by raw template images.
    * @returns {boolean} Whether highlighting is disabled
@@ -6204,7 +6443,7 @@ Version: ${this.version}`);
     __privateMethod(this, _TemplateManager_instances, invalidateTemplateRenderCaches_fn).call(this);
   };
   storeTemplates_fn = async function() {
-    await GM.setValue("bmTemplates", JSON.stringify(this.templatesJSON));
+    await this.templateStorage.save(this.templatesJSON);
   };
   /** Returns the next storage sort ID that will not overwrite an existing template.
    * @param {string} authorID - Encoded author ID used in the storage key
@@ -6212,34 +6451,7 @@ Version: ${this.version}`);
    * @since 0.92.34
    */
   getNextTemplateSortID_fn = function(authorID) {
-    const templates = this.templatesJSON?.templates || {};
-    const sortIDs = Object.keys(templates).map((templateKey) => Number.parseInt(templateKey.split(" ")?.[0], 10)).filter(Number.isFinite);
-    let sortID = sortIDs.length ? Math.max(...sortIDs) + 1 : 0;
-    while (templates[`${sortID} ${authorID}`]) {
-      sortID++;
-    }
-    return sortID;
-  };
-  /** Returns the storage key that should be considered the single active template.
-   * @param {Object} templates - Template storage object
-   * @returns {string | null}
-   * @since 0.92.11
-   */
-  getActiveTemplateKey_fn = function(templates) {
-    const entries = Object.entries(templates || {});
-    if (!entries.length) {
-      return null;
-    }
-    entries.sort(([keyA], [keyB]) => keyA.localeCompare(keyB, void 0, { numeric: true }));
-    const explicitlyEnabled = entries.find(([, template]) => template?.enabled === true);
-    if (explicitlyEnabled) {
-      return explicitlyEnabled[0];
-    }
-    const implicitlyEnabled = entries.find(([, template]) => template?.enabled !== false);
-    if (implicitlyEnabled) {
-      return implicitlyEnabled[0];
-    }
-    return entries[0][0];
+    return this.templateStorage.getNextSortID(this.templatesJSON?.templates || {}, authorID);
   };
   /** Normalizes template storage so exactly one template is active.
    * @param {Object} templates - Template storage object
@@ -6247,22 +6459,7 @@ Version: ${this.version}`);
    * @since 0.92.11
    */
   normalizeActiveTemplate_fn = function(templates) {
-    const activeTemplateKey = __privateMethod(this, _TemplateManager_instances, getActiveTemplateKey_fn).call(this, templates);
-    if (!activeTemplateKey) {
-      return false;
-    }
-    let changed = false;
-    for (const [key, template] of Object.entries(templates)) {
-      if (!template || typeof template != "object") {
-        continue;
-      }
-      const shouldBeEnabled = key == activeTemplateKey;
-      if (template.enabled !== shouldBeEnabled) {
-        template.enabled = shouldBeEnabled;
-        changed = true;
-      }
-    }
-    return changed;
+    return this.templateStorage.normalizeActiveTemplate(templates);
   };
   refreshVisibleTiles_fn = async function() {
     if (!this.templatesArray.length) {
@@ -6294,22 +6491,13 @@ Version: ${this.version}`);
     console.log(`[BM PERF] ${eventName} ${JSON.stringify(details)}`);
   };
   convertCanvasToTileBlob_fn = async function(canvas) {
-    if (this.tileRenderOutputType) {
-      const preferredBlob = await canvas.convertToBlob({
-        type: this.tileRenderOutputType,
-        quality: this.tileRenderOutputQuality
-      });
-      if (preferredBlob?.type == this.tileRenderOutputType) {
-        return preferredBlob;
-      }
-    }
-    return await canvas.convertToBlob({ type: "image/png" });
+    return await this.tileRenderCacheService.encodeCanvas(canvas);
   };
   /** Clears cached rendered tile blobs.
    * @since 0.92.27
    */
   clearTileRenderCache_fn = function() {
-    this.tileRenderCache?.clear();
+    this.tileRenderCacheService.clear();
   };
   /** Records a rendered tile blob in the small LRU cache.
    * @param {string} cacheKey - Render cache key
@@ -6317,14 +6505,7 @@ Version: ${this.version}`);
    * @since 0.92.27
    */
   setTileRenderCache_fn = function(cacheKey, blob) {
-    if (!cacheKey || !blob) {
-      return;
-    }
-    this.tileRenderCache.set(cacheKey, blob);
-    while (this.tileRenderCache.size > this.tileRenderCacheMaxEntries) {
-      const oldestKey = this.tileRenderCache.keys().next().value;
-      this.tileRenderCache.delete(oldestKey);
-    }
+    this.tileRenderCacheService.set(cacheKey, blob);
   };
   /** Gets a rendered tile blob from the LRU cache.
    * @param {string} cacheKey - Render cache key
@@ -6332,13 +6513,7 @@ Version: ${this.version}`);
    * @since 0.92.27
    */
   getTileRenderCache_fn = function(cacheKey) {
-    const cachedBlob = this.tileRenderCache.get(cacheKey);
-    if (!cachedBlob) {
-      return void 0;
-    }
-    this.tileRenderCache.delete(cacheKey);
-    this.tileRenderCache.set(cacheKey, cachedBlob);
-    return cachedBlob;
+    return this.tileRenderCacheService.get(cacheKey);
   };
   /** Creates a stable string for the current hidden-color set.
    * @returns {string} Sorted hidden color IDs
@@ -6348,24 +6523,7 @@ Version: ${this.version}`);
     return Array.from(this.shouldFilterColor.keys()).sort((a, b) => a - b).join(",");
   };
   createTileRenderCacheKey_fn = async function(tileBlob, tileCoords, highlightDisabled, highlightPattern, renderStateVersion, filterKey) {
-    const hashStart = performance.now();
-    const tileBuffer = await tileBlob.arrayBuffer();
-    const tileHashBuffer = await crypto.subtle.digest("SHA-1", tileBuffer);
-    const tileHash = Array.from(new Uint8Array(tileHashBuffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
-    const highlightKey = highlightDisabled ? "none" : JSON.stringify(highlightPattern);
-    const transparentHighlightKey = this.settingsManager?.userSettings?.flags?.includes("hl-noTrans") ? "no-trans" : "trans";
-    const cacheKey = JSON.stringify({
-      tileCoords,
-      tileHash,
-      renderStateVersion,
-      highlight: highlightKey,
-      transparentHighlight: transparentHighlightKey,
-      filter: filterKey
-    });
-    return {
-      cacheKey,
-      hashMs: Number((performance.now() - hashStart).toFixed(2))
-    };
+    return await this.tileRenderCacheService.createKey(tileBlob, tileCoords, highlightDisabled, highlightPattern, renderStateVersion, filterKey);
   };
   /** Returns templates in draw order without re-sorting on every tile.
    * @returns {Template[]} Sorted templates
@@ -6864,8 +7022,8 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
      * @param {TemplateManager} templateManager 
      * @since 0.11.34
      */
-    constructor(templateManager2) {
-      this.templateManager = templateManager2;
+    constructor(templateManager) {
+      this.templateManager = templateManager;
       this.disableAll = false;
       this.chargeRefillTimerID = "";
       this.coordsTilePixel = [];
@@ -7772,7 +7930,7 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
      */
     loadBoughtColorIDs() {
       try {
-        const payload = JSON.parse(GM_getValue(this.boughtColorStorageKey, "null"));
+        const payload = getJSON(this.boughtColorStorageKey, null);
         if (!payload || !Array.isArray(payload.ids)) {
           return null;
         }
@@ -7790,11 +7948,11 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
     saveBoughtColorIDs(ids, source = "unknown") {
       const cleanIDs = Array.from(ids || []).map(Number).filter((id) => Number.isInteger(id) && id >= 32 && id <= 63).sort((left, right) => left - right);
       this.boughtColorIDsCache = new Set(cleanIDs);
-      void GM.setValue(this.boughtColorStorageKey, JSON.stringify({
+      void setJSON(this.boughtColorStorageKey, {
         ids: cleanIDs,
         source,
         updatedAt: Date.now()
-      }));
+      });
     }
     /** Fetches Wplace user data when the page has not already requested it.
      * @returns {Promise<Object | null>}
@@ -7807,11 +7965,11 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       if (this.userDataPromise) {
         return await this.userDataPromise;
       }
-      if (typeof GM_xmlhttpRequest != "function") {
+      if (!canRequest()) {
         return null;
       }
       this.userDataPromise = new Promise((resolve) => {
-        GM_xmlhttpRequest({
+        request({
           method: "GET",
           url: "https://backend.wplace.live/me",
           withCredentials: true,
@@ -7900,32 +8058,37 @@ Did you try clicking the canvas first?`);
             this.coordsTilePixel = [...coordsTile, ...coordsPixel];
             this.selectTemplateColorForEyedropper(coordsTile, coordsPixel);
             const displayTP = serverTPtoDisplayTP(coordsTile, coordsPixel);
+            const coordsLabel = ["Tl X:", "Tl Y:", "Px X:", "Px Y:"];
+            const coordsID = ["bm-tile-x", "bm-tile-y", "bm-pixel-x", "bm-pixel-y"];
+            const coordsCombined = [...coordsTile, ...coordsPixel];
+            const updateDisplayCoords = () => {
+              for (const [coordIndex, coordID] of coordsID.entries()) {
+                const coordElement = document.getElementById(coordID);
+                if (coordElement) {
+                  coordElement.textContent = `${coordsLabel[coordIndex] ?? "??:"} ${coordsCombined[coordIndex]}`;
+                }
+              }
+            };
+            let displayCoords = document.querySelector("#bm-display-coords");
+            if (displayCoords) {
+              updateDisplayCoords();
+              break;
+            }
             const spanElements = document.querySelectorAll("span");
             for (const element of spanElements) {
               const elementTextTrimmed = element.textContent.trim();
               if (elementTextTrimmed.includes(displayTP[0]) && elementTextTrimmed.includes(displayTP[1])) {
-                let displayCoords = document.querySelector("#bm-display-coords");
-                const text = `(Tl X: ${coordsTile[0]}, Tl Y: ${coordsTile[1]}, Px X: ${coordsPixel[0]}, Px Y: ${coordsPixel[1]})`;
-                const coordsLabel = ["Tl X:", "Tl Y:", "Px X:", "Px Y:"];
-                const coordsID = ["bm-tile-x", "bm-tile-y", "bm-pixel-x", "bm-pixel-y"];
-                const coordsCombined = [...coordsTile, ...coordsPixel];
-                if (!displayCoords) {
-                  displayCoords = document.createElement("span");
-                  displayCoords.id = "bm-display-coords";
-                  displayCoords.style = "display: flex; flex-wrap: wrap; gap: 0 1ch; font-size: small;";
-                  for (const [coordIndex, coordValue] of coordsCombined.entries()) {
-                    const coordElement = document.createElement("span");
-                    coordElement.id = coordsID[coordsCombined.indexOf(coordValue) ?? ""];
-                    coordElement.textContent = `${coordsLabel[coordIndex] ?? "??:"} ${coordValue}`;
-                    displayCoords.appendChild(coordElement);
-                  }
-                  element.parentNode.parentNode.parentNode.insertAdjacentElement("afterend", displayCoords);
-                } else {
-                  for (const [coordIndex, coordID] of coordsID.entries()) {
-                    const coordElement = document.getElementById(coordID);
-                    coordElement.textContent = `${coordsLabel[coordIndex] ?? "??:"} ${coordsCombined[coordIndex]}`;
-                  }
+                displayCoords = document.createElement("span");
+                displayCoords.id = "bm-display-coords";
+                displayCoords.style = "display: flex; flex-wrap: wrap; gap: 0 1ch; font-size: small;";
+                for (const [coordIndex, coordValue] of coordsCombined.entries()) {
+                  const coordElement = document.createElement("span");
+                  coordElement.id = coordsID[coordIndex] ?? "";
+                  coordElement.textContent = `${coordsLabel[coordIndex] ?? "??:"} ${coordValue}`;
+                  displayCoords.appendChild(coordElement);
                 }
+                element.parentNode.parentNode.parentNode.insertAdjacentElement("afterend", displayCoords);
+                break;
               }
             }
             break;
@@ -7950,24 +8113,23 @@ Did you try clicking the canvas first?`);
       });
     }
     // Sends a heartbeat to the telemetry server
-    async sendHeartbeat(version2) {
-      let userSettings2 = GM_getValue("bmUserSettings", "{}");
-      userSettings2 = JSON.parse(userSettings2);
-      if (!userSettings2 || !userSettings2.telemetry || !userSettings2.uuid) {
+    async sendHeartbeat(version) {
+      let userSettings = getJSON("bmUserSettings", {});
+      if (!userSettings || !userSettings.telemetry || !userSettings.uuid) {
         return;
       }
       const ua = navigator.userAgent;
       let browser = await this.getBrowserFromUA(ua);
       let os = this.getOS(ua);
-      GM_xmlhttpRequest({
+      request({
         method: "POST",
         url: "https://telemetry.thebluecorner.net/heartbeat",
         headers: {
           "Content-Type": "application/json"
         },
         data: JSON.stringify({
-          uuid: userSettings2.uuid,
-          version: version2,
+          uuid: userSettings.uuid,
+          version,
           browser,
           os
         }),
@@ -8031,8 +8193,8 @@ Did you try clicking the canvas first?`);
      * @since 0.88.339
      * @see {@link Overlay#constructor}
      */
-    constructor(name2, version2, currentTelemetryVersion2, uuid) {
-      super(name2, version2);
+    constructor(name, version, currentTelemetryVersion2, uuid) {
+      super(name, version);
       __privateAdd(this, _WindowTelemetry_instances);
       this.window = null;
       this.windowID = "bm-window-telemetry";
@@ -8079,121 +8241,224 @@ Did you try clicking the canvas first?`);
    * @since 0.88.339
    */
   setTelemetryValue_fn = function(value) {
-    const userSettings2 = JSON.parse(GM_getValue("bmUserSettings", "{}"));
-    userSettings2.telemetry = value;
-    GM.setValue("bmUserSettings", JSON.stringify(userSettings2));
+    const userSettings = getJSON("bmUserSettings", {});
+    userSettings.telemetry = value;
+    void setJSON("bmUserSettings", userSettings);
   };
 
-  // src/main.js
-  var name = GM_info.script.name.toString();
-  var version = GM_info.script.version.toString();
-  var consoleStyle = "color: cornflowerblue;";
-  var userSettings = JSON.parse(GM_getValue("bmUserSettings", "{}"));
-  var isDebugLoggingEnabled = !!(userSettings?.debugLogs || userSettings?.flags?.includes("bm-debug"));
-  function inject(callback) {
+  // src/infrastructure/wplace/fetchProxy.js
+  function injectPageScript(callback, attributes) {
     const script = document.createElement("script");
-    script.setAttribute("bm-name", name);
-    script.setAttribute("bm-cStyle", consoleStyle);
-    script.setAttribute("bm-debug", String(isDebugLoggingEnabled));
+    for (const [name, value] of Object.entries(attributes)) {
+      script.setAttribute(name, value);
+    }
     script.textContent = `(${callback})();`;
     document.documentElement?.appendChild(script);
     script.remove();
   }
-  inject(() => {
-    const script = document.currentScript;
-    const name2 = script?.getAttribute("bm-name") || "Blue Marble";
-    const consoleStyle2 = script?.getAttribute("bm-cStyle") || "";
-    const debugLogs = script?.getAttribute("bm-debug") == "true";
-    const fetchedBlobQueue = /* @__PURE__ */ new Map();
-    const debugLog = (...args) => {
-      if (debugLogs) {
-        console.log(...args);
-      }
-    };
-    window.addEventListener("message", (event) => {
-      const { source, endpoint, blobID, blobData, blink } = event.data;
-      const elapsed = Date.now() - blink;
-      if (debugLogs) {
-        console.groupCollapsed(`%c${name2}%c: ${fetchedBlobQueue.size} Recieved IMAGE message about blob "${blobID}"`, consoleStyle2, "");
-        console.log(`Blob fetch took %c${String(Math.floor(elapsed / 6e4)).padStart(2, "0")}:${String(Math.floor(elapsed / 1e3) % 60).padStart(2, "0")}.${String(elapsed % 1e3).padStart(3, "0")}%c MM:SS.mmm`, consoleStyle2, "");
-        console.log(fetchedBlobQueue);
-        console.groupEnd();
-      }
-      if (source == "blue-marble" && !!blobID && !!blobData && !endpoint) {
-        const callback = fetchedBlobQueue.get(blobID);
-        if (typeof callback === "function") {
-          callback(blobData);
-        } else {
-          console.warn(`%c${name2}%c: Attempted to retrieve a blob (%s) from queue, but the blobID was not a function! Skipping...`, consoleStyle2, "", blobID);
+  function installWplaceFetchProxy({ name, consoleStyle: consoleStyle2, debugLogs, blobTimeoutMS = 12e3 }) {
+    injectPageScript(() => {
+      const script = document.currentScript;
+      const name2 = script?.getAttribute("bm-name") || "Blue Marble";
+      const consoleStyle3 = script?.getAttribute("bm-cStyle") || "";
+      const debugLogs2 = script?.getAttribute("bm-debug") == "true";
+      const blobTimeoutMS2 = Number(script?.getAttribute("bm-blob-timeout")) || 12e3;
+      const fetchedBlobQueue = /* @__PURE__ */ new Map();
+      const debugLog = (...args) => {
+        if (debugLogs2) {
+          console.log(...args);
+        }
+      };
+      const removeQueuedBlob = (blobID) => {
+        const queued = fetchedBlobQueue.get(blobID);
+        if (queued?.timeoutID) {
+          clearTimeout(queued.timeoutID);
         }
         fetchedBlobQueue.delete(blobID);
-      }
-    });
-    const originalFetch = window.fetch;
-    window.fetch = async function(...args) {
-      const response = await originalFetch.apply(this, args);
-      const cloned = response.clone();
-      const endpointName = String((args[0] instanceof Request ? args[0]?.url : args[0]) || "ignore");
-      const contentType = cloned.headers.get("content-type") || "";
-      if (contentType.includes("application/json")) {
-        debugLog(`%c${name2}%c: Sending JSON message about endpoint "${endpointName}"`, consoleStyle2, "");
-        cloned.json().then((jsonData) => {
-          window.postMessage({
-            source: "blue-marble",
-            endpoint: endpointName,
-            jsonData
-          }, "*");
-        }).catch((err) => {
-          console.error(`%c${name2}%c: Failed to parse JSON: `, consoleStyle2, "", err);
-        });
-      } else if (contentType.includes("image/") && !endpointName.startsWith("data:") && !endpointName.startsWith("blob:") && (!endpointName.includes("openfreemap") && !endpointName.includes("maps"))) {
-        const blink = Date.now();
-        const blob = await cloned.blob();
-        debugLog(`%c${name2}%c: ${fetchedBlobQueue.size} Sending IMAGE message about endpoint "${endpointName}"`, consoleStyle2, "");
-        return new Promise((resolve) => {
-          const blobUUID = crypto.randomUUID();
-          fetchedBlobQueue.set(blobUUID, (blobProcessed) => {
-            const responseHeaders = new Headers(cloned.headers);
-            if (blobProcessed?.type) {
-              responseHeaders.set("content-type", blobProcessed.type);
-              responseHeaders.delete("content-length");
-            }
-            resolve(new Response(blobProcessed, {
-              headers: responseHeaders,
-              status: cloned.status,
-              statusText: cloned.statusText
-            }));
-            debugLog(`%c${name2}%c: ${fetchedBlobQueue.size} Processed blob "${blobUUID}"`, consoleStyle2, "");
+      };
+      window.addEventListener("message", (event) => {
+        const { source, endpoint, blobID, blobData, blink } = event.data;
+        const elapsed = Date.now() - blink;
+        if (debugLogs2) {
+          console.groupCollapsed(`%c${name2}%c: ${fetchedBlobQueue.size} Recieved IMAGE message about blob "${blobID}"`, consoleStyle3, "");
+          console.log(`Blob fetch took %c${String(Math.floor(elapsed / 6e4)).padStart(2, "0")}:${String(Math.floor(elapsed / 1e3) % 60).padStart(2, "0")}.${String(elapsed % 1e3).padStart(3, "0")}%c MM:SS.mmm`, consoleStyle3, "");
+          console.log(fetchedBlobQueue);
+          console.groupEnd();
+        }
+        if (source == "blue-marble" && !!blobID && !!blobData && !endpoint) {
+          const queued = fetchedBlobQueue.get(blobID);
+          const callback = queued?.callback;
+          if (typeof callback === "function") {
+            callback(blobData);
+          } else {
+            console.warn(`%c${name2}%c: Attempted to retrieve a blob (%s) from queue, but the blobID was not a function! Skipping...`, consoleStyle3, "", blobID);
+          }
+          removeQueuedBlob(blobID);
+        }
+      });
+      const originalFetch = window.fetch;
+      window.fetch = async function(...args) {
+        const response = await originalFetch.apply(this, args);
+        const cloned = response.clone();
+        const endpointName = String((args[0] instanceof Request ? args[0]?.url : args[0]) || "ignore");
+        const contentType = cloned.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          debugLog(`%c${name2}%c: Sending JSON message about endpoint "${endpointName}"`, consoleStyle3, "");
+          cloned.json().then((jsonData) => {
+            window.postMessage({
+              source: "blue-marble",
+              endpoint: endpointName,
+              jsonData
+            }, "*");
+          }).catch((err) => {
+            console.error(`%c${name2}%c: Failed to parse JSON: `, consoleStyle3, "", err);
           });
-          window.postMessage({
-            source: "blue-marble",
-            endpoint: endpointName,
-            blobID: blobUUID,
-            blobData: blob,
-            blink
-          });
-        }).catch((exception) => {
-          const elapsed = Date.now();
-          console.error(`%c${name2}%c: Failed to Promise blob!`, consoleStyle2, "");
-          console.groupCollapsed(`%c${name2}%c: Details of failed blob Promise:`, consoleStyle2, "");
-          console.error(`Endpoint: ${endpointName}
+        } else if (contentType.includes("image/") && !endpointName.startsWith("data:") && !endpointName.startsWith("blob:") && (!endpointName.includes("openfreemap") && !endpointName.includes("maps"))) {
+          const blink = Date.now();
+          const blob = await cloned.blob();
+          debugLog(`%c${name2}%c: ${fetchedBlobQueue.size} Sending IMAGE message about endpoint "${endpointName}"`, consoleStyle3, "");
+          return new Promise((resolve) => {
+            const blobUUID = crypto.randomUUID();
+            const timeoutID = setTimeout(() => {
+              removeQueuedBlob(blobUUID);
+              console.warn(`%c${name2}%c: Timed out processing blob "%s"; returning original image.`, consoleStyle3, "", blobUUID);
+              resolve(response);
+            }, blobTimeoutMS2);
+            fetchedBlobQueue.set(blobUUID, {
+              timeoutID,
+              callback: (blobProcessed) => {
+                const responseHeaders = new Headers(cloned.headers);
+                if (blobProcessed?.type) {
+                  responseHeaders.set("content-type", blobProcessed.type);
+                  responseHeaders.delete("content-length");
+                }
+                resolve(new Response(blobProcessed, {
+                  headers: responseHeaders,
+                  status: cloned.status,
+                  statusText: cloned.statusText
+                }));
+                debugLog(`%c${name2}%c: ${fetchedBlobQueue.size} Processed blob "${blobUUID}"`, consoleStyle3, "");
+              }
+            });
+            window.postMessage({
+              source: "blue-marble",
+              endpoint: endpointName,
+              blobID: blobUUID,
+              blobData: blob,
+              blink
+            });
+          }).catch((exception) => {
+            const elapsed = Date.now();
+            console.error(`%c${name2}%c: Failed to Promise blob!`, consoleStyle3, "");
+            console.groupCollapsed(`%c${name2}%c: Details of failed blob Promise:`, consoleStyle3, "");
+            console.error(`Endpoint: ${endpointName}
 There are ${fetchedBlobQueue.size} blobs processing...
 Blink: ${blink.toLocaleString()}
 Time Since Blink: ${String(Math.floor(elapsed / 6e4)).padStart(2, "0")}:${String(Math.floor(elapsed / 1e3) % 60).padStart(2, "0")}.${String(elapsed % 1e3).padStart(3, "0")} MM:SS.mmm`);
-          console.error(`Exception stack:`, exception);
-          console.groupEnd();
-        });
+            console.error(`Exception stack:`, exception);
+            console.groupEnd();
+          });
+        }
+        return response;
+      };
+    }, {
+      "bm-name": name,
+      "bm-cStyle": consoleStyle2,
+      "bm-debug": String(debugLogs),
+      "bm-blob-timeout": String(blobTimeoutMS)
+    });
+  }
+
+  // src/infrastructure/wplace/paletteMoveButton.js
+  function installPaletteMoveButton() {
+    let scheduled = false;
+    const ensureMoveButton = () => {
+      scheduled = false;
+      const black = document.querySelector("#color-1");
+      if (!black) {
+        return;
       }
-      return response;
+      let move = document.querySelector("#bm-button-move");
+      if (move) {
+        return;
+      }
+      move = document.createElement("button");
+      move.id = "bm-button-move";
+      move.textContent = "Move \u2191";
+      move.className = "btn btn-soft";
+      move.onclick = function() {
+        const roundedBox = this.parentNode.parentNode.parentNode.parentNode;
+        const shouldMoveUp = this.textContent == "Move \u2191";
+        roundedBox.parentNode.className = roundedBox.parentNode.className.replace(shouldMoveUp ? "bottom" : "top", shouldMoveUp ? "top" : "bottom");
+        roundedBox.style.borderTopLeftRadius = shouldMoveUp ? "0px" : "var(--radius-box)";
+        roundedBox.style.borderTopRightRadius = shouldMoveUp ? "0px" : "var(--radius-box)";
+        roundedBox.style.borderBottomLeftRadius = shouldMoveUp ? "var(--radius-box)" : "0px";
+        roundedBox.style.borderBottomRightRadius = shouldMoveUp ? "var(--radius-box)" : "0px";
+        this.textContent = shouldMoveUp ? "Move \u2193" : "Move \u2191";
+      };
+      const paintPixel = black.parentNode.parentNode.parentNode.parentNode.querySelector("h2");
+      paintPixel.parentNode?.appendChild(move);
     };
-  });
-  var cssOverlay = GM_getResourceText("CSS-BM-File");
-  GM_addStyle(cssOverlay);
-  var robotoMonoInjectionPoint = "robotoMonoInjectionPoint";
-  if (!!(robotoMonoInjectionPoint.indexOf("@font-face") + 1)) {
-    GM_addStyle(robotoMonoInjectionPoint);
-  } else {
-    stylesheetLink = document.createElement("link");
+    const scheduleEnsureMoveButton = () => {
+      if (scheduled) {
+        return;
+      }
+      scheduled = true;
+      requestAnimationFrame(ensureMoveButton);
+    };
+    const observer = new MutationObserver(scheduleEnsureMoveButton);
+    observer.observe(document.body, { childList: true, subtree: true });
+    scheduleEnsureMoveButton();
+    return observer;
+  }
+
+  // src/app/BlueMarbleApp.js
+  var consoleStyle = "color: cornflowerblue;";
+  var currentTelemetryVersion = 1;
+  var _BlueMarbleApp_instances, installStyles_fn, ensureUserIdentity_fn, loadStoredTemplates_fn, installTelemetryPrompt_fn;
+  var BlueMarbleApp = class {
+    constructor() {
+      __privateAdd(this, _BlueMarbleApp_instances);
+      const scriptInfo = getScriptInfo();
+      this.name = scriptInfo.name;
+      this.version = scriptInfo.version;
+      this.userSettings = getJSON("bmUserSettings", {});
+      this.isDebugLoggingEnabled = !!(this.userSettings?.debugLogs || this.userSettings?.flags?.includes("bm-debug"));
+    }
+    async start() {
+      installWplaceFetchProxy({
+        name: this.name,
+        consoleStyle,
+        debugLogs: this.isDebugLoggingEnabled
+      });
+      __privateMethod(this, _BlueMarbleApp_instances, installStyles_fn).call(this);
+      await __privateMethod(this, _BlueMarbleApp_instances, ensureUserIdentity_fn).call(this);
+      const windowMain = new WindowMain(this.name, this.version);
+      const templateManager = new TemplateManager(this.name, this.version);
+      const apiManager = new ApiManager(templateManager);
+      const settingsManager = new SettingsManager(this.name, this.version, this.userSettings);
+      windowMain.setSettingsManager(settingsManager);
+      windowMain.setApiManager(apiManager);
+      templateManager.setWindowMain(windowMain);
+      templateManager.setSettingsManager(settingsManager);
+      apiManager.spontaneousResponseListener(windowMain);
+      await __privateMethod(this, _BlueMarbleApp_instances, loadStoredTemplates_fn).call(this, templateManager, windowMain);
+      __privateMethod(this, _BlueMarbleApp_instances, installTelemetryPrompt_fn).call(this, apiManager);
+      windowMain.buildWindow();
+      installPaletteMoveButton();
+      setInterval(() => apiManager.sendHeartbeat(this.version), 1e3 * 60 * 30);
+      consoleLog(`%c${this.name}%c (${this.version}) userscript has loaded!`, consoleStyle, "");
+    }
+  };
+  _BlueMarbleApp_instances = new WeakSet();
+  installStyles_fn = function() {
+    addStyle(getResourceText("CSS-BM-File"));
+    const robotoMonoInjectionPoint = "robotoMonoInjectionPoint";
+    if (!!(robotoMonoInjectionPoint.indexOf("@font-face") + 1)) {
+      addStyle(robotoMonoInjectionPoint);
+      return;
+    }
+    const stylesheetLink = document.createElement("link");
     stylesheetLink.href = "https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap";
     stylesheetLink.rel = "preload";
     stylesheetLink.as = "style";
@@ -8202,65 +8467,32 @@ Time Since Blink: ${String(Math.floor(elapsed / 6e4)).padStart(2, "0")}:${String
       this.rel = "stylesheet";
     };
     document.head?.appendChild(stylesheetLink);
-  }
-  var stylesheetLink;
-  if (!userSettings.uuid) {
-    userSettings.uuid = crypto.randomUUID();
-    GM.setValue("bmUserSettings", JSON.stringify(userSettings));
-  }
-  var observers = new Observers();
-  var windowMain = new WindowMain(name, version);
-  var templateManager = new TemplateManager(name, version);
-  var apiManager = new ApiManager(templateManager);
-  var settingsManager = new SettingsManager(name, version, userSettings);
-  windowMain.setSettingsManager(settingsManager);
-  windowMain.setApiManager(apiManager);
-  templateManager.setWindowMain(windowMain);
-  templateManager.setSettingsManager(settingsManager);
-  var storageTemplates = JSON.parse(GM_getValue("bmTemplates", "{}"));
-  apiManager.spontaneousResponseListener(windowMain);
-  templateManager.importJSON(storageTemplates).then(() => {
-    windowMain.refreshTemplateControls();
-  }).catch((error) => {
-    consoleWarn(`Failed to load saved templates: ${error?.message || error}`);
-  });
-  setInterval(() => apiManager.sendHeartbeat(version), 1e3 * 60 * 30);
-  var currentTelemetryVersion = 1;
-  var previousTelemetryVersion = userSettings?.telemetry;
-  if (previousTelemetryVersion == void 0 || previousTelemetryVersion > currentTelemetryVersion) {
-    const windowTelemetry = new WindowTelemetry(name, version, currentTelemetryVersion, userSettings?.uuid);
-    windowTelemetry.setApiManager(apiManager);
-    windowTelemetry.buildWindow();
-  }
-  windowMain.buildWindow();
-  observeBlack();
-  consoleLog(`%c${name}%c (${version}) userscript has loaded!`, "color: cornflowerblue;", "");
-  function observeBlack() {
-    const observer = new MutationObserver((mutations, observer2) => {
-      const black = document.querySelector("#color-1");
-      if (!black) {
-        return;
-      }
-      let move = document.querySelector("#bm-button-move");
-      if (!move) {
-        move = document.createElement("button");
-        move.id = "bm-button-move";
-        move.textContent = "Move \u2191";
-        move.className = "btn btn-soft";
-        move.onclick = function() {
-          const roundedBox = this.parentNode.parentNode.parentNode.parentNode;
-          const shouldMoveUp = this.textContent == "Move \u2191";
-          roundedBox.parentNode.className = roundedBox.parentNode.className.replace(shouldMoveUp ? "bottom" : "top", shouldMoveUp ? "top" : "bottom");
-          roundedBox.style.borderTopLeftRadius = shouldMoveUp ? "0px" : "var(--radius-box)";
-          roundedBox.style.borderTopRightRadius = shouldMoveUp ? "0px" : "var(--radius-box)";
-          roundedBox.style.borderBottomLeftRadius = shouldMoveUp ? "var(--radius-box)" : "0px";
-          roundedBox.style.borderBottomRightRadius = shouldMoveUp ? "var(--radius-box)" : "0px";
-          this.textContent = shouldMoveUp ? "Move \u2193" : "Move \u2191";
-        };
-        const paintPixel = black.parentNode.parentNode.parentNode.parentNode.querySelector("h2");
-        paintPixel.parentNode?.appendChild(move);
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
+  };
+  ensureUserIdentity_fn = async function() {
+    if (this.userSettings.uuid) {
+      return;
+    }
+    this.userSettings.uuid = crypto.randomUUID();
+    await setJSON("bmUserSettings", this.userSettings);
+  };
+  loadStoredTemplates_fn = async function(templateManager, windowMain) {
+    const storageTemplates = getJSON("bmTemplates", {});
+    try {
+      await templateManager.importJSON(storageTemplates);
+      windowMain.refreshTemplateControls();
+    } catch (error) {
+      consoleWarn(`Failed to load saved templates: ${error?.message || error}`);
+    }
+  };
+  installTelemetryPrompt_fn = function(apiManager) {
+    const previousTelemetryVersion = this.userSettings?.telemetry;
+    if (previousTelemetryVersion == void 0 || previousTelemetryVersion > currentTelemetryVersion) {
+      const windowTelemetry = new WindowTelemetry(this.name, this.version, currentTelemetryVersion, this.userSettings?.uuid);
+      windowTelemetry.setApiManager(apiManager);
+      windowTelemetry.buildWindow();
+    }
+  };
+
+  // src/main.js
+  void new BlueMarbleApp().start();
 })();

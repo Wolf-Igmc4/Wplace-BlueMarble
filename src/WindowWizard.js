@@ -2,6 +2,7 @@ import Overlay from "./Overlay";
 import Template from "./Template";
 import TemplateManager from "./templateManager";
 import { encodedToNumber, escapeHTML, getWplaceVersion, localizeDate, localizeNumber, sleep } from "./utils";
+import { deleteValue, getJSON } from "./infrastructure/userscript/userscriptRuntime.js";
 
 /** Wizard that manages template updates & recovery
  * @class WindowWizard
@@ -25,7 +26,7 @@ export default class WindowWizard extends Overlay {
     this.windowParent = document.body; // The parent of the window DOM tree
 
     // Retrieves data from storage
-    this.currentJSON = JSON.parse(GM_getValue('bmTemplates', '{}')); // The current Blue Marble storage
+    this.currentJSON = getJSON('bmTemplates', {}); // The current Blue Marble storage
     this.scriptVersion = this.currentJSON?.scriptVersion; // Script version when template was created
     this.schemaVersion = this.currentJSON?.schemaVersion; // Schema version when template was created
 
@@ -175,7 +176,7 @@ export default class WindowWizard extends Overlay {
    * @since 0.92.34
    */
   #refreshTemplateList() {
-    this.currentJSON = JSON.parse(GM_getValue('bmTemplates', '{}'));
+    this.currentJSON = getJSON('bmTemplates', {});
     document.querySelector(`#${this.windowID} #bm-wizard-tlist`)?.remove();
     document.querySelector(`#${this.windowID} .bm-wizard-empty`)?.remove();
     this.#displayTemplateList();
@@ -409,7 +410,7 @@ export default class WindowWizard extends Overlay {
     }
 
     // Deletes the bmCoords value set in 1.0.0 which is unused in 2.0.0
-    GM_deleteValue('bmCoords');
+    deleteValue('bmCoords');
 
     // Obtains the templates from JSON storage
     const templates = this.currentJSON?.templates;

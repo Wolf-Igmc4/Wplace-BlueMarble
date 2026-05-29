@@ -1,8 +1,13 @@
 import SettingsManager from "./settingsManager";
 import Template from "./Template";
-import { base64ToUint8, clearWplaceTemplateOverlay, colorpaletteForBlueMarble, consoleError, consoleLog, consoleWarn, localizeNumber, numberToEncoded, refreshWplaceTiles, sleep, syncWplaceTemplateOverlay, viewCanvasInNewTab } from "./utils";
+import { base64ToUint8, colorpaletteForBlueMarble, consoleError, consoleLog, consoleWarn, localizeNumber, numberToEncoded, sleep, viewCanvasInNewTab } from "./utils";
 import WindowMain from "./WindowMain";
 import WindowWizard from "./WindowWizard";
+import { download } from "./infrastructure/userscript/userscriptRuntime.js";
+import { clearWplaceTemplateOverlay, refreshWplaceTiles, syncWplaceTemplateOverlay } from "./infrastructure/wplace/wplaceBridge.js";
+import TemplateProgressCache from "./domain/templates/TemplateProgressCache.js";
+import TemplateRenderCache from "./domain/templates/TemplateRenderCache.js";
+import TemplateStorageRepository from "./domain/templates/TemplateStorageRepository.js";
 
 /** Manages the template system.
  * This class handles all external requests for template modification, creation, and analysis.
@@ -97,6 +102,10 @@ export default class TemplateManager {
     this.windowMain = null; // The main instance of the Overlay class
     this.settingsManager = null; // The main instance of the SettingsManager class
     this.schemaVersion = '2.0.0'; // Version of JSON schema
+    this.templateStorage = new TemplateStorageRepository({
+      schemaVersion: this.schemaVersion,
+      scriptVersion: this.version
+    });
     this.userID = null; // The ID of the current user
     this.encodingBase = '!#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~'; // Characters to use for encoding/decoding
     this.tileSize = 1000; // The number of pixels in a tile. Assumes the tile is square
@@ -120,7 +129,6 @@ export default class TemplateManager {
     this.templateTileIndex = null; // Cached lookup from tile coords to template chunks
     this.renderStateVersion = 0; // Increments whenever render-relevant template state changes
     this.renderPerfDebug = !!this.settingsManager?.userSettings?.flags?.includes('bm-debug'); // Verbose render performance logs
-    this.tileRenderCache = new Map(); // Reuses processed tile blobs while tile image + render state are unchanged
     this.tileRenderCacheMaxEntries = 48; // Small LRU cache for visible map churn
     this.tileRenderOutputType = 'image/webp'; // WebP encodes large transparent overlay tiles much faster than PNG
     this.tileRenderOutputQuality = 0.98; // High visual quality for pixel-art overlays
@@ -130,9 +138,18 @@ export default class TemplateManager {
     this.fastTemplateOverlayStateKey = ''; // Last requested overlay state
     this.progressCacheStorageKey = 'bmTemplateProgressCache'; // Persisted correct-pixel counts survive page reloads
     this.progressCacheVersion = 1; // Storage format version for persisted progress
-    this.progressCache = this.#loadProgressCache();
-    this.progressCacheDirtyTemplates = new Set();
-    this.progressCacheSaveTimeout = null;
+    this.progressCacheService = new TemplateProgressCache({
+      storageKey: this.progressCacheStorageKey,
+      version: this.progressCacheVersion,
+      warn: consoleWarn
+    });
+    this.progressCache = this.progressCacheService.cache;
+    this.tileRenderCacheService = new TemplateRenderCache({
+      maxEntries: this.tileRenderCacheMaxEntries,
+      outputType: this.tileRenderOutputType,
+      outputQuality: this.tileRenderOutputQuality,
+      getTransparentHighlightKey: () => this.settingsManager?.userSettings?.flags?.includes('hl-noTrans') ? 'no-trans' : 'trans'
+    });
     this.progressRefreshIntervalMS = 30000; // Recheck currently visible map tiles while the page remains open
     this.progressRefreshInterval = setInterval(() => {
       if (!this.templatesArray.length || document.visibilityState == 'hidden') {return;}
@@ -261,47 +278,13 @@ export default class TemplateManager {
       .sort((a, b) => a - b);
   }
 
-  /** Loads the saved correct-pixel cache independently from template storage.
-   * @returns {{version: number, templates: Object}} Persisted progress payload
-   * @since 0.92.45
-   */
-  #loadProgressCache() {
-    const emptyCache = {version: this.progressCacheVersion, templates: {}};
-
-    try {
-      const storedCache = JSON.parse(GM_getValue(this.progressCacheStorageKey, '{}'));
-      if (storedCache?.version !== this.progressCacheVersion || !storedCache?.templates || typeof storedCache.templates != 'object') {
-        return emptyCache;
-      }
-      return storedCache;
-    } catch (error) {
-      consoleWarn(`Could not load cached template progress: ${error?.message || error}`);
-      return emptyCache;
-    }
-  }
-
   /** Creates a content fingerprint so cached counts are never applied to a replaced template.
    * @param {Object} storedTemplate - Template object from userscript storage
    * @returns {string} Stable compact fingerprint
    * @since 0.92.45
    */
   #createProgressFingerprint(storedTemplate) {
-    let hash = 2166136261;
-    const feedHash = value => {
-      const stringValue = String(value ?? '');
-      for (let index = 0; index < stringValue.length; index++) {
-        hash ^= stringValue.charCodeAt(index);
-        hash = Math.imul(hash, 16777619);
-      }
-    };
-
-    feedHash(JSON.stringify(storedTemplate?.pixels || {}));
-    for (const [tileKey, encodedTile] of Object.entries(storedTemplate?.tiles || {}).sort(([left], [right]) => left.localeCompare(right))) {
-      feedHash(tileKey);
-      feedHash(encodedTile);
-    }
-
-    return `${Number(storedTemplate?.pixels?.total) || 0}:${Object.keys(storedTemplate?.tiles || {}).length}:${(hash >>> 0).toString(16)}`;
+    return this.progressCacheService.createFingerprint(storedTemplate);
   }
 
   /** Restores cached tile counts into a freshly loaded active template.
@@ -309,31 +292,7 @@ export default class TemplateManager {
    * @since 0.92.45
    */
   #restoreProgressCache(template) {
-    const storageKey = template?.storageKey;
-    const storedTemplate = this.templatesJSON?.templates?.[storageKey];
-    if (!storageKey || !storedTemplate) {return;}
-
-    const fingerprint = this.#createProgressFingerprint(storedTemplate);
-    template.progressCacheFingerprint = fingerprint;
-    const cachedTemplate = this.progressCache.templates?.[storageKey];
-    if (!cachedTemplate || cachedTemplate.fingerprint != fingerprint || !cachedTemplate.correct) {return;}
-
-    const validTileCoords = new Set(
-      Object.keys(template.chunked || {}).map(tileKey => tileKey.split(',').slice(0, 2).join(','))
-    );
-    const correct = {};
-    for (const [tileCoords, colorCounts] of Object.entries(cachedTemplate.correct)) {
-      if (!validTileCoords.has(tileCoords) || !colorCounts || typeof colorCounts != 'object') {continue;}
-      correct[tileCoords] = new Map(
-        Object.entries(colorCounts)
-          .map(([colorID, count]) => [Number(colorID), Number(count)])
-          .filter(([colorID, count]) => Number.isFinite(colorID) && Number.isFinite(count) && count >= 0)
-      );
-    }
-
-    if (Object.keys(correct).length) {
-      template.pixelCount.correct = correct;
-    }
+    this.progressCacheService.restore(template, this.templatesJSON);
   }
 
   /** Queues persistence for templates whose tile counts changed.
@@ -341,36 +300,7 @@ export default class TemplateManager {
    * @since 0.92.45
    */
   #queueProgressCacheSave(templates) {
-    for (const template of templates) {
-      if (template?.storageKey) {this.progressCacheDirtyTemplates.add(template);}
-    }
-    if (!this.progressCacheDirtyTemplates.size || this.progressCacheSaveTimeout) {return;}
-
-    this.progressCacheSaveTimeout = setTimeout(() => {
-      this.progressCacheSaveTimeout = null;
-      const changedTemplates = Array.from(this.progressCacheDirtyTemplates);
-      this.progressCacheDirtyTemplates.clear();
-
-      for (const template of changedTemplates) {
-        const storageKey = template.storageKey;
-        const storedTemplate = this.templatesJSON?.templates?.[storageKey];
-        if (!storedTemplate) {continue;}
-
-        const correct = {};
-        for (const [tileCoords, colorCounts] of Object.entries(template.pixelCount?.correct || {})) {
-          if (!(colorCounts instanceof Map)) {continue;}
-          correct[tileCoords] = Object.fromEntries(colorCounts);
-        }
-
-        this.progressCache.templates[storageKey] = {
-          fingerprint: template.progressCacheFingerprint || this.#createProgressFingerprint(storedTemplate),
-          updatedAt: Date.now(),
-          correct: correct
-        };
-      }
-
-      void GM.setValue(this.progressCacheStorageKey, JSON.stringify(this.progressCache));
-    }, 500);
+    this.progressCacheService.queueSave(templates, this.templatesJSON);
   }
 
   /** Drops stale progress state for a removed template.
@@ -378,9 +308,7 @@ export default class TemplateManager {
    * @since 0.92.45
    */
   #removeProgressCache(templateKey) {
-    if (!this.progressCache.templates?.[templateKey]) {return;}
-    delete this.progressCache.templates[templateKey];
-    void GM.setValue(this.progressCacheStorageKey, JSON.stringify(this.progressCache));
+    this.progressCacheService.remove(templateKey);
   }
 
   /** Checks whether the current highlight config can be represented by raw template images.
@@ -634,12 +562,7 @@ export default class TemplateManager {
    * @since 0.65.4
    */
   async createJSON() {
-    return {
-      "whoami": "BlueMarble", // Canonical storage identifier shared by Blue Marble forks
-      "scriptVersion": this.version, // Version of userscript
-      "schemaVersion": this.schemaVersion, // Version of JSON schema
-      "templates": {} // The templates
-    };
+    return this.templateStorage.createEmpty();
   }
 
   /** Creates the template from the inputed file blob
@@ -743,7 +666,7 @@ export default class TemplateManager {
    * @since 0.72.7
    */
   async #storeTemplates() {
-    await GM.setValue('bmTemplates', JSON.stringify(this.templatesJSON));
+    await this.templateStorage.save(this.templatesJSON);
   }
 
   /** Returns the next storage sort ID that will not overwrite an existing template.
@@ -752,37 +675,7 @@ export default class TemplateManager {
    * @since 0.92.34
    */
   #getNextTemplateSortID(authorID) {
-    const templates = this.templatesJSON?.templates || {};
-    const sortIDs = Object.keys(templates)
-      .map(templateKey => Number.parseInt(templateKey.split(' ')?.[0], 10))
-      .filter(Number.isFinite);
-
-    let sortID = sortIDs.length ? Math.max(...sortIDs) + 1 : 0;
-    while (templates[`${sortID} ${authorID}`]) {
-      sortID++;
-    }
-
-    return sortID;
-  }
-
-  /** Returns the storage key that should be considered the single active template.
-   * @param {Object} templates - Template storage object
-   * @returns {string | null}
-   * @since 0.92.11
-   */
-  #getActiveTemplateKey(templates) {
-    const entries = Object.entries(templates || {});
-    if (!entries.length) {return null;}
-
-    entries.sort(([keyA], [keyB]) => keyA.localeCompare(keyB, undefined, {numeric: true}));
-
-    const explicitlyEnabled = entries.find(([, template]) => template?.enabled === true);
-    if (explicitlyEnabled) {return explicitlyEnabled[0];}
-
-    const implicitlyEnabled = entries.find(([, template]) => template?.enabled !== false);
-    if (implicitlyEnabled) {return implicitlyEnabled[0];}
-
-    return entries[0][0];
+    return this.templateStorage.getNextSortID(this.templatesJSON?.templates || {}, authorID);
   }
 
   /** Normalizes template storage so exactly one template is active.
@@ -791,21 +684,7 @@ export default class TemplateManager {
    * @since 0.92.11
    */
   #normalizeActiveTemplate(templates) {
-    const activeTemplateKey = this.#getActiveTemplateKey(templates);
-    if (!activeTemplateKey) {return false;}
-
-    let changed = false;
-    for (const [key, template] of Object.entries(templates)) {
-      if (!template || typeof template != 'object') {continue;}
-
-      const shouldBeEnabled = key == activeTemplateKey;
-      if (template.enabled !== shouldBeEnabled) {
-        template.enabled = shouldBeEnabled;
-        changed = true;
-      }
-    }
-
-    return changed;
+    return this.templateStorage.normalizeActiveTemplate(templates);
   }
 
   /** Requests current map tiles again so newly loaded templates appear without manual reloads.
@@ -827,7 +706,7 @@ export default class TemplateManager {
    */
   async setActiveTemplate(templateKey) {
     if (!this.templatesJSON) {
-      this.templatesJSON = JSON.parse(GM_getValue('bmTemplates', '{}'));
+      this.templatesJSON = this.templateStorage.load();
     }
     this.templatesJSON.templates = this.templatesJSON.templates || {};
 
@@ -854,7 +733,7 @@ export default class TemplateManager {
    */
   async deleteTemplate(templateKey) {
     if (!this.templatesJSON) {
-      this.templatesJSON = JSON.parse(GM_getValue('bmTemplates', '{}'));
+      this.templatesJSON = this.templateStorage.load();
     }
     this.templatesJSON.templates = this.templatesJSON.templates || {};
 
@@ -882,7 +761,7 @@ export default class TemplateManager {
    */
   async renameTemplate(templateKey, name) {
     if (!this.templatesJSON) {
-      this.templatesJSON = JSON.parse(GM_getValue('bmTemplates', '{}'));
+      this.templatesJSON = this.templateStorage.load();
     }
     this.templatesJSON.templates = this.templatesJSON.templates || {};
 
@@ -908,7 +787,7 @@ export default class TemplateManager {
    * @since 0.92.34
    */
   async downloadTemplateFromStorage(templateKey) {
-    const templates = JSON.parse(GM_getValue('bmTemplates', '{}'))?.templates || {};
+    const templates = this.templateStorage.load()?.templates || {};
     const template = templates[templateKey];
     if (!template) {return false;}
 
@@ -955,7 +834,7 @@ export default class TemplateManager {
   async downloadAllTemplatesFromStorage() {
 
     // Templates in user storage
-    const templates = JSON.parse(GM_getValue('bmTemplates', '{}'))?.templates;
+    const templates = this.templateStorage.load()?.templates;
 
     // If there is at least one template loaded...
     if (Object.keys(templates).length > 0) {
@@ -989,7 +868,7 @@ export default class TemplateManager {
     const blob = await this.convertTemplateToBlob(template);
 
     // Downloads the template
-    await GM.download({
+    await download({
       url: URL.createObjectURL(blob),
       name: templateFileName + '.png',
       conflictAction: 'uniquify',
@@ -1133,23 +1012,14 @@ export default class TemplateManager {
    * @since 0.92.29
    */
   async #convertCanvasToTileBlob(canvas) {
-    if (this.tileRenderOutputType) {
-      const preferredBlob = await canvas.convertToBlob({
-        type: this.tileRenderOutputType,
-        quality: this.tileRenderOutputQuality
-      });
-
-      if (preferredBlob?.type == this.tileRenderOutputType) {return preferredBlob;}
-    }
-
-    return await canvas.convertToBlob({ type: 'image/png' });
+    return await this.tileRenderCacheService.encodeCanvas(canvas);
   }
 
   /** Clears cached rendered tile blobs.
    * @since 0.92.27
    */
   #clearTileRenderCache() {
-    this.tileRenderCache?.clear();
+    this.tileRenderCacheService.clear();
   }
 
   /** Records a rendered tile blob in the small LRU cache.
@@ -1158,13 +1028,7 @@ export default class TemplateManager {
    * @since 0.92.27
    */
   #setTileRenderCache(cacheKey, blob) {
-    if (!cacheKey || !blob) {return;}
-
-    this.tileRenderCache.set(cacheKey, blob);
-    while (this.tileRenderCache.size > this.tileRenderCacheMaxEntries) {
-      const oldestKey = this.tileRenderCache.keys().next().value;
-      this.tileRenderCache.delete(oldestKey);
-    }
+    this.tileRenderCacheService.set(cacheKey, blob);
   }
 
   /** Gets a rendered tile blob from the LRU cache.
@@ -1173,12 +1037,7 @@ export default class TemplateManager {
    * @since 0.92.27
    */
   #getTileRenderCache(cacheKey) {
-    const cachedBlob = this.tileRenderCache.get(cacheKey);
-    if (!cachedBlob) {return undefined;}
-
-    this.tileRenderCache.delete(cacheKey);
-    this.tileRenderCache.set(cacheKey, cachedBlob);
-    return cachedBlob;
+    return this.tileRenderCacheService.get(cacheKey);
   }
 
   /** Creates a stable string for the current hidden-color set.
@@ -1200,26 +1059,7 @@ export default class TemplateManager {
    * @since 0.92.27
    */
   async #createTileRenderCacheKey(tileBlob, tileCoords, highlightDisabled, highlightPattern, renderStateVersion, filterKey) {
-    const hashStart = performance.now();
-    const tileBuffer = await tileBlob.arrayBuffer();
-    const tileHashBuffer = await crypto.subtle.digest('SHA-1', tileBuffer);
-    const tileHash = Array.from(new Uint8Array(tileHashBuffer), byte => byte.toString(16).padStart(2, '0')).join('');
-    const highlightKey = highlightDisabled ? 'none' : JSON.stringify(highlightPattern);
-    const transparentHighlightKey = this.settingsManager?.userSettings?.flags?.includes('hl-noTrans') ? 'no-trans' : 'trans';
-
-    const cacheKey = JSON.stringify({
-      tileCoords: tileCoords,
-      tileHash: tileHash,
-      renderStateVersion: renderStateVersion,
-      highlight: highlightKey,
-      transparentHighlight: transparentHighlightKey,
-      filter: filterKey
-    });
-
-    return {
-      cacheKey: cacheKey,
-      hashMs: Number((performance.now() - hashStart).toFixed(2))
-    };
+    return await this.tileRenderCacheService.createKey(tileBlob, tileCoords, highlightDisabled, highlightPattern, renderStateVersion, filterKey);
   }
 
   /** Returns templates in draw order without re-sorting on every tile.

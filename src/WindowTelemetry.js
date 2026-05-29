@@ -1,5 +1,6 @@
 import Overlay from "./Overlay";
 import { escapeHTML } from "./utils";
+import { getJSON, setJSON } from "./infrastructure/userscript/userscriptRuntime.js";
 
 /** The overlay builder for the telemetry window for Blue Marble.
  * @description This class handles the overlay UI for the telemetry window.
@@ -101,8 +102,8 @@ export default class WindowTelemetry extends Overlay {
    * @since 0.88.339
    */
   #setTelemetryValue(value) {
-    const userSettings = JSON.parse(GM_getValue('bmUserSettings', '{}'));
+    const userSettings = getJSON('bmUserSettings', {});
     userSettings.telemetry = value;
-    GM.setValue('bmUserSettings', JSON.stringify(userSettings));
+    void setJSON('bmUserSettings', userSettings);
   }
 }

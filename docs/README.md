@@ -22,6 +22,9 @@
     <td>&emsp;<a href="#how-versioning-works">How Versioning Works</a></td>
   </tr>
   <tr>
+    <td>&emsp;<a href="./ARCHITECTURE.md">Architecture</a></td>
+  </tr>
+  <tr>
     <td>&emsp;<a href="#licenses">Licenses</a></td>
   </tr>
   <tr>
@@ -45,13 +48,13 @@
 </table>
 
 <h1>Blue Marble</h1>
-<a href="" target="_blank" rel="noopener noreferrer"><img alt="Latest Version" src="https://img.shields.io/badge/Latest_Version-0.92.10-lightblue?style=flat"></a>
+<a href="" target="_blank" rel="noopener noreferrer"><img alt="Latest Version" src="https://img.shields.io/badge/Latest_Version-0.92.48-lightblue?style=flat"></a>
 <a href="https://github.com/SwingTheVine/Wplace-BlueMarble/releases" target="_blank" rel="noopener noreferrer"><img alt="Latest Release" src="https://img.shields.io/github/v/release/SwingTheVine/Wplace-BlueMarble?sort=semver&style=flat&label=Latest%20Release&color=blue"></a>
 <a href="https://github.com/SwingTheVine/Wplace-BlueMarble/blob/main/LICENSE.txt" target="_blank" rel="noopener noreferrer"><img alt="Software License: MPL-2.0" src="https://img.shields.io/badge/Software_License-MPL--2.0-slateblue?style=flat"></a>
 <a href="https://discord.gg/tpeBPy46hf" target="_blank" rel="noopener noreferrer"><img alt="Contact Me" src="https://img.shields.io/badge/Contact_Me-gray?style=flat&logo=Discord&logoColor=white&logoSize=auto&labelColor=cornflowerblue"></a>
 <a href="https://bluemarble.lol/" target="_blank" rel="noopener noreferrer"><img alt="Blue Marble Website" src="https://img.shields.io/badge/Blue_Marble_Website-crqch-blue?style=flat&logo=globe&logoColor=white"></a>
 <a href="" target="_blank" rel="noopener noreferrer"><img alt="WakaTime" src="https://img.shields.io/badge/Coding_Time-212hrs_17mins-blue?style=flat&logo=wakatime&logoColor=black&logoSize=auto&labelColor=white"></a>
-<a href="" target="_blank" rel="noopener noreferrer"><img alt="Total Patches" src="https://img.shields.io/badge/Total_Patches-1247-black?style=flat"></a>
+<a href="" target="_blank" rel="noopener noreferrer"><img alt="Total Patches" src="https://img.shields.io/badge/Total_Patches-1248-black?style=flat"></a>
 <a href="" target="_blank" rel="noopener noreferrer"><img alt="Total Lines of Code" src="https://img.shields.io/badge/Lines_Of_Code-7540-blue?style=flat"></a>
 <a href="" target="_blank" rel="noopener noreferrer"><img alt="Total Comments" src="https://img.shields.io/badge/Lines_Of_Comments-5918-blue?style=flat"></a>
 <a href="" target="_blank" rel="noopener noreferrer"><img alt="Compression" src="https://img.shields.io/badge/Compression-72.57%25-blue"></a>
@@ -131,6 +134,7 @@
     <li>...and more!</li>
   </ul>
   If you like this userscript, please ⭐ the repository! For more information and updates, visit the <a href="https://bluemarble.lol/" target="_blank" rel="noopener noreferrer">Blue Marble website</a>. If you wish to contribute to Blue Marble, check out the <a href="https://github.com/SwingTheVine/Wplace-BlueMarble/blob/main/docs/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a> file in <code>docs/</code>.
+  Developers can also read <a href="./ARCHITECTURE.md">ARCHITECTURE.md</a> for the current source layer boundaries.
 
   <img alt="Showcase image of Blue Marble template" src="./assets/Showcase1.png">
 

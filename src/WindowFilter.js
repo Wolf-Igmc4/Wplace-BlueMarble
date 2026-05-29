@@ -1,29 +1,14 @@
 import ConfettiManager from "./confetttiManager";
 import Overlay, { minimizeIconExpanded } from "./Overlay";
-import { calculateRelativeLuminance, localizeNumber, localizePercent, navigateWplaceToLatLng, rgbToHex, tilePixelToLatLng } from "./utils";
+import { calculateRelativeLuminance, localizeNumber, localizePercent, rgbToHex, tilePixelToLatLng } from "./utils";
+import { navigateWplaceToLatLng } from "./infrastructure/wplace/wplaceBridge.js";
+import { calculateColorFilterStats } from "./domain/colorFilter/ColorFilterStats.js";
+import ColorFilterViewSettings from "./domain/colorFilter/ColorFilterViewSettings.js";
+import BoughtColorDetector from "./domain/colorFilter/BoughtColorDetector.js";
 
 const closeIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
 const fullscreenIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.5 4.5H4.5v4M15.5 4.5h4v4M19.5 15.5v4h-4M8.5 19.5h-4v-4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.8 4.8l5.2 5.2M19.2 4.8L14 10M19.2 19.2L14 14M4.8 19.2L10 14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>';
 const windowedIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.8 4.8l5.2 5.2M19.2 4.8L14 10M19.2 19.2L14 14M4.8 19.2L10 14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M10 7.5V10H7.5M16.5 10H14V7.5M14 16.5V14h2.5M7.5 14H10v2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-
-function localizeCompactDate(date) {
-  const month = date.getMonth() + 1;
-  const day = date.getDate();
-  const year = String(date.getFullYear()).slice(-2);
-  const minute = String(date.getMinutes()).padStart(2, '0');
-  const uses12HourClock = new Intl.DateTimeFormat(undefined, {hour: 'numeric'}).resolvedOptions().hour12;
-
-  let hour = date.getHours();
-  let period = '';
-  if (uses12HourClock) {
-    period = hour >= 12 ? ' PM' : ' AM';
-    hour = hour % 12 || 12;
-  } else {
-    hour = String(hour).padStart(2, '0');
-  }
-
-  return `${day}/${month}/${year} ${hour}:${minute}${period}`;
-}
 
 /** The overlay builder for the color filter Blue Marble window.
  * @description This class handles the overlay UI for the color filter window of the Blue Marble userscript.
@@ -60,6 +45,10 @@ export default class WindowFilter extends Overlay {
     this.windowMaxWidth = 1000; // Maximum width for the windowed filter
     this.windowMaxHeight = 1400; // Maximum height for the windowed filter
     this.filterViewSettingsVersion = 2; // Version for one-time default sort migrations
+    this.filterViewSettings = new ColorFilterViewSettings({
+      settingsManager: this.settingsManager,
+      version: this.filterViewSettingsVersion
+    });
 
     /** The templateManager instance currently being used. @type {TemplateManager} */
     this.templateManager = executor.apiManager?.templateManager;
@@ -73,6 +62,10 @@ export default class WindowFilter extends Overlay {
     // Obtains the color palette Blue Marble currently uses
     const { palette: palette, LUT: _ } = this.templateManager.paletteBM;
     this.palette = palette;
+    this.boughtColorDetector = new BoughtColorDetector({
+      palette: this.palette,
+      apiManager: this.apiManager
+    });
 
     // Tile quantity information
     this.tilesLoadedTotal = 0; // Number of tiles verified now or restored from the progress cache
@@ -407,37 +400,15 @@ export default class WindowFilter extends Overlay {
    * @since 0.92.11
    */
   #loadFilterViewSettings() {
-    const filterView = this.settingsManager?.userSettings?.filterView;
-    if (!filterView || typeof filterView != 'object') {return;}
-
-    const allowedPrimarySorts = new Set(['id', 'name', 'premium', 'percent', 'correct', 'incorrect', 'total']);
-    const allowedSecondarySorts = new Set(['ascending', 'descending']);
-    const shouldMigrateBoughtSort = filterView.sortPrimary == 'bought';
-    const shouldMigrateDefaultSort = filterView.defaultSortVersion !== this.filterViewSettingsVersion
-      && (filterView.sortPrimary == 'total' || shouldMigrateBoughtSort)
-      && filterView.sortSecondary == 'descending';
-
-    if (shouldMigrateBoughtSort || shouldMigrateDefaultSort) {
-      filterView.sortPrimary = 'total';
-      filterView.sortSecondary = 'descending';
-      filterView.sortBought = true;
-      filterView.defaultSortVersion = this.filterViewSettingsVersion;
-    }
-
-    if (allowedPrimarySorts.has(filterView.sortPrimary)) {
-      this.sortPrimary = filterView.sortPrimary;
-    }
-    if (allowedSecondarySorts.has(filterView.sortSecondary)) {
-      this.sortSecondary = filterView.sortSecondary;
-    }
-
-    if (typeof filterView.sortBought == 'boolean') {this.sortBought = filterView.sortBought;}
-    else if (shouldMigrateBoughtSort) {this.sortBought = true;}
-
-    if (typeof filterView.showUnused == 'boolean') {this.showUnused = filterView.showUnused;}
-    if (typeof filterView.showCompleted == 'boolean') {this.showCompleted = filterView.showCompleted;}
-    if (typeof filterView.showFree == 'boolean') {this.showFree = filterView.showFree;}
-    if (typeof filterView.showPremium == 'boolean') {this.showPremium = filterView.showPremium;}
+    Object.assign(this, this.filterViewSettings.load({
+      sortPrimary: this.sortPrimary,
+      sortSecondary: this.sortSecondary,
+      sortBought: this.sortBought,
+      showUnused: this.showUnused,
+      showCompleted: this.showCompleted,
+      showFree: this.showFree,
+      showPremium: this.showPremium
+    }));
   }
 
   /** Saves current sort and show/hide controls in user settings.
@@ -445,22 +416,15 @@ export default class WindowFilter extends Overlay {
    * @since 0.92.11
    */
   #persistFilterViewSettings(shouldSaveNow = false) {
-    if (!this.settingsManager?.userSettings) {return;}
-
-    this.settingsManager.userSettings.filterView = {
+    this.filterViewSettings.persist({
       sortPrimary: this.sortPrimary,
       sortSecondary: this.sortSecondary,
       sortBought: this.sortBought,
       showUnused: this.showUnused,
       showCompleted: this.showCompleted,
       showFree: this.showFree,
-      showPremium: this.showPremium,
-      defaultSortVersion: this.filterViewSettingsVersion
-    };
-
-    if (shouldSaveNow) {
-      void this.settingsManager.saveUserStorageNow();
-    }
+      showPremium: this.showPremium
+    }, shouldSaveNow);
   }
 
   /** Returns whether the filter should open in windowed mode.
@@ -889,46 +853,7 @@ export default class WindowFilter extends Overlay {
    * @since 0.92.15
    */
   #isColorBought(color, boughtColorIDs = this.#getBoughtColorIDs()) {
-    if (!color?.premium) {return false;}
-
-    if (boughtColorIDs) {return boughtColorIDs.has(Number(color.id));}
-
-    const colorElement = document.querySelector(`#color-${color.id}`);
-    if (!colorElement) {return false;}
-
-    const isBought = !colorElement.querySelector('svg');
-
-    if (window?.blueMarbleDebugBoughtColors) {
-      console.log('[Blue Marble] bought color state', {
-        id: color.id,
-        name: color.name,
-        bought: isBought,
-        source: 'dom-lock-icon',
-        outerHTML: colorElement.outerHTML.slice(0, 1000)
-      });
-    }
-
-    return isBought;
-  }
-
-  /** Finds bought premium color IDs from the live Wplace color picker.
-   * @returns {Set<number> | null}
-   * @since 0.92.21
-   */
-  #getBoughtColorIDsFromDOM() {
-    const ids = new Set();
-    let foundPremiumButton = false;
-
-    for (const color of this.palette.filter(color => color?.premium)) {
-      const colorElement = document.querySelector(`#color-${color.id}`);
-      if (!colorElement) {continue;}
-      foundPremiumButton = true;
-      if (!colorElement.querySelector('svg')) {ids.add(Number(color.id));}
-    }
-
-    if (!foundPremiumButton) {return null;}
-    this.apiManager?.saveBoughtColorIDs?.(ids, 'color-picker');
-    return ids;
+    return this.boughtColorDetector.isColorBought(color, boughtColorIDs);
   }
 
   /** Finds bought premium color IDs from the best available source.
@@ -936,13 +861,7 @@ export default class WindowFilter extends Overlay {
    * @since 0.92.22
    */
   #getBoughtColorIDs() {
-    const userDataIDs = this.#getBoughtColorIDsFromUserData();
-    if (userDataIDs) {return userDataIDs;}
-
-    const domIDs = this.#getBoughtColorIDsFromDOM();
-    if (domIDs) {return domIDs;}
-
-    return this.apiManager?.boughtColorIDsCache ?? null;
+    return this.boughtColorDetector.getBoughtColorIDs();
   }
 
   /** Finds purchased premium color IDs from Wplace user data, when the payload exposes them.
@@ -950,138 +869,14 @@ export default class WindowFilter extends Overlay {
    * @since 0.92.16
    */
   #getBoughtColorIDsFromUserData() {
-    const payloads = [
-      {payload: this.apiManager?.userData, isUserData: true},
-      ...Array.from(this.apiManager?.jsonResponses?.values?.() || []).map(payload => ({payload: payload, isUserData: false}))
-    ]
-      .filter(({payload}) => payload && typeof payload == 'object');
-    if (!payloads.length) {return null;}
-
-    const ids = new Set();
-    for (const {payload, isUserData} of payloads) {
-      if (isUserData && Array.isArray(payload?.unlocked_colors)) {
-        this.#collectBoughtColorIDs(payload, ids, isUserData);
-        return ids;
-      }
-    }
-
-    for (const {payload, isUserData} of payloads) {
-      this.#collectBoughtColorIDs(payload, ids, isUserData);
-    }
-    return ids.size ? ids : null;
-  }
-
-  /** Collects purchased color IDs from a Wplace JSON payload.
-   * @param {Object} payload - JSON payload to scan
-   * @param {Set<number>} ids - Destination set for color IDs
-   * @param {boolean} isUserData - Whether the payload came from /me
-   * @since 0.92.16
-   */
-  #collectBoughtColorIDs(payload, ids, isUserData) {
-    if (Array.isArray(payload?.unlocked_colors)) {
-      for (const id of payload.unlocked_colors) {
-        const colorID = Number(id);
-        if (Number.isInteger(colorID) && colorID >= 32 && colorID <= 63) {ids.add(colorID);}
-      }
-    }
-
-    const visited = new WeakSet();
-    const visit = (value, path = '', depth = 0) => {
-      if (depth > 5 || value == null) {return;}
-      if (typeof value != 'object') {return;}
-      if (visited.has(value)) {return;}
-      visited.add(value);
-
-      if (Array.isArray(value)) {
-        const pathLooksPurchased = /\b(color|colour|palette|premium).*(own|purchase|unlock|bought|available)|\b(own|purchase|unlock|bought|available).*(color|colour|palette|premium)|unlocked[_-]?colors/i.test(path);
-        const pathLooksLikeUserColors = isUserData && /(^|\.)((colors?|colours?|palette|premiumColors?|unlocked_colors))$/i.test(path);
-        if (pathLooksPurchased || pathLooksLikeUserColors) {
-          for (const entry of value) {
-            const id = typeof entry == 'object'
-              ? Number(entry?.id ?? entry?.color ?? entry?.colorId ?? entry?.colourId)
-              : Number(entry);
-            if (Number.isInteger(id) && id >= 32 && id <= 63) {ids.add(id);}
-          }
-        }
-      }
-
-      for (const [key, child] of Object.entries(value)) {
-        const id = Number(child);
-        const keyLooksLikeColorID = isUserData && /\b(color|colour|palette|premium).*(id)?$/i.test(key);
-        if (keyLooksLikeColorID && Number.isInteger(id) && id >= 32 && id <= 63) {
-          ids.add(id);
-        }
-        visit(child, path ? `${path}.${key}` : key, depth + 1);
-      }
-    };
-
-    visit(payload);
-  }
-
-  /** Finds possible premium color ID arrays in Wplace JSON payloads for debugging.
-   * @returns {Array<Object>}
-   * @since 0.92.16
-   */
-  #findBoughtColorPayloadCandidates() {
-    const payloads = [
-      {name: 'me', payload: this.apiManager?.userData, isUserData: true},
-      ...Array.from(this.apiManager?.jsonResponses?.entries?.() || []).map(([name, payload]) => ({name: name, payload: payload, isUserData: false}))
-    ]
-      .filter(payload => payload && typeof payload == 'object');
-    const candidates = [];
-    const visited = new WeakSet();
-
-    const visit = (sourceName, value, path = '', depth = 0) => {
-      if (depth > 5 || value == null) {return;}
-      if (typeof value != 'object') {return;}
-      if (visited.has(value)) {return;}
-      visited.add(value);
-
-      if (Array.isArray(value)) {
-        const ids = value.map(entry => typeof entry == 'object'
-          ? Number(entry?.id ?? entry?.color ?? entry?.colorId ?? entry?.colourId)
-          : Number(entry)
-        ).filter(id => Number.isInteger(id) && id >= 32 && id <= 63);
-        if (ids.length) {
-          candidates.push({source: sourceName, path: path, ids: ids.join(', ')});
-        }
-      }
-
-      for (const [key, child] of Object.entries(value)) {
-        visit(sourceName, child, path ? `${path}.${key}` : key, depth + 1);
-      }
-    };
-
-    for (const {name, payload} of payloads) {
-      visit(name, payload);
-    }
-    return candidates;
+    return this.boughtColorDetector.getBoughtColorIDsFromUserData();
   }
 
   /** Dumps premium color purchase detection details to the console.
    * @since 0.92.16
    */
   #dumpBoughtColorDetection() {
-    const rows = this.palette
-      .filter(color => color?.premium)
-      .map(color => {
-        const colorElement = document.querySelector(`#color-${color.id}`);
-        return {
-          id: color.id,
-          name: color.name,
-          bought: this.#isColorBought(color),
-          exists: !!colorElement,
-          text: colorElement?.textContent?.trim()?.replace(/\s+/g, ' ').slice(0, 120) || '',
-          className: colorElement?.className || '',
-          ariaLabel: colorElement?.getAttribute?.('aria-label') || '',
-          title: colorElement?.getAttribute?.('title') || '',
-          disabled: colorElement?.matches?.(':disabled, [disabled]') || false
-        };
-    });
-    const candidates = this.#findBoughtColorPayloadCandidates();
-    console.table(rows);
-    console.table(candidates);
-    return rows;
+    return this.boughtColorDetector.dumpDetection();
   }
 
   /** Creates the color list container.
@@ -1756,47 +1551,19 @@ export default class WindowFilter extends Overlay {
    * @since 0.90.34
    */
   #calculatePixelStatistics() {
+    const stats = calculateColorFilterStats({
+      templatesArray: this.templateManager.templatesArray,
+      palette: this.palette
+    });
 
-    // Resets pixel totals to 0
-    this.tilesLoadedTotal = 0;
-    this.tilesTotal = 0;
-    this.allPixelsTotal = 0;
-    this.allPixelsCorrectTotal = 0;
-    this.allPixelsCorrect = new Map();
-    this.allPixelsColor = new Map();
-
-    // Sum the pixel totals across all templates.
-    // If there is no total for a template, it defaults to zero
-    for (const template of this.templateManager.templatesArray) {
-
-      const total = template.pixelCount?.total ?? 0;
-      this.allPixelsTotal += total ?? 0; // Sums the pixels placed as "total" per everything
-
-      const colors = template.pixelCount?.colors ?? new Map();
-
-      // Sums the color pixels placed as "total" per color ID
-      for (const [colorID, colorPixels] of colors) {
-        const _colorPixels = Number(colorPixels) || 0; // Boilerplate
-        const allPixelsColorSoFar = this.allPixelsColor.get(colorID) ?? 0; // The total color pixels for this color ID so far, or zero if none counted so far
-        this.allPixelsColor.set(colorID, allPixelsColorSoFar + _colorPixels);
-      }
-
-      // Object that contains the tiles which contain Maps as correct pixels per tile as the value in the key-value pair
-      const correctObject = template.pixelCount?.correct ?? {};
-
-      this.tilesLoadedTotal += Object.keys(correctObject).length; // Sums verified or cached tiles per template
-      this.tilesTotal += Object.keys(template.chunked).length; // Sums the total tiles per template
-
-      // Sums the pixels placed as "correct" per color ID
-      for (const map of Object.values(correctObject)) { // Per verified or cached tile per template
-        for (const [colorID, correctPixels] of map) { // Per color per verified or cached tile per template
-          const _correctPixels = Number(correctPixels) || 0; // Boilerplate
-          this.allPixelsCorrectTotal += _correctPixels; // Sums the pixels placed as "correct" per everything
-          const allPixelsCorrectSoFar = this.allPixelsCorrect.get(colorID) ?? 0; // The total correct pixels for this color ID so far, or zero if none counted so far
-          this.allPixelsCorrect.set(colorID, allPixelsCorrectSoFar + _correctPixels);
-        }
-      }
-    }
+    this.tilesLoadedTotal = stats.tilesLoadedTotal;
+    this.tilesTotal = stats.tilesTotal;
+    this.allPixelsTotal = stats.allPixelsTotal;
+    this.allPixelsCorrectTotal = stats.allPixelsCorrectTotal;
+    this.allPixelsCorrect = stats.allPixelsCorrect;
+    this.allPixelsColor = stats.allPixelsColor;
+    this.timeRemaining = stats.timeRemaining;
+    this.timeRemainingLocalized = stats.timeRemainingLocalized;
 
     // If the template is complete, non-empty, and every tile has a verified or cached count...
     if ((this.allPixelsCorrectTotal >= this.allPixelsTotal) && !!this.allPixelsTotal && (this.tilesLoadedTotal == this.tilesTotal)) {
@@ -1807,8 +1574,5 @@ export default class WindowFilter extends Overlay {
       confettiManager.createConfetti(document.querySelector(`#${this.windowID}`));
     }
 
-    // Calculates the date & time the user will complete the templates
-    this.timeRemaining = new Date(((this.allPixelsTotal - this.allPixelsCorrectTotal) * 30 * 1000) + Date.now());
-    this.timeRemainingLocalized = localizeCompactDate(this.timeRemaining);
   }
 }

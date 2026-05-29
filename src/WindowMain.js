@@ -4,6 +4,7 @@ import { getClipboardData } from "./utils";
 import WindowCredts from "./WindowCredits";
 import WindowFilter from "./WindowFilter";
 import WindowWizard from "./WindowWizard";
+import { canRequest, request } from "./infrastructure/userscript/userscriptRuntime.js";
 
 const upstreamUpdateIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -246,9 +247,9 @@ export default class WindowMain extends Overlay {
    */
   #checkUpstreamUpdate() {
     const updateButton = document.getElementById('bm-button-upstream-update');
-    if (!updateButton || typeof GM_xmlhttpRequest != 'function') {return;}
+    if (!updateButton || !canRequest()) {return;}
 
-    GM_xmlhttpRequest({
+    request({
       method: 'GET',
       url: `${this.upstreamPackageURL}?t=${Date.now()}`,
       onload: response => {

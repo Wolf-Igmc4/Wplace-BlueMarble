@@ -1,5 +1,6 @@
 import { sleep } from "./utils";
 import WindowSettings from "./WindowSettings";
+import { setValue } from "./infrastructure/userscript/userscriptRuntime.js";
 
 /** SettingsManager class for handling user settings and making them persist between sessions.
  * Logic for {@link WindowSettings} is managed here.
@@ -52,7 +53,7 @@ export default class SettingsManager extends WindowSettings {
 
     // If the user settings have changed, AND the last update to user storage was over 5 seconds ago (5sec throttle)...
     if ((userSettingsCurrent != userSettingsOld) && ((Date.now() - this.lastUpdateTime) > this.updateFrequency)) {
-      await GM.setValue(this.userSettingsSaveLocation, userSettingsCurrent); // Updates user storage
+      await setValue(this.userSettingsSaveLocation, userSettingsCurrent); // Updates user storage
       this.userSettingsOld = structuredClone(this.userSettings); // Updates the old user settings with a duplicate of the current user settings
       this.lastUpdateTime = Date.now(); // Updates the variable that contains the last time updated
     }
@@ -63,7 +64,7 @@ export default class SettingsManager extends WindowSettings {
    */
   async saveUserStorageNow() {
     const userSettingsCurrent = JSON.stringify(this.userSettings);
-    await GM.setValue(this.userSettingsSaveLocation, userSettingsCurrent);
+    await setValue(this.userSettingsSaveLocation, userSettingsCurrent);
     this.userSettingsOld = structuredClone(this.userSettings);
     this.lastUpdateTime = Date.now();
   }

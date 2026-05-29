@@ -5,7 +5,9 @@
  */
 
 import TemplateManager from "./templateManager.js";
-import { consoleError, escapeHTML, getTrackedWplaceTilePixel, installWplaceTilePixelTracker, localizeNumber, screenToWplaceTilePixel, serverTPtoDisplayTP } from "./utils.js";
+import { consoleError, escapeHTML, localizeNumber, serverTPtoDisplayTP } from "./utils.js";
+import { canRequest, getJSON, request, setJSON } from "./infrastructure/userscript/userscriptRuntime.js";
+import { getTrackedWplaceTilePixel, installWplaceTilePixelTracker, screenToWplaceTilePixel } from "./infrastructure/wplace/wplaceBridge.js";
 
 export default class ApiManager {
 
@@ -946,7 +948,7 @@ export default class ApiManager {
    */
   loadBoughtColorIDs() {
     try {
-      const payload = JSON.parse(GM_getValue(this.boughtColorStorageKey, 'null'));
+      const payload = getJSON(this.boughtColorStorageKey, null);
       if (!payload || !Array.isArray(payload.ids)) {return null;}
       return new Set(payload.ids.map(Number).filter(id => Number.isInteger(id) && id >= 32 && id <= 63));
     } catch (error) {
@@ -966,11 +968,11 @@ export default class ApiManager {
       .filter(id => Number.isInteger(id) && id >= 32 && id <= 63)
       .sort((left, right) => left - right);
     this.boughtColorIDsCache = new Set(cleanIDs);
-    void GM.setValue(this.boughtColorStorageKey, JSON.stringify({
+    void setJSON(this.boughtColorStorageKey, {
       ids: cleanIDs,
       source: source,
       updatedAt: Date.now()
-    }));
+    });
   }
 
   /** Fetches Wplace user data when the page has not already requested it.
@@ -981,10 +983,10 @@ export default class ApiManager {
     if (this.userData) {return this.userData;}
     if (this.userDataPromise) {return await this.userDataPromise;}
 
-    if (typeof GM_xmlhttpRequest != 'function') {return null;}
+    if (!canRequest()) {return null;}
 
     this.userDataPromise = new Promise((resolve) => {
-      GM_xmlhttpRequest({
+      request({
         method: 'GET',
         url: 'https://backend.wplace.live/me',
         withCredentials: true,
@@ -1101,6 +1103,23 @@ export default class ApiManager {
           this.selectTemplateColorForEyedropper(coordsTile, coordsPixel); // If Wplace's eyedropper was active, prefer the visible template color
 
           const displayTP = serverTPtoDisplayTP(coordsTile, coordsPixel); // Retrieves the coordinates that Wplace displays for this region
+          const coordsLabel = ['Tl X:', 'Tl Y:', 'Px X:', 'Px Y:'];
+          const coordsID = ['bm-tile-x', 'bm-tile-y', 'bm-pixel-x', 'bm-pixel-y'];
+          const coordsCombined = [...coordsTile, ...coordsPixel];
+          const updateDisplayCoords = () => {
+            for (const [coordIndex, coordID] of coordsID.entries()) {
+              const coordElement = document.getElementById(coordID);
+              if (coordElement) {
+                coordElement.textContent = `${coordsLabel[coordIndex] ?? '??:'} ${coordsCombined[coordIndex]}`;
+              }
+            }
+          };
+
+          let displayCoords = document.querySelector('#bm-display-coords');
+          if (displayCoords) {
+            updateDisplayCoords();
+            break;
+          }
 
           const spanElements = document.querySelectorAll('span'); // Retrieves all span elements
 
@@ -1112,50 +1131,19 @@ export default class ApiManager {
 
             // If the text content of the element includes both coordinates seperatly (avoids failure when the comma seperator changes due to localization)
             if (elementTextTrimmed.includes(displayTP[0]) && elementTextTrimmed.includes(displayTP[1])) {
+              displayCoords = document.createElement('span');
+              displayCoords.id = 'bm-display-coords';
+              displayCoords.style = 'display: flex; flex-wrap: wrap; gap: 0 1ch; font-size: small;';
 
-              let displayCoords = document.querySelector('#bm-display-coords'); // Find the additional pixel coords span
-
-              const text = `(Tl X: ${coordsTile[0]}, Tl Y: ${coordsTile[1]}, Px X: ${coordsPixel[0]}, Px Y: ${coordsPixel[1]})`;
-              
-              // All 4 coordinate labels, IDs, and values
-              const coordsLabel = ['Tl X:', 'Tl Y:', 'Px X:', 'Px Y:'];
-              const coordsID = ['bm-tile-x', 'bm-tile-y', 'bm-pixel-x', 'bm-pixel-y'];
-              const coordsCombined = [...coordsTile, ...coordsPixel];
-
-              // If we could not find the addition coord span, we make it then update the textContent with the new coords
-              if (!displayCoords) {
-                displayCoords = document.createElement('span');
-                displayCoords.id = 'bm-display-coords';
-                displayCoords.style = 'display: flex; flex-wrap: wrap; gap: 0 1ch; font-size: small;';
-
-                // For each of the 4 coordinates...
-                for (const [coordIndex, coordValue] of coordsCombined.entries()) {
-
-                  const coordElement = document.createElement('span'); // Creates a `<span>` element
-
-                  coordElement.id = coordsID[coordsCombined.indexOf(coordValue) ?? '']; // Applys the ID to the coord element
-
-                  // Outputs something like "Tl X: 483"
-                  coordElement.textContent = `${coordsLabel[coordIndex] ?? '??:'} ${coordValue}`;
-                  // Or if the amount of labels is less than the provided values, it outputs something like "??: 483" instead of failing
-
-                  displayCoords.appendChild(coordElement); // Adds the span coordinate as a child for the flexbox container
-                }
-
-                // Adds the display coordinate flexbox container to the pixel info menu
-                element.parentNode.parentNode.parentNode.insertAdjacentElement('afterend', displayCoords);
-              } else {
-                
-                // For each of the 4 coordinates...
-                for (const [coordIndex, coordID] of coordsID.entries()) {
-
-                  const coordElement = document.getElementById(coordID); // Obtains the coordinate element
-
-                  // Outputs something like "Tl X: 483"
-                  coordElement.textContent = `${coordsLabel[coordIndex] ?? '??:'} ${coordsCombined[coordIndex]}`;
-                  // Or if the amount of labels is less than the provided values, it outputs something like "??: 483" instead of failing
-                }
+              for (const [coordIndex, coordValue] of coordsCombined.entries()) {
+                const coordElement = document.createElement('span');
+                coordElement.id = coordsID[coordIndex] ?? '';
+                coordElement.textContent = `${coordsLabel[coordIndex] ?? '??:'} ${coordValue}`;
+                displayCoords.appendChild(coordElement);
               }
+
+              element.parentNode.parentNode.parentNode.insertAdjacentElement('afterend', displayCoords);
+              break;
             }
           }
           break;
@@ -1189,8 +1177,7 @@ export default class ApiManager {
   // Sends a heartbeat to the telemetry server
   async sendHeartbeat(version) {
 
-    let userSettings = GM_getValue('bmUserSettings', '{}')
-    userSettings = JSON.parse(userSettings);
+    let userSettings = getJSON('bmUserSettings', {});
 
     if (!userSettings || !userSettings.telemetry || !userSettings.uuid) {
       return; // If telemetry is disabled, do not send heartbeat
@@ -1200,7 +1187,7 @@ export default class ApiManager {
     let browser = await this.getBrowserFromUA(ua);
     let os = this.getOS(ua);
 
-    GM_xmlhttpRequest({
+    request({
       method: 'POST',
       url: 'https://telemetry.thebluecorner.net/heartbeat',
       headers: {
