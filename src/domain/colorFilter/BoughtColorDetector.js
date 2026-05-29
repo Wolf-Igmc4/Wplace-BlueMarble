@@ -3,6 +3,9 @@ export default class BoughtColorDetector {
   constructor({palette, apiManager}) {
     this.palette = palette;
     this.apiManager = apiManager;
+    this.domBoughtColorIDsCache = null;
+    this.domBoughtColorIDsCacheAt = 0;
+    this.domBoughtColorIDsCacheTTL = 500;
   }
 
   isColorBought(color, boughtColorIDs = this.getBoughtColorIDs()) {
@@ -27,6 +30,11 @@ export default class BoughtColorDetector {
   }
 
   getBoughtColorIDsFromDOM() {
+    const now = Date.now();
+    if (this.domBoughtColorIDsCache && ((now - this.domBoughtColorIDsCacheAt) < this.domBoughtColorIDsCacheTTL)) {
+      return new Set(this.domBoughtColorIDsCache);
+    }
+
     const ids = new Set();
     let foundPremiumButton = false;
 
@@ -39,7 +47,14 @@ export default class BoughtColorDetector {
 
     if (!foundPremiumButton) {return null;}
     this.apiManager?.saveBoughtColorIDs?.(ids, 'color-picker');
+    this.domBoughtColorIDsCache = new Set(ids);
+    this.domBoughtColorIDsCacheAt = now;
     return ids;
+  }
+
+  invalidateDOMCache() {
+    this.domBoughtColorIDsCache = null;
+    this.domBoughtColorIDsCacheAt = 0;
   }
 
   getBoughtColorIDs() {

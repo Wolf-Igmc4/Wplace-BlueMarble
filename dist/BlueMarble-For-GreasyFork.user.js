@@ -3232,6 +3232,9 @@
     constructor({ palette, apiManager }) {
       this.palette = palette;
       this.apiManager = apiManager;
+      this.domBoughtColorIDsCache = null;
+      this.domBoughtColorIDsCacheAt = 0;
+      this.domBoughtColorIDsCacheTTL = 500;
     }
     isColorBought(color, boughtColorIDs = this.getBoughtColorIDs()) {
       if (!color?.premium) {
@@ -3257,6 +3260,10 @@
       return isBought;
     }
     getBoughtColorIDsFromDOM() {
+      const now = Date.now();
+      if (this.domBoughtColorIDsCache && now - this.domBoughtColorIDsCacheAt < this.domBoughtColorIDsCacheTTL) {
+        return new Set(this.domBoughtColorIDsCache);
+      }
       const ids = /* @__PURE__ */ new Set();
       let foundPremiumButton = false;
       for (const color of this.palette.filter((color2) => color2?.premium)) {
@@ -3273,7 +3280,13 @@
         return null;
       }
       this.apiManager?.saveBoughtColorIDs?.(ids, "color-picker");
+      this.domBoughtColorIDsCache = new Set(ids);
+      this.domBoughtColorIDsCacheAt = now;
       return ids;
+    }
+    invalidateDOMCache() {
+      this.domBoughtColorIDsCache = null;
+      this.domBoughtColorIDsCacheAt = 0;
     }
     getBoughtColorIDs() {
       const userDataIDs = this.getBoughtColorIDsFromUserData();
@@ -3411,7 +3424,7 @@
   var closeIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
   var fullscreenIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.5 4.5H4.5v4M15.5 4.5h4v4M19.5 15.5v4h-4M8.5 19.5h-4v-4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.8 4.8l5.2 5.2M19.2 4.8L14 10M19.2 19.2L14 14M4.8 19.2L10 14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>';
   var windowedIcon = '<svg class="bm-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.8 4.8l5.2 5.2M19.2 4.8L14 10M19.2 19.2L14 14M4.8 19.2L10 14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M10 7.5V10H7.5M16.5 10H14V7.5M14 16.5V14h2.5M7.5 14H10v2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, initializePlacementGuardToggle_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, shouldDefaultToWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, startColorPickerObserver_fn, stopColorPickerObserver_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, applyWindowStatePosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, snapWindowedFilterToDefaultPosition_fn, isColorBought_fn, getBoughtColorIDs_fn, getBoughtColorIDsFromUserData_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, compareColorDataset_fn, selectColorList_fn, selectFilteredColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
+  var _WindowFilter_instances, refreshBoughtColorData_fn, getWindowState_fn, initializePlacementGuardToggle_fn, loadFilterViewSettings_fn, persistFilterViewSettings_fn, prefersWindowedMode_fn, shouldDefaultToWindowedMode_fn, setWindowModePreference_fn, syncSortFormControls_fn, applySortFormControls_fn, bindSortFormControls_fn, closeWindow_fn, startAutoRefresh_fn, stopAutoRefresh_fn, startColorPickerObserver_fn, stopColorPickerObserver_fn, cleanupWindowPersistence_fn, clampWindowDimension_fn, clampWindowPosition_fn, applyWindowStatePosition_fn, restoreWindowState_fn, saveWindowState_fn, scheduleWindowStateSave_fn, initializeWindowedPersistence_fn, applyDefaultWindowPosition_fn, snapWindowedFilterToDefaultPosition_fn, isColorBought_fn, getBoughtColorIDs_fn, getBoughtColorIDsFromUserData_fn, dumpBoughtColorDetection_fn, buildColorList_fn, sortColorList_fn, getColorElementRefs_fn, compareColorDataset_fn, selectColorList_fn, selectFilteredColorList_fn, syncColorToggleLabel_fn, toggleColorVisibility_fn, animateColorToggleIcon_fn, initializeColorBlockToggle_fn, goToRandomPendingPixel_fn, calculatePixelStatistics_fn;
   var WindowFilter = class extends Overlay {
     /** Constructor for the color filter window
      * @param {*} executor - The executing class
@@ -3436,6 +3449,7 @@
       this.colorPickerRefreshTimeout = null;
       this.colorRefreshInterval = null;
       this.colorRefreshIntervalMS = 1e4;
+      this.colorElementRefs = /* @__PURE__ */ new WeakMap();
       this.windowMinWidth = 320;
       this.windowMinHeight = 220;
       this.windowMaxWidth = 1e3;
@@ -3452,6 +3466,7 @@
       this.locationIcon = '<svg class="bm-filter-locate-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.75"/></svg>';
       const { palette, LUT: _ } = this.templateManager.paletteBM;
       this.palette = palette;
+      this.paletteByID = new Map(this.palette.map((color) => [Number(color.id), color]));
       this.boughtColorDetector = new BoughtColorDetector({
         palette: this.palette,
         apiManager: this.apiManager
@@ -3693,20 +3708,16 @@
         color.dataset["percent"] = colorPercent.slice(-1) == "%" ? colorPercent.slice(0, -1) : "0";
         color.dataset["incorrect"] = colorIncorrect || 0;
         color.dataset["completed"] = +colorCompleted;
-        const pixelCount = document.querySelector(`#${this.windowID} .bm-filter-color[data-id="${colorID}"] .bm-filter-color-pxl-cnt`);
+        const refs = __privateMethod(this, _WindowFilter_instances, getColorElementRefs_fn).call(this, color);
+        const pixelCount = refs.pixelCount;
         if (pixelCount) {
-          const isWindowedPixelCount = !!pixelCount.closest(`#${this.windowID}.bm-windowed`);
-          if (isWindowedPixelCount) {
-            pixelCount.textContent = `${colorCorrectLocalized} / ${colorTotalLocalized}`;
-          } else {
-            pixelCount.textContent = `${colorCorrectLocalized} / ${colorTotalLocalized}`;
-          }
+          pixelCount.textContent = `${colorCorrectLocalized} / ${colorTotalLocalized}`;
         }
-        const pixelDesc = document.querySelector(`#${this.windowID} .bm-filter-color[data-id="${colorID}"] .bm-filter-color-pxl-desc`);
+        const pixelDesc = refs.pixelDesc;
         if (pixelDesc) {
           pixelDesc.textContent = `${colorPercent} done - ${typeof colorIncorrect == "number" && !isNaN(colorIncorrect) ? colorIncorrect : "???"} off`;
         }
-        const locateButton = document.querySelector(`#${this.windowID} .bm-filter-color[data-id="${colorID}"] .bm-filter-color-locate`);
+        const locateButton = refs.locateButton;
         if (locateButton) {
           locateButton.disabled = !Number(colorTotal);
         }
@@ -3912,6 +3923,9 @@
         __privateMethod(this, _WindowFilter_instances, stopAutoRefresh_fn).call(this);
         return;
       }
+      if (document.visibilityState == "hidden") {
+        return;
+      }
       this.updateColorList();
     }, this.colorRefreshIntervalMS);
   };
@@ -3947,6 +3961,7 @@
       if (!shouldRefresh) {
         return;
       }
+      this.boughtColorDetector.invalidateDOMCache();
       if (this.colorPickerRefreshTimeout) {
         clearTimeout(this.colorPickerRefreshTimeout);
       }
@@ -4364,7 +4379,7 @@
     }
     const colors = Array.from(colorList.children);
     for (const color of colors) {
-      const paletteColor = this.palette.find((paletteColor2) => paletteColor2.id == color.dataset["id"]);
+      const paletteColor = this.paletteByID.get(Number(color.dataset["id"]));
       color.dataset["bought"] = +__privateMethod(this, _WindowFilter_instances, isColorBought_fn).call(this, paletteColor, boughtColorIDs);
       const isUnused = !Number(color.getAttribute("data-total"));
       const isCompleted = color.getAttribute("data-completed") == "1";
@@ -4397,7 +4412,31 @@
         return 0;
       }
     });
-    colors.forEach((color) => colorList.appendChild(color));
+    const orderChanged = colors.some((color, index) => colorList.children[index] !== color);
+    if (!orderChanged) {
+      return;
+    }
+    const sortedColors = document.createDocumentFragment();
+    colors.forEach((color) => sortedColors.appendChild(color));
+    colorList.appendChild(sortedColors);
+  };
+  /** Gets cached child nodes for a color card.
+   * @param {HTMLElement} colorElement - Color card
+   * @returns {{pixelCount: Element | null, pixelDesc: Element | null, locateButton: HTMLButtonElement | null}}
+   * @since 0.92.48
+   */
+  getColorElementRefs_fn = function(colorElement) {
+    const cachedRefs = this.colorElementRefs.get(colorElement);
+    if (cachedRefs) {
+      return cachedRefs;
+    }
+    const refs = {
+      pixelCount: colorElement.querySelector(".bm-filter-color-pxl-cnt"),
+      pixelDesc: colorElement.querySelector(".bm-filter-color-pxl-desc"),
+      locateButton: colorElement.querySelector(".bm-filter-color-locate")
+    };
+    this.colorElementRefs.set(colorElement, refs);
+    return refs;
   };
   /** Compares two color cards by a dataset key.
    * @param {HTMLElement} index - Current color card
@@ -5502,6 +5541,8 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
       this.sortedTemplatesArray = null;
       this.templateTileIndex = null;
       this.renderStateVersion = 0;
+      this.visibleTemplateColorIDsCache = /* @__PURE__ */ new Map();
+      this.colorFilterKeyCache = { version: -1, value: "" };
       this.renderPerfDebug = !!this.settingsManager?.userSettings?.flags?.includes("bm-debug");
       this.tileRenderCacheMaxEntries = 48;
       this.tileRenderOutputType = "image/webp";
@@ -5684,6 +5725,11 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
      * @since 0.92.35
      */
     getVisibleTemplateColorIDs({ paintableOnly = false } = {}) {
+      const cacheKey = `${this.renderStateVersion}:${paintableOnly ? "paintable" : "all"}`;
+      const cachedColorIDs = this.visibleTemplateColorIDsCache.get(cacheKey);
+      if (cachedColorIDs) {
+        return cachedColorIDs.slice();
+      }
       const colorIDs = /* @__PURE__ */ new Set();
       for (const template of this.templatesArray) {
         for (const colorID of template.pixelCount?.colors?.keys?.() || []) {
@@ -5700,7 +5746,10 @@ Version: ${this.version}`, "readOnly": true }).buildElement().buildElement().add
           colorIDs.add(numericColorID);
         }
       }
-      return Array.from(colorIDs).sort((left, right) => left - right);
+      const visibleColorIDs = Array.from(colorIDs).sort((left, right) => left - right);
+      this.visibleTemplateColorIDsCache.clear();
+      this.visibleTemplateColorIDsCache.set(cacheKey, visibleColorIDs);
+      return visibleColorIDs.slice();
     }
     /** Creates the JSON object to store templates in
      * @returns {{ whoami: string, scriptVersion: string, schemaVersion: string, templates: Object }} The JSON object
@@ -6520,7 +6569,15 @@ Version: ${this.version}`);
    * @since 0.92.27
    */
   getColorFilterKey_fn = function() {
-    return Array.from(this.shouldFilterColor.keys()).sort((a, b) => a - b).join(",");
+    if (this.colorFilterKeyCache.version == this.renderStateVersion) {
+      return this.colorFilterKeyCache.value;
+    }
+    const filterKey = Array.from(this.shouldFilterColor.keys()).sort((a, b) => a - b).join(",");
+    this.colorFilterKeyCache = {
+      version: this.renderStateVersion,
+      value: filterKey
+    };
+    return filterKey;
   };
   createTileRenderCacheKey_fn = async function(tileBlob, tileCoords, highlightDisabled, highlightPattern, renderStateVersion, filterKey) {
     return await this.tileRenderCacheService.createKey(tileBlob, tileCoords, highlightDisabled, highlightPattern, renderStateVersion, filterKey);
@@ -7054,6 +7111,11 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.placementGuardLastPointerAt = 0;
       this.placementGuardMinimumZoom = 15;
       this.debugLogLastAt = /* @__PURE__ */ new Map();
+      this.debugLoggingCache = /* @__PURE__ */ new Map();
+      this.debugLoggingCacheTTL = 250;
+      this.wplaceColorPickerActiveCacheAt = 0;
+      this.wplaceColorPickerActiveCacheValue = false;
+      this.wplaceColorPickerActiveCacheTTL = 80;
       this.installTemplateEyedropperTracker();
       this.installPlacementGuard();
     }
@@ -7063,13 +7125,20 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
      * @since 0.92.35
      */
     isDebugLoggingEnabled(channel = "api") {
+      const now = Date.now();
+      const cached = this.debugLoggingCache.get(channel);
+      if (cached && now - cached.at < this.debugLoggingCacheTTL) {
+        return cached.enabled;
+      }
       const flags = this.templateManager?.settingsManager?.userSettings?.flags ?? [];
       const debugLogs = !!this.templateManager?.settingsManager?.userSettings?.debugLogs;
       const localDebug = localStorage.getItem("bm-debug") == "true";
       const localChannelDebug = localStorage.getItem(`bm-debug-${channel}`) == "true";
       const datasetDebug = document.documentElement?.dataset?.bmDebug == "true";
       const datasetChannelDebug = document.documentElement?.dataset?.[`bmDebug${channel[0].toUpperCase()}${channel.slice(1)}`] == "true";
-      return debugLogs || flags.includes("bm-debug") || localDebug || localChannelDebug || datasetDebug || datasetChannelDebug;
+      const enabled = debugLogs || flags.includes("bm-debug") || localDebug || localChannelDebug || datasetDebug || datasetChannelDebug;
+      this.debugLoggingCache.set(channel, { at: now, enabled });
+      return enabled;
     }
     /** Writes a debug log when the focused debug channel is enabled.
      * @param {'picker'|'guard'|'api'} channel - Debug channel
@@ -7599,10 +7668,12 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
       this.templateEyedropperTrackerInstalled = true;
       const markPickerActive = (source = "unknown") => {
         this.templateEyedropperActiveUntil = Date.now() + this.templateEyedropperActivationWindowMs;
+        this.wplaceColorPickerActiveCacheAt = 0;
         this.debugLog("picker", "mark-active", { source, activeUntil: this.templateEyedropperActiveUntil }, 250);
       };
       const clearPickerActive = (source = "unknown") => {
         this.templateEyedropperActiveUntil = 0;
+        this.wplaceColorPickerActiveCacheAt = 0;
         this.debugLog("picker", "clear-active", { source }, 250);
       };
       document.addEventListener("keydown", (event) => {
@@ -7771,8 +7842,12 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
      * @since 0.92.35
      */
     isWplaceColorPickerActive() {
-      if (Date.now() <= this.templateEyedropperActiveUntil) {
+      const now = Date.now();
+      if (now <= this.templateEyedropperActiveUntil) {
         return true;
+      }
+      if (now - this.wplaceColorPickerActiveCacheAt < this.wplaceColorPickerActiveCacheTTL) {
+        return this.wplaceColorPickerActiveCacheValue;
       }
       for (const tooltip of document.querySelectorAll(".tooltip[data-tip], [title], [aria-label]")) {
         if (!this.isWplaceColorPickerControl(tooltip)) {
@@ -7780,9 +7855,13 @@ Use Blue Marble version ${scriptVersion} or load a new template.`);
         }
         const control = tooltip.closest?.('button, [role="button"]') || tooltip;
         if (control.matches?.('.btn-primary, .btn-active, .active, .selected, [aria-pressed="true"], [data-active="true"], [data-selected="true"]') || control.querySelector?.('.btn-primary, .btn-active, .active, .selected, [aria-pressed="true"], [data-active="true"], [data-selected="true"]')) {
+          this.wplaceColorPickerActiveCacheAt = now;
+          this.wplaceColorPickerActiveCacheValue = true;
           return true;
         }
       }
+      this.wplaceColorPickerActiveCacheAt = now;
+      this.wplaceColorPickerActiveCacheValue = false;
       return false;
     }
     /** Selects a Wplace palette color by clicking its live palette button.

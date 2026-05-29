@@ -40,6 +40,7 @@ export default class WindowFilter extends Overlay {
     this.colorPickerRefreshTimeout = null; // Debounce timer for Wplace palette changes
     this.colorRefreshInterval = null; // Auto-refresh timer for live color statistics
     this.colorRefreshIntervalMS = 10000; // Refresh Color Filter statistics every 10 seconds
+    this.colorElementRefs = new WeakMap(); // Cached child refs for live color-stat updates
     this.windowMinWidth = 320; // Minimum width for the windowed filter
     this.windowMinHeight = 220; // Minimum height for the windowed filter
     this.windowMaxWidth = 1000; // Maximum width for the windowed filter
@@ -62,6 +63,7 @@ export default class WindowFilter extends Overlay {
     // Obtains the color palette Blue Marble currently uses
     const { palette: palette, LUT: _ } = this.templateManager.paletteBM;
     this.palette = palette;
+    this.paletteByID = new Map(this.palette.map(color => [Number(color.id), color]));
     this.boughtColorDetector = new BoughtColorDetector({
       palette: this.palette,
       apiManager: this.apiManager
@@ -566,6 +568,7 @@ export default class WindowFilter extends Overlay {
         this.#stopAutoRefresh();
         return;
       }
+      if (document.visibilityState == 'hidden') {return;}
       this.updateColorList();
     }, this.colorRefreshIntervalMS);
   }
@@ -595,6 +598,7 @@ export default class WindowFilter extends Overlay {
         || Array.from(mutation.addedNodes).some(nodeTouchesColorPicker)
         || Array.from(mutation.removedNodes).some(nodeTouchesColorPicker));
       if (!shouldRefresh) {return;}
+      this.boughtColorDetector.invalidateDOMCache();
       if (this.colorPickerRefreshTimeout) {clearTimeout(this.colorPickerRefreshTimeout);}
       this.colorPickerRefreshTimeout = setTimeout(() => {
         this.colorPickerRefreshTimeout = null;
@@ -1090,7 +1094,7 @@ export default class WindowFilter extends Overlay {
     const colors = Array.from(colorList.children);
 
     for (const color of colors) {
-      const paletteColor = this.palette.find(paletteColor => paletteColor.id == color.dataset['id']);
+      const paletteColor = this.paletteByID.get(Number(color.dataset['id']));
       color.dataset['bought'] = +this.#isColorBought(paletteColor, boughtColorIDs);
 
       const isUnused = !Number(color.getAttribute('data-total'));
@@ -1136,7 +1140,30 @@ export default class WindowFilter extends Overlay {
       }
     });
 
-    colors.forEach(color => colorList.appendChild(color));
+    const orderChanged = colors.some((color, index) => colorList.children[index] !== color);
+    if (!orderChanged) {return;}
+
+    const sortedColors = document.createDocumentFragment();
+    colors.forEach(color => sortedColors.appendChild(color));
+    colorList.appendChild(sortedColors);
+  }
+
+  /** Gets cached child nodes for a color card.
+   * @param {HTMLElement} colorElement - Color card
+   * @returns {{pixelCount: Element | null, pixelDesc: Element | null, locateButton: HTMLButtonElement | null}}
+   * @since 0.92.48
+   */
+  #getColorElementRefs(colorElement) {
+    const cachedRefs = this.colorElementRefs.get(colorElement);
+    if (cachedRefs) {return cachedRefs;}
+
+    const refs = {
+      pixelCount: colorElement.querySelector('.bm-filter-color-pxl-cnt'),
+      pixelDesc: colorElement.querySelector('.bm-filter-color-pxl-desc'),
+      locateButton: colorElement.querySelector('.bm-filter-color-locate')
+    };
+    this.colorElementRefs.set(colorElement, refs);
+    return refs;
   }
 
   /** Compares two color cards by a dataset key.
@@ -1523,22 +1550,18 @@ export default class WindowFilter extends Overlay {
       color.dataset['completed'] = +colorCompleted;
 
       // Updates the pixel count if it exists
-      const pixelCount = document.querySelector(`#${this.windowID} .bm-filter-color[data-id="${colorID}"] .bm-filter-color-pxl-cnt`);
+      const refs = this.#getColorElementRefs(color);
+      const pixelCount = refs.pixelCount;
       if (pixelCount) {
-        const isWindowedPixelCount = !!pixelCount.closest(`#${this.windowID}.bm-windowed`);
-        if (isWindowedPixelCount) {
-          pixelCount.textContent = `${colorCorrectLocalized} / ${colorTotalLocalized}`;
-        } else {
-          pixelCount.textContent = `${colorCorrectLocalized} / ${colorTotalLocalized}`;
-        }
+        pixelCount.textContent = `${colorCorrectLocalized} / ${colorTotalLocalized}`;
       }
 
       // Updates the pixel description if it exists
-      const pixelDesc = document.querySelector(`#${this.windowID} .bm-filter-color[data-id="${colorID}"] .bm-filter-color-pxl-desc`);
+      const pixelDesc = refs.pixelDesc;
       if (pixelDesc) {pixelDesc.textContent = `${colorPercent} done - ${((typeof colorIncorrect == 'number') && !isNaN(colorIncorrect)) ? colorIncorrect : '???'} off`;}
 
       // Updates the locate button if it exists. This only renders in fullscreen mode.
-      const locateButton = document.querySelector(`#${this.windowID} .bm-filter-color[data-id="${colorID}"] .bm-filter-color-locate`);
+      const locateButton = refs.locateButton;
       if (locateButton) {locateButton.disabled = !Number(colorTotal);}
     }
 

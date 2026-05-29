@@ -47,6 +47,11 @@ export default class ApiManager {
     this.placementGuardLastPointerAt = 0; // Timestamp for the last tracked pointer location
     this.placementGuardMinimumZoom = 15; // Avoids blocking low-zoom map POI clicks rendered inside the canvas
     this.debugLogLastAt = new Map(); // Throttles repeated picker/guard debug messages
+    this.debugLoggingCache = new Map(); // Short-lived cache for high-frequency debug checks
+    this.debugLoggingCacheTTL = 250; // Keeps localStorage/dataset polling out of event hot paths
+    this.wplaceColorPickerActiveCacheAt = 0; // Timestamp for the last DOM picker scan
+    this.wplaceColorPickerActiveCacheValue = false; // Result of the last DOM picker scan
+    this.wplaceColorPickerActiveCacheTTL = 80; // Short enough to keep picker state responsive
     this.installTemplateEyedropperTracker();
     this.installPlacementGuard();
   }
@@ -57,13 +62,21 @@ export default class ApiManager {
    * @since 0.92.35
    */
   isDebugLoggingEnabled(channel = 'api') {
+    const now = Date.now();
+    const cached = this.debugLoggingCache.get(channel);
+    if (cached && ((now - cached.at) < this.debugLoggingCacheTTL)) {
+      return cached.enabled;
+    }
+
     const flags = this.templateManager?.settingsManager?.userSettings?.flags ?? [];
     const debugLogs = !!this.templateManager?.settingsManager?.userSettings?.debugLogs;
     const localDebug = localStorage.getItem('bm-debug') == 'true';
     const localChannelDebug = localStorage.getItem(`bm-debug-${channel}`) == 'true';
     const datasetDebug = document.documentElement?.dataset?.bmDebug == 'true';
     const datasetChannelDebug = document.documentElement?.dataset?.[`bmDebug${channel[0].toUpperCase()}${channel.slice(1)}`] == 'true';
-    return debugLogs || flags.includes('bm-debug') || localDebug || localChannelDebug || datasetDebug || datasetChannelDebug;
+    const enabled = debugLogs || flags.includes('bm-debug') || localDebug || localChannelDebug || datasetDebug || datasetChannelDebug;
+    this.debugLoggingCache.set(channel, {at: now, enabled: enabled});
+    return enabled;
   }
 
   /** Writes a debug log when the focused debug channel is enabled.
@@ -609,10 +622,12 @@ export default class ApiManager {
 
     const markPickerActive = (source = 'unknown') => {
       this.templateEyedropperActiveUntil = Date.now() + this.templateEyedropperActivationWindowMs;
+      this.wplaceColorPickerActiveCacheAt = 0;
       this.debugLog('picker', 'mark-active', {source: source, activeUntil: this.templateEyedropperActiveUntil}, 250);
     };
     const clearPickerActive = (source = 'unknown') => {
       this.templateEyedropperActiveUntil = 0;
+      this.wplaceColorPickerActiveCacheAt = 0;
       this.debugLog('picker', 'clear-active', {source: source}, 250);
     };
 
@@ -776,7 +791,11 @@ export default class ApiManager {
    * @since 0.92.35
    */
   isWplaceColorPickerActive() {
-    if (Date.now() <= this.templateEyedropperActiveUntil) {return true;}
+    const now = Date.now();
+    if (now <= this.templateEyedropperActiveUntil) {return true;}
+    if ((now - this.wplaceColorPickerActiveCacheAt) < this.wplaceColorPickerActiveCacheTTL) {
+      return this.wplaceColorPickerActiveCacheValue;
+    }
 
     for (const tooltip of document.querySelectorAll('.tooltip[data-tip], [title], [aria-label]')) {
       if (!this.isWplaceColorPickerControl(tooltip)) {continue;}
@@ -784,9 +803,15 @@ export default class ApiManager {
       if (
         control.matches?.('.btn-primary, .btn-active, .active, .selected, [aria-pressed="true"], [data-active="true"], [data-selected="true"]')
         || control.querySelector?.('.btn-primary, .btn-active, .active, .selected, [aria-pressed="true"], [data-active="true"], [data-selected="true"]')
-      ) {return true;}
+      ) {
+        this.wplaceColorPickerActiveCacheAt = now;
+        this.wplaceColorPickerActiveCacheValue = true;
+        return true;
+      }
     }
 
+    this.wplaceColorPickerActiveCacheAt = now;
+    this.wplaceColorPickerActiveCacheValue = false;
     return false;
   }
 

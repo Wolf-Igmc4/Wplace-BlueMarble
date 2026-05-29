@@ -33,6 +33,9 @@ Avoid adding new direct calls to `GM_getValue`, `GM.setValue`, `GM_xmlhttpReques
 - The fetch proxy now times out stuck image-blob processing and returns the original image instead of leaving Wplace tile requests pending indefinitely.
 - The palette move-button observer is throttled through `requestAnimationFrame`, so heavy DOM mutation bursts do not repeatedly query and modify the palette in the same frame.
 - Pixel coordinate display updates reuse the existing Blue Marble coordinate DOM when available. The expensive fallback scan across Wplace `span` elements only runs until the coordinate display is created.
+- Template color/filter lookups are cached against the render-state version, avoiding repeated palette scans and hidden-color sorting during guard checks and tile renders.
+- Color Filter refreshes reuse cached child-node references, avoid re-appending cards when the sort order is unchanged, skip background-tab auto-refreshes, and invalidate premium-color DOM caches when Wplace's palette changes.
+- API event hot paths use short-lived caches for debug flag checks and Wplace eyedropper active-state DOM scans.
 
 ## Build
 

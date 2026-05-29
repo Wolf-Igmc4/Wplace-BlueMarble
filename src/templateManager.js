@@ -128,6 +128,8 @@ export default class TemplateManager {
     this.sortedTemplatesArray = null; // Cached draw-order template list
     this.templateTileIndex = null; // Cached lookup from tile coords to template chunks
     this.renderStateVersion = 0; // Increments whenever render-relevant template state changes
+    this.visibleTemplateColorIDsCache = new Map(); // Versioned visible-color lookups used by event guards
+    this.colorFilterKeyCache = {version: -1, value: ''}; // Versioned hidden-color key for tile cache keys
     this.renderPerfDebug = !!this.settingsManager?.userSettings?.flags?.includes('bm-debug'); // Verbose render performance logs
     this.tileRenderCacheMaxEntries = 48; // Small LRU cache for visible map churn
     this.tileRenderOutputType = 'image/webp'; // WebP encodes large transparent overlay tiles much faster than PNG
@@ -542,6 +544,10 @@ export default class TemplateManager {
    * @since 0.92.35
    */
   getVisibleTemplateColorIDs({paintableOnly = false} = {}) {
+    const cacheKey = `${this.renderStateVersion}:${paintableOnly ? 'paintable' : 'all'}`;
+    const cachedColorIDs = this.visibleTemplateColorIDsCache.get(cacheKey);
+    if (cachedColorIDs) {return cachedColorIDs.slice();}
+
     const colorIDs = new Set();
 
     for (const template of this.templatesArray) {
@@ -554,7 +560,10 @@ export default class TemplateManager {
       }
     }
 
-    return Array.from(colorIDs).sort((left, right) => left - right);
+    const visibleColorIDs = Array.from(colorIDs).sort((left, right) => left - right);
+    this.visibleTemplateColorIDsCache.clear();
+    this.visibleTemplateColorIDsCache.set(cacheKey, visibleColorIDs);
+    return visibleColorIDs.slice();
   }
 
   /** Creates the JSON object to store templates in
@@ -1045,7 +1054,16 @@ export default class TemplateManager {
    * @since 0.92.27
    */
   #getColorFilterKey() {
-    return Array.from(this.shouldFilterColor.keys()).sort((a, b) => a - b).join(',');
+    if (this.colorFilterKeyCache.version == this.renderStateVersion) {
+      return this.colorFilterKeyCache.value;
+    }
+
+    const filterKey = Array.from(this.shouldFilterColor.keys()).sort((a, b) => a - b).join(',');
+    this.colorFilterKeyCache = {
+      version: this.renderStateVersion,
+      value: filterKey
+    };
+    return filterKey;
   }
 
   /** Builds a content-sensitive cache key for tile rendering.
